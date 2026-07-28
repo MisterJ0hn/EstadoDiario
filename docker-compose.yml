@@ -1,27 +1,11 @@
 version: "3.9"
 
-services:
-  # ─── PostgreSQL ────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: ed_postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - ed_network
+# NOTA: PostgreSQL NO se levanta en Docker. Se usa el PostgreSQL
+# instalado en la máquina Linux anfitriona (host).
+# Los contenedores lo alcanzan vía "host.docker.internal", que se
+# resuelve gracias a `extra_hosts: host-gateway`.
 
+services:
   # ─── pgAdmin 4 ─────────────────────────────────────────
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -34,9 +18,8 @@ services:
       - "${PGADMIN_PORT:-5050}:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      postgres:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ed_network
 
@@ -49,8 +32,8 @@ services:
     restart: unless-stopped
     environment:
       - APP_ENV=${APP_ENV}
-      - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_HOST=${POSTGRES_HOST:-host.docker.internal}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -64,9 +47,8 @@ services:
     volumes:
       - ./backend:/app
       - backend_uploads:/app/uploads
-    depends_on:
-      postgres:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ed_network
 
@@ -85,7 +67,6 @@ services:
       - ed_network
 
 volumes:
-  postgres_data:
   pgadmin_data:
   backend_uploads:
 

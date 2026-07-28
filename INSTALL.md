@@ -5,6 +5,35 @@
 - **Docker** >= 24.0
 - **Docker Compose** >= 2.20
 - **Git**
+- **PostgreSQL >= 14 instalado en el host Linux** (NO se levanta en Docker)
+
+## Preparar PostgreSQL del Host
+
+El `docker-compose.yml` **no** incluye un contenedor de PostgreSQL: los servicios
+se conectan al PostgreSQL instalado en la máquina Linux anfitriona a través de
+`host.docker.internal` (resuelto con `extra_hosts: host-gateway`).
+
+```bash
+# 1. Crear usuario y base de datos
+sudo -u postgres psql <<'SQL'
+CREATE USER estado_diario WITH PASSWORD 'Estado123';
+CREATE DATABASE estado_diario OWNER estado_diario;
+SQL
+
+# 2. Permitir que PostgreSQL escuche en la interfaz del bridge de Docker
+#    /etc/postgresql/<version>/main/postgresql.conf
+listen_addresses = '*'          # o 'localhost,172.17.0.1'
+
+# 3. Autorizar la red de Docker en pg_hba.conf
+#    /etc/postgresql/<version>/main/pg_hba.conf
+host    all    all    172.16.0.0/12    scram-sha-256
+
+# 4. Reiniciar el servicio
+sudo systemctl restart postgresql
+
+# 5. Si hay firewall activo, abrir el puerto solo para la red de Docker
+sudo ufw allow from 172.16.0.0/12 to any port 5432 proto tcp
+```
 
 ## Instalación Rápida
 
@@ -15,13 +44,17 @@ cd C:\sitios\temposoft\estado_diario
 # 2. Copiar variables de entorno
 cp .env.example .env
 
-# 3. Editar .env si es necesario (passwords, puertos, etc.)
+# 3. Editar .env con los datos del PostgreSQL del host
+#    (POSTGRES_HOST=host.docker.internal, usuario, password, puertos)
 
 # 4. Levantar todos los servicios
 docker-compose up -d --build
 
 # 5. Verificar que los servicios estén corriendo
 docker-compose ps
+
+# 6. Verificar la conexión a la BD del host desde el backend
+docker exec ed_backend python -c "import socket; socket.create_connection(('host.docker.internal', 5432), 5); print('OK')"
 ```
 
 ## Servicios y Puertos
@@ -33,7 +66,7 @@ docker-compose ps
 | Swagger    | 8091   | http://localhost:8091/docs    |
 | ReDoc      | 8091   | http://localhost:8091/redoc   |
 | pgAdmin    | 5050   | http://localhost:5050         |
-| PostgreSQL | 5432   | localhost:5432                |
+| PostgreSQL | 5432   | localhost:5432 (servicio del host, fuera de Docker) |
 
 ## Credenciales por Defecto
 
@@ -45,12 +78,12 @@ docker-compose ps
 - **Email**: admin@estadodiario.cl
 - **Password**: admin123
 
-### PostgreSQL
-- **Host**: postgres (dentro de Docker) / localhost (desde el host)
+### PostgreSQL (instalado en el host Linux)
+- **Host**: host.docker.internal (desde los contenedores) / localhost (desde el host)
 - **Puerto**: 5432
-- **Base de datos**: estado_diario_db
-- **Usuario**: estado_diario_user
-- **Password**: dev_password_2024
+- **Base de datos**: estado_diario
+- **Usuario**: estado_diario
+- **Password**: Estado123
 
 ## Configurar pgAdmin
 
@@ -59,11 +92,11 @@ docker-compose ps
 3. Clic derecho en "Servers" > "Register" > "Server..."
 4. **General**: Name = `Estado Diario`
 5. **Connection**:
-   - Host: `postgres`
+   - Host: `host.docker.internal`  (PostgreSQL del host, no un contenedor)
    - Port: `5432`
-   - Maintenance database: `estado_diario_db`
-   - Username: `estado_diario_user`
-   - Password: `dev_password_2024`
+   - Maintenance database: `estado_diario`
+   - Username: `estado_diario`
+   - Password: `Estado123`
 6. Guardar
 
 ## Datos Iniciales (Seeds)
@@ -108,7 +141,7 @@ docker-compose restart backend
 # Detener todos los servicios
 docker-compose down
 
-# Detener y eliminar volúmenes (BORRA LA BD)
+# Detener y eliminar volúmenes (pgAdmin y uploads; la BD vive en el host y NO se borra)
 docker-compose down -v
 
 # Reconstruir un servicio

@@ -2,6 +2,12 @@
 
 ## Despliegue en Producción
 
+> **PostgreSQL no se despliega en Docker.** Se usa el servidor PostgreSQL
+> instalado en la máquina Linux anfitriona. Antes de desplegar, verificar que
+> exista la base de datos, que `listen_addresses` incluya la interfaz del bridge
+> de Docker y que `pg_hba.conf` autorice la red `172.16.0.0/12`
+> (ver INSTALL.md → "Preparar PostgreSQL del Host").
+
 ### 1. Preparar Variables de Entorno
 
 ```bash
@@ -12,6 +18,10 @@ Editar `.env` con valores de producción:
 
 ```env
 APP_ENV=production
+
+# PostgreSQL del host (no contenedor)
+POSTGRES_HOST=host.docker.internal
+POSTGRES_PORT=5432
 
 # CAMBIAR OBLIGATORIAMENTE
 POSTGRES_PASSWORD=<password-seguro>
@@ -86,12 +96,15 @@ server {
 
 ### 5. Backups
 
+La base de datos corre en el host (fuera de Docker), por lo que los backups se
+hacen directamente con las herramientas de PostgreSQL del sistema:
+
 ```bash
 # Backup de base de datos
-docker exec ed_postgres pg_dump -U estado_diario_user estado_diario_db > backup_$(date +%Y%m%d).sql
+pg_dump -h localhost -U estado_diario estado_diario > backup_$(date +%Y%m%d).sql
 
 # Restaurar
-cat backup.sql | docker exec -i ed_postgres psql -U estado_diario_user -d estado_diario_db
+psql -h localhost -U estado_diario -d estado_diario < backup.sql
 ```
 
 ### 6. Monitoreo
