@@ -65,18 +65,16 @@ docker exec ed_backend python -c "import socket; socket.create_connection(('host
 | Backend    | 8091   | http://localhost:8091         |
 | Swagger    | 8091   | http://localhost:8091/docs    |
 | ReDoc      | 8091   | http://localhost:8091/redoc   |
-| pgAdmin    | 5050   | http://localhost:5050         |
 | PostgreSQL | 5432   | localhost:5432 (servicio del host, fuera de Docker) |
+
+> Solo hay dos contenedores: `ed_backend` y `ed_frontend`. PostgreSQL y pgAdmin
+> son responsabilidad del host.
 
 ## Credenciales por Defecto
 
 ### Aplicación
 - **Admin**: usuario `admin`, password `admin123`
 - **Usuario**: usuario `usuario`, password `usuario123`
-
-### pgAdmin
-- **Email**: admin@estadodiario.cl
-- **Password**: admin123
 
 ### PostgreSQL (instalado en el host Linux)
 - **Host**: host.docker.internal (desde los contenedores) / localhost (desde el host)
@@ -85,19 +83,23 @@ docker exec ed_backend python -c "import socket; socket.create_connection(('host
 - **Usuario**: estado_diario
 - **Password**: Estado123
 
-## Configurar pgAdmin
+## Administrar la Base de Datos
 
-1. Acceder a http://localhost:5050
-2. Iniciar sesión con las credenciales de pgAdmin
-3. Clic derecho en "Servers" > "Register" > "Server..."
-4. **General**: Name = `Estado Diario`
-5. **Connection**:
-   - Host: `host.docker.internal`  (PostgreSQL del host, no un contenedor)
-   - Port: `5432`
-   - Maintenance database: `estado_diario`
-   - Username: `estado_diario`
-   - Password: `Estado123`
-6. Guardar
+pgAdmin ya no forma parte del `docker-compose.yml`. Como PostgreSQL corre en el
+host, se administra directamente desde ahí:
+
+```bash
+# Cliente de línea de comandos
+psql -h localhost -U estado_diario -d estado_diario
+```
+
+Si prefieres interfaz gráfica, instala pgAdmin nativo en el host y conéctalo a
+`localhost:5432`:
+
+```bash
+# Debian/Ubuntu
+sudo apt install -y pgadmin4-desktop     # o pgadmin4-web
+```
 
 ## Datos Iniciales (Seeds)
 
@@ -141,7 +143,7 @@ docker-compose restart backend
 # Detener todos los servicios
 docker-compose down
 
-# Detener y eliminar volúmenes (pgAdmin y uploads; la BD vive en el host y NO se borra)
+# Detener y eliminar volúmenes (solo uploads; la BD vive en el host y NO se borra)
 docker-compose down -v
 
 # Reconstruir un servicio

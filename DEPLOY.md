@@ -26,7 +26,6 @@ POSTGRES_PORT=5432
 # CAMBIAR OBLIGATORIAMENTE
 POSTGRES_PASSWORD=<password-seguro>
 BACKEND_SECRET_KEY=<clave-secreta-larga-aleatoria>
-PGADMIN_DEFAULT_PASSWORD=<password-seguro>
 
 # Ajustar CORS al dominio real
 BACKEND_CORS_ORIGINS=https://midominio.cl
@@ -124,7 +123,8 @@ docker stats
 
 1. Cambiar TODAS las contraseñas por defecto
 2. Usar HTTPS en producción
-3. Restringir acceso a pgAdmin (considerar deshabilitarlo en producción)
+3. No exponer el puerto 5432 del host a Internet: `listen_addresses` y las
+   reglas de firewall deben limitarlo a la red de Docker (`172.16.0.0/12`)
 4. Configurar firewall para exponer solo puertos 80/443
 5. Rotar el SECRET_KEY periódicamente
 6. Configurar backups automáticos de PostgreSQL

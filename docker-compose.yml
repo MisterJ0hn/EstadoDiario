@@ -2,27 +2,15 @@ version: "3.9"
 
 # NOTA: PostgreSQL NO se levanta en Docker. Se usa el PostgreSQL
 # instalado en la máquina Linux anfitriona (host).
-# Los contenedores lo alcanzan vía "host.docker.internal", que se
-# resuelve gracias a `extra_hosts: host-gateway`.
+# El backend lo alcanza vía "host.docker.internal", que se resuelve
+# gracias a `extra_hosts: host-gateway` (requiere Docker >= 20.10).
+# Con un Docker más antiguo: borrar el bloque extra_hosts y poner en
+# .env  POSTGRES_HOST=172.17.0.1  (IP del bridge docker0 del host).
+#
+# pgAdmin tampoco corre en Docker: al vivir la BD en el host, se
+# administra con psql o con un pgAdmin instalado nativamente.
 
 services:
-  # ─── pgAdmin 4 ─────────────────────────────────────────
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: ed_pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
-    ports:
-      - "${PGADMIN_PORT:-5050}:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - ed_network
-
   # ─── Backend (FastAPI) ── puerto 8091 ──────────────────
   backend:
     build:
@@ -67,7 +55,6 @@ services:
       - ed_network
 
 volumes:
-  pgadmin_data:
   backend_uploads:
 
 networks:
