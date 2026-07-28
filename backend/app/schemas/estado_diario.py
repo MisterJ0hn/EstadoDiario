@@ -1,0 +1,116 @@
+from datetime import date, datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+# ── Estado Diario Origen ──────────────────────────────────
+class EstadoDiarioOrigenResponse(BaseModel):
+    id: int
+    rut: str | None
+    fecha: date | None
+    nombre_archivo: str | None
+    url: str | None
+    fecha_carga: datetime
+    usuario_carga: str | None = None
+    total_movimientos: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class EstadoDiarioOrigenListResponse(BaseModel):
+    exito: bool = True
+    total: int
+    page: int
+    total_pages: int
+    origenes: list[EstadoDiarioOrigenResponse]
+
+
+class EstadoDiarioOrigenCreate(BaseModel):
+    rut: str = Field(..., min_length=1, max_length=20, examples=["16952077-1"])
+    fecha: date
+
+
+# ── Estado Diario (Movimiento) ────────────────────────────
+class MovimientoResponse(BaseModel):
+    id: int
+    jurisdiccion: str | None = None
+    jurisdiccion_id: int | None = None
+    rol: str | None
+    rol_unico: str | None
+    fecha_ingreso: date | None
+    caratulado: str | None
+    tribunal: str | None
+    estado: str | None
+    tipo_causa: str | None
+    ubicacion: str | None
+    fecha_ubicacion: date | None
+    corte: str | None
+    leido: bool
+    fecha_leido: datetime | None = None
+    pendiente: bool
+    nivel_pendiente: str | None = None
+    fecha_pendiente: datetime | None = None
+    usuario_pendiente: str | None = None
+    rut: str | None = None
+    fecha_estado_diario: date | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class MovimientoListResponse(BaseModel):
+    exito: bool = True
+    total: int
+    page: int = 1
+    total_pages: int = 1
+    movimientos: list[MovimientoResponse]
+
+
+class MarcarLeidoResponse(BaseModel):
+    exito: bool = True
+
+
+class MarcarPendienteRequest(BaseModel):
+    nivel: str = Field(..., pattern="^(bajo|medio|alto)$")
+    username: str | None = None
+    mensaje: str | None = None
+    fecha_hora: str | None = None
+
+
+# ── Agenda ────────────────────────────────────────────────
+class AgendaResponse(BaseModel):
+    id: int
+    detalle: str
+    fecha_hora: datetime
+    fecha_hora_registro: datetime
+    enviado: bool
+    fecha_envio: datetime | None = None
+    usuario_registro: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AgendaCreateRequest(BaseModel):
+    detalle: str = Field(..., min_length=1)
+    fecha_hora: str = Field(..., examples=["2026-07-28 10:00:00"])
+    username: str | None = None
+
+
+class AgendaListResponse(BaseModel):
+    exito: bool = True
+    total: int
+    agendas: list[AgendaResponse]
+
+
+# ── Webhook ───────────────────────────────────────────────
+class WebhookResponse(BaseModel):
+    exito: bool = True
+
+
+# ── Response genérico ─────────────────────────────────────
+class ErrorResponse(BaseModel):
+    exito: bool = False
+    mensaje: str

@@ -1,0 +1,53 @@
+# ── Python / Backend ──────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
+.venv/
+venv/
+env/
+
+# ── Environment variables ────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Uploads (archivos subidos por usuarios) ───
+backend/uploads/
+
+# ── Datos de prueba ───────────────────────────
+datos/
+
+# ── Node / Frontend ──────────────────────────
+node_modules/
+frontend/.angular/
+frontend/dist/
+
+# ── IDE / Editores ───────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ─────────────────────────────────────
+*.log
+logs/
+
+# ── Docker (volúmenes locales) ───────────────
+pgdata/
+
+# ── Temporales ───────────────────────────────
+*.tmp
+*.bak
+*.orig

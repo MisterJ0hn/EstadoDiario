@@ -1,0 +1,94 @@
+version: "3.9"
+
+services:
+  # ─── PostgreSQL ────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: ed_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ed_network
+
+  # ─── pgAdmin 4 ─────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ed_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ed_network
+
+  # ─── Backend (FastAPI) ── puerto 8091 ──────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ed_backend
+    restart: unless-stopped
+    environment:
+      - APP_ENV=${APP_ENV}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - BACKEND_SECRET_KEY=${BACKEND_SECRET_KEY}
+      - BACKEND_ACCESS_TOKEN_EXPIRE_MINUTES=${BACKEND_ACCESS_TOKEN_EXPIRE_MINUTES}
+      - BACKEND_REFRESH_TOKEN_EXPIRE_DAYS=${BACKEND_REFRESH_TOKEN_EXPIRE_DAYS}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
+      - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL}
+    ports:
+      - "${BACKEND_PORT:-8091}:8000"
+    volumes:
+      - ./backend:/app
+      - backend_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ed_network
+
+  # ─── Frontend (Angular) ── puerto 8090 ─────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ed_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8090}:80"
+    depends_on:
+      - backend
+    networks:
+      - ed_network
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  backend_uploads:
+
+networks:
+  ed_network:
+    driver: bridge
