@@ -15,7 +15,7 @@ RUN sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|g' /etc/nginx/nginx.conf
 COPY --from=build /app/dist/estado-diario-crm/browser /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Crear el archivo PID y dar permisos al usuario nginx en las rutas necesarias
-RUN chown -R nginx:nginx /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
+RUN chown -R nginx:nginx /run /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
 
 # Cambiar al usuario sin privilegios antes de correr Nginx
 USER nginx
