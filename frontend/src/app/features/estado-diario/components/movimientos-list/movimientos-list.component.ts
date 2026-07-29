@@ -2,9 +2,12 @@ import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
+
+type Tab = 'no-leidos' | 'leidos' | 'pendientes';
 
 @Component({
   selector: 'app-movimientos-list',
@@ -20,8 +23,34 @@ import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
         </div>
       </div>
 
-      <!-- Filters -->
-      @if (filterType() !== 'origen') {
+      @if (!isOrigen()) {
+        <!-- Tabs de estado -->
+        <div class="border-b border-neutral-200">
+          <nav class="-mb-px flex gap-1 overflow-x-auto" role="tablist">
+            @for (t of tabs; track t.key) {
+              <button
+                type="button"
+                role="tab"
+                [attr.aria-selected]="activeTab() === t.key"
+                (click)="selectTab(t.key)"
+                class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors"
+                [class]="activeTab() === t.key
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'"
+              >
+                {{ t.label }}
+                @if (counts()[t.key] !== null) {
+                  <span class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                        [class]="activeTab() === t.key ? 'bg-primary-100 text-primary-700' : 'bg-neutral-100 text-neutral-600'">
+                    {{ counts()[t.key] }}
+                  </span>
+                }
+              </button>
+            }
+          </nav>
+        </div>
+
+        <!-- Filters -->
         <div class="card">
           <div class="card-body">
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -149,44 +178,69 @@ export class MovimientosListComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
+  readonly tabs: { key: Tab; label: string }[] = [
+    { key: 'no-leidos', label: 'No Leídos' },
+    { key: 'leidos', label: 'Leídos' },
+    { key: 'pendientes', label: 'Pendientes' },
+  ];
+
   movimientos = signal<Movimiento[]>([]);
   jurisdicciones = signal<Jurisdiccion[]>([]);
   loading = signal(true);
   currentPage = signal(1);
   totalPages = signal(1);
   total = signal(0);
+  counts = signal<Record<Tab, number | null>>({ 'no-leidos': null, leidos: null, pendientes: null });
 
-  filterType = signal<'no-leidos' | 'leidos' | 'pendientes' | 'origen'>('no-leidos');
+  isOrigen = signal(false);
+  activeTab = signal<Tab>('no-leidos');
   filterJurisdiccion: number | null = null;
   filterFecha = '';
   filterRut = '';
 
-  title = computed(() => {
-    switch (this.filterType()) {
-      case 'leidos': return 'Movimientos Leídos';
-      case 'pendientes': return 'Movimientos Pendientes';
-      case 'origen': return 'Movimientos del Origen';
-      default: return 'Movimientos No Leídos';
-    }
-  });
+  title = computed(() => (this.isOrigen() ? 'Movimientos del Origen' : 'Movimientos'));
 
   ngOnInit(): void {
-    const filter = this.route.snapshot.data['filter'] || 'no-leidos';
-    this.filterType.set(filter);
+    const filter = this.route.snapshot.data['filter'] || 'movimientos';
+    this.isOrigen.set(filter === 'origen');
 
-    if (filter !== 'origen') {
-      this.service.getJurisdicciones().subscribe({
-        next: (res) => this.jurisdicciones.set(res.jurisdicciones),
-      });
+    if (this.isOrigen()) {
+      this.loadData();
+      return;
     }
 
+    const queryTab = this.route.snapshot.queryParamMap.get('tab');
+    this.activeTab.set(this.normalizeTab(queryTab) ?? this.normalizeTab(filter) ?? 'no-leidos');
+
+    this.service.getJurisdicciones().subscribe({
+      next: (res) => this.jurisdicciones.set(res.jurisdicciones),
+    });
+
+    this.loadData();
+    this.loadCounts();
+  }
+
+  private normalizeTab(value: string | null): Tab | null {
+    return this.tabs.some((t) => t.key === value) ? (value as Tab) : null;
+  }
+
+  selectTab(tab: Tab): void {
+    if (this.activeTab() === tab) return;
+    this.activeTab.set(tab);
+    this.currentPage.set(1);
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
     this.loadData();
   }
 
   loadData(): void {
     this.loading.set(true);
 
-    if (this.filterType() === 'origen') {
+    if (this.isOrigen()) {
       const origenId = Number(this.route.snapshot.paramMap.get('id'));
       this.service.getMovimientosByOrigen(origenId).subscribe({
         next: (res) => {
@@ -205,7 +259,7 @@ export class MovimientosListComponent implements OnInit {
       if (this.filterFecha) params['fecha'] = this.filterFecha;
       if (this.filterRut) params['rut'] = this.filterRut;
 
-      this.service.getMovimientos(this.filterType() as 'no-leidos' | 'leidos' | 'pendientes', params as any).subscribe({
+      this.service.getMovimientos(this.activeTab(), params as any).subscribe({
         next: (res) => {
           this.movimientos.set(res.movimientos);
           this.total.set(res.total);
@@ -221,9 +275,35 @@ export class MovimientosListComponent implements OnInit {
     }
   }
 
+  /** Totales por estado para los contadores de las pestañas (respetan los filtros activos). */
+  loadCounts(): void {
+    const params: { jurisdiccion?: number; fecha?: string; rut?: string; page: number; limit: number } = {
+      page: 1,
+      limit: 1,
+    };
+    if (this.filterJurisdiccion) params.jurisdiccion = this.filterJurisdiccion;
+    if (this.filterFecha) params.fecha = this.filterFecha;
+    if (this.filterRut) params.rut = this.filterRut;
+
+    forkJoin({
+      'no-leidos': this.service.getMovimientos('no-leidos', params),
+      leidos: this.service.getMovimientos('leidos', params),
+      pendientes: this.service.getMovimientos('pendientes', params),
+    }).subscribe({
+      next: (res) =>
+        this.counts.set({
+          'no-leidos': res['no-leidos'].total,
+          leidos: res.leidos.total,
+          pendientes: res.pendientes.total,
+        }),
+      error: () => this.counts.set({ 'no-leidos': null, leidos: null, pendientes: null }),
+    });
+  }
+
   onFilter(): void {
     this.currentPage.set(1);
     this.loadData();
+    this.loadCounts();
   }
 
   onClearFilters(): void {
@@ -243,6 +323,7 @@ export class MovimientosListComponent implements OnInit {
       next: () => {
         this.notification.success('Marcado como leído');
         this.loadData();
+        if (!this.isOrigen()) this.loadCounts();
       },
       error: () => this.notification.error('Error al marcar como leído'),
     });

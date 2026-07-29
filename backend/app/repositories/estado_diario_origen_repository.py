@@ -29,6 +29,13 @@ class EstadoDiarioOrigenRepository:
     def find_by_id(self, oid: int) -> Optional[EstadoDiarioOrigen]:
         return self.db.get(EstadoDiarioOrigen, oid)
 
+    def find_by_rut_fecha(self, rut: str, fecha) -> Optional[EstadoDiarioOrigen]:
+        return (
+            self.db.query(EstadoDiarioOrigen)
+            .filter(EstadoDiarioOrigen.rut == rut, EstadoDiarioOrigen.fecha == fecha)
+            .first()
+        )
+
     def create(self, origen: EstadoDiarioOrigen) -> EstadoDiarioOrigen:
         self.db.add(origen)
         self.db.commit()

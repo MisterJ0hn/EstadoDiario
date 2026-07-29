@@ -59,20 +59,22 @@ class ImportService:
         usuario_id: Optional[int] = None,
         nombre_archivo: Optional[str] = None,
     ) -> dict:
-        origen = EstadoDiarioOrigen(
-            usuario_carga_id=usuario_id,
-            rut=rut,
-            fecha=fecha,
-            nombre_archivo=nombre_archivo or os.path.basename(file_path),
-            fecha_carga=datetime.now(timezone.utc),
-        )
-        self.origen_repo.create(origen)
+        # Un mismo RUT solo puede tener un estado diario por fecha. Sin esta
+        # validación, reimportar el archivo duplica todos los movimientos, y
+        # con la ingesta automática por correo eso ocurriría sin que nadie lo
+        # note. Para recargar, primero hay que borrar el origen existente.
+        existente = self.origen_repo.find_by_rut_fecha(rut, fecha)
+        if existente:
+            raise ValueError(
+                f"Ya existe un estado diario para el RUT {rut} del {fecha} "
+                f"(origen {existente.id}). Elimínelo antes de volver a cargarlo."
+            )
 
         # Detectar formato real por header bytes (la extensión puede mentir)
         file_path = self._ensure_correct_extension(file_path)
 
-        # Intentar leer según extensión corregida
-        rows = None
+        # Se parsea ANTES de crear el origen: si el archivo es ilegible no debe
+        # quedar una fila huérfana sin movimientos en el listado.
         ext = os.path.splitext(file_path)[1].lower()
         if ext == ".xlsx":
             try:
@@ -84,6 +86,22 @@ class ImportService:
                 rows = self._read_xls(file_path)
             except Exception as e:
                 raise ValueError(f"No se pudo leer el archivo XLS: {e}")
+
+        if not rows:
+            raise ValueError(
+                "El archivo no contiene movimientos reconocibles. "
+                "Verifique que las columnas tengan los encabezados esperados."
+            )
+
+        origen = EstadoDiarioOrigen(
+            usuario_carga_id=usuario_id,
+            rut=rut,
+            fecha=fecha,
+            nombre_archivo=nombre_archivo or os.path.basename(file_path),
+            fecha_carga=datetime.now(timezone.utc),
+        )
+        self.db.add(origen)
+        self.db.flush()  # asigna origen.id sin cerrar la transacción
 
         count = 0
         for row in rows:

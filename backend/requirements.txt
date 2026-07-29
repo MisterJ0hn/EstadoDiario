@@ -11,3 +11,7 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
 openpyxl==3.1.5
 xlrd==2.0.1
+cryptography==44.0.0
+# python:3.12-slim no trae la base de zonas horarias del sistema y
+# ZoneInfo("America/Santiago") fallaría al calcular la hora programada
+tzdata==2024.2

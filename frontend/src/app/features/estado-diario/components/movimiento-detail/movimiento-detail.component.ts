@@ -295,7 +295,7 @@ export class MovimientoDetailComponent implements OnInit {
   }
 
   goBack(): void {
-    this.router.navigate(['/estado-diario/no-leidos']);
+    this.router.navigate(['/estado-diario/movimientos']);
   }
 
   onMarcarLeido(): void {

@@ -17,6 +17,8 @@ from app.models import (  # noqa: F401
     estado_diario,
     estado_diario_agenda,
     api_llamado_estado_diario,
+    configuracion_correo,
+    correo_log,
 )
 
 setup_logging()

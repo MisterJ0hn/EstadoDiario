@@ -1,5 +1,13 @@
+import os
+
 from pydantic_settings import BaseSettings
 from typing import List
+
+# Directorio de archivos subidos (upload web e ingesta por correo)
+UPLOAD_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "uploads",
+)
 
 
 class Settings(BaseSettings):
@@ -23,6 +31,13 @@ class Settings(BaseSettings):
 
     # Logging
     BACKEND_LOG_LEVEL: str = "INFO"
+
+    # Cifrado de la contraseña de la casilla de correo. Si queda vacío se
+    # deriva de BACKEND_SECRET_KEY (ver app/core/crypto.py).
+    MAIL_ENCRYPTION_KEY: str = ""
+
+    # Zona horaria usada para interpretar la hora de ejecución programada
+    TIMEZONE: str = "America/Santiago"
 
     @property
     def DATABASE_URL(self) -> str:

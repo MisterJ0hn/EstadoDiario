@@ -1,5 +1,10 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes, UrlTree } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
+import { adminGuard } from './core/guards/admin.guard';
+
+const redirectToTab = (tab: string): UrlTree =>
+  inject(Router).createUrlTree(['/estado-diario/movimientos'], { queryParams: { tab } });
 
 export const routes: Routes = [
   {
@@ -31,29 +36,17 @@ export const routes: Routes = [
               ),
           },
           {
-            path: 'no-leidos',
+            path: 'movimientos',
             loadComponent: () =>
               import('./features/estado-diario/components/movimientos-list/movimientos-list.component').then(
                 (m) => m.MovimientosListComponent
               ),
-            data: { filter: 'no-leidos' },
+            data: { filter: 'movimientos' },
           },
-          {
-            path: 'leidos',
-            loadComponent: () =>
-              import('./features/estado-diario/components/movimientos-list/movimientos-list.component').then(
-                (m) => m.MovimientosListComponent
-              ),
-            data: { filter: 'leidos' },
-          },
-          {
-            path: 'pendientes',
-            loadComponent: () =>
-              import('./features/estado-diario/components/movimientos-list/movimientos-list.component').then(
-                (m) => m.MovimientosListComponent
-              ),
-            data: { filter: 'pendientes' },
-          },
+          // Rutas antiguas: redirigen a la vista unificada con pestañas
+          { path: 'no-leidos', redirectTo: () => redirectToTab('no-leidos') },
+          { path: 'leidos', redirectTo: () => redirectToTab('leidos') },
+          { path: 'pendientes', redirectTo: () => redirectToTab('pendientes') },
           {
             path: 'origen/:id/movimientos',
             loadComponent: () =>
@@ -69,6 +62,27 @@ export const routes: Routes = [
                 (m) => m.MovimientoDetailComponent
               ),
           },
+        ],
+      },
+      {
+        path: 'configuracion',
+        canActivate: [adminGuard],
+        children: [
+          {
+            path: 'correo',
+            loadComponent: () =>
+              import('./features/configuracion/components/correo-config/correo-config.component').then(
+                (m) => m.CorreoConfigComponent
+              ),
+          },
+          {
+            path: 'correo/log',
+            loadComponent: () =>
+              import('./features/configuracion/components/correo-log/correo-log.component').then(
+                (m) => m.CorreoLogComponent
+              ),
+          },
+          { path: '', redirectTo: 'correo', pathMatch: 'full' },
         ],
       },
       { path: '', redirectTo: 'estado-diario', pathMatch: 'full' },

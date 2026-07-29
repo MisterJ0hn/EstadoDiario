@@ -7,6 +7,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
+from app.core.config import UPLOAD_DIR
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.usuario import Usuario
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/estado-diario", tags=["Estado Diario"])
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "uploads")
+# UPLOAD_DIR vive en app.core.config: lo comparte la ingesta por correo.
 
 
 # ── Origenes ──────────────────────────────────────────────

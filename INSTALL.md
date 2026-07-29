@@ -101,6 +101,57 @@ Si prefieres interfaz gráfica, instala pgAdmin nativo en el host y conéctalo a
 sudo apt install -y pgadmin4-desktop     # o pgadmin4-web
 ```
 
+## Importación por Correo (opcional)
+
+El sistema puede bajar solo los adjuntos de estado diario desde una casilla
+IMAP. La configuración vive en la UI (**Administración → Importar por Correo**,
+solo rol admin), no en archivos.
+
+### Gmail
+
+Gmail se conecta como IMAP estándar; no requiere OAuth ni proyecto en Google
+Cloud. Necesita una **contraseña de aplicación**:
+
+1. Activar la verificación en dos pasos en la cuenta de Google.
+2. Ir a https://myaccount.google.com/apppasswords y generar una contraseña.
+3. En la pantalla de configuración usar `imap.gmail.com`, puerto `993`, SSL, y
+   esa contraseña (no la de la cuenta).
+
+En cuentas de Google Workspace el administrador puede tener bloqueadas las
+contraseñas de aplicación; en ese caso hay que habilitarlas primero.
+
+### Clave de cifrado
+
+La contraseña de la casilla se guarda cifrada. Conviene fijar una clave propia
+en el `.env` antes de configurarla:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# copiar el resultado a MAIL_ENCRYPTION_KEY en .env
+```
+
+Si se cambia `MAIL_ENCRYPTION_KEY` (o `BACKEND_SECRET_KEY`, de la que se deriva
+cuando la primera está vacía), hay que volver a escribir la contraseña en la UI.
+
+### Revisión diaria
+
+La hora la fija el administrador en la UI. El crontab solo invoca el comando
+cada 15 minutos; el propio job decide si corresponde ejecutar:
+
+```bash
+# crontab -e  en el host
+*/15 * * * * docker exec ed_backend python -m app.jobs.revisar_correo >> /var/log/estado_diario_correo.log 2>&1
+```
+
+Para probarlo de inmediato, ignorando la hora configurada:
+
+```bash
+docker exec ed_backend python -m app.jobs.revisar_correo --forzar
+```
+
+Todo lo que ocurre queda en **Bitácora de Correo**, incluidos los mensajes
+descartados y los días en que no llegó ningún archivo.
+
 ## Datos Iniciales (Seeds)
 
 Al iniciar el backend, se crean automáticamente:
