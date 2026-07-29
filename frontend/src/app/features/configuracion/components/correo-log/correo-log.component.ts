@@ -16,7 +16,7 @@ import { CorreoLog, ResultadoCorreo } from '@core/models/configuracion-correo.mo
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Bitácora de Importación por Correo</h1>
           <p class="text-neutral-500 mt-1">
-            Registro de cada mensaje evaluado, incluidos los descartados
+            Muestra las importaciones; cambie el filtro para ver descartados, duplicados y errores
           </p>
         </div>
         <a routerLink="/configuracion/correo" class="btn-secondary shrink-0">Configuración</a>
@@ -108,7 +108,8 @@ export class CorreoLogComponent implements OnInit {
   private service = inject(ConfiguracionCorreoService);
   private notification = inject(NotificationService);
 
-  filtro = '';
+  /** Por defecto solo los importados; el resto se ve cambiando el filtro. */
+  filtro = 'importado';
   registros = signal<CorreoLog[]>([]);
   cargando = signal(true);
   page = signal(1);
