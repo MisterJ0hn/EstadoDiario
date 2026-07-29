@@ -114,7 +114,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                     <td>{{ m.tribunal || '-' }}</td>
                     <td>
                       @if (m.leido) {
-                        <span class="badge-success">Leído</span>
+                        <span class="badge-success">Resuelto</span>
                       } @else if (m.pendiente) {
                         <span
                           [class]="m.nivel_pendiente === 'alto' ? 'badge-danger' : m.nivel_pendiente === 'medio' ? 'badge-warning' : 'badge-info'"
@@ -137,7 +137,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                       <div class="flex items-center gap-1">
                         <a [routerLink]="['/estado-diario', m.id]" class="btn-outline btn-sm">Detalle</a>
                         @if (!m.leido) {
-                          <button (click)="onMarcarLeido(m.id)" class="btn-success btn-sm">Leído</button>
+                          <button (click)="onMarcarLeido(m.id)" class="btn-success btn-sm">Resolver</button>
                         }
                       </div>
                     </td>
@@ -180,7 +180,7 @@ export class MovimientosListComponent implements OnInit {
 
   readonly tabs: { key: Tab; label: string }[] = [
     { key: 'no-leidos', label: 'No Leídos' },
-    { key: 'leidos', label: 'Leídos' },
+    { key: 'leidos', label: 'Resueltos' },
     { key: 'pendientes', label: 'Pendientes' },
   ];
 
@@ -321,11 +321,11 @@ export class MovimientosListComponent implements OnInit {
   onMarcarLeido(id: number): void {
     this.service.marcarLeido(id).subscribe({
       next: () => {
-        this.notification.success('Marcado como leído');
+        this.notification.success('Marcado como resuelto');
         this.loadData();
         if (!this.isOrigen()) this.loadCounts();
       },
-      error: () => this.notification.error('Error al marcar como leído'),
+      error: () => this.notification.error('Error al marcar como resuelto'),
     });
   }
 }

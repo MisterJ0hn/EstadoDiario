@@ -82,6 +82,13 @@ export const routes: Routes = [
                 (m) => m.CorreoLogComponent
               ),
           },
+          {
+            path: 'usuarios',
+            loadComponent: () =>
+              import('./features/configuracion/components/usuarios/usuarios.component').then(
+                (m) => m.UsuariosComponent
+              ),
+          },
           { path: '', redirectTo: 'correo', pathMatch: 'full' },
         ],
       },

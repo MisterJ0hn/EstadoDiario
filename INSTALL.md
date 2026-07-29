@@ -76,6 +76,10 @@ docker exec ed_backend python -c "import socket; socket.create_connection(('host
 - **Admin**: usuario `admin`, password `admin123`
 - **Usuario**: usuario `usuario`, password `usuario123`
 
+Estas cuentas se crean solas en el primer arranque. Cambie la contraseña de
+`admin` apenas ingrese: desde **Administración → Usuarios** el administrador crea
+las cuentas del resto del equipo y edita las existentes.
+
 ### PostgreSQL (instalado en el host Linux)
 - **Host**: host.docker.internal (desde los contenedores) / localhost (desde el host)
 - **Puerto**: 5432

@@ -34,7 +34,7 @@ import { Movimiento, Agenda } from '@core/models/estado-diario.model';
           </div>
           <div class="flex gap-2">
             @if (!movimiento()!.leido) {
-              <button (click)="onMarcarLeido()" class="btn-success">Marcar como Leído</button>
+              <button (click)="onMarcarLeido()" class="btn-success">Marcar como Resuelto</button>
               <button (click)="showPendienteModal.set(true)" class="btn-warning">Marcar Pendiente</button>
             }
             <button (click)="showAgendaModal.set(true)" class="btn-outline">Agendar</button>
@@ -97,7 +97,7 @@ import { Movimiento, Agenda } from '@core/models/estado-diario.model';
               <div class="flex items-center gap-3">
                 <span class="text-sm text-neutral-500">Estado:</span>
                 @if (movimiento()!.leido) {
-                  <span class="badge-success">Leído</span>
+                  <span class="badge-success">Resuelto</span>
                 } @else if (movimiento()!.pendiente) {
                   <span class="badge-warning">Pendiente - {{ movimiento()!.nivel_pendiente }}</span>
                 } @else {
@@ -107,7 +107,7 @@ import { Movimiento, Agenda } from '@core/models/estado-diario.model';
 
               @if (movimiento()!.leido && movimiento()!.fecha_leido) {
                 <div>
-                  <span class="text-xs text-neutral-500">Fecha leído:</span>
+                  <span class="text-xs text-neutral-500">Fecha resolución:</span>
                   <span class="text-sm ml-2">{{ movimiento()!.fecha_leido | date:'dd/MM/yyyy HH:mm' }}</span>
                 </div>
               }
@@ -302,10 +302,10 @@ export class MovimientoDetailComponent implements OnInit {
     const id = this.movimiento()!.id;
     this.service.marcarLeido(id).subscribe({
       next: () => {
-        this.notification.success('Marcado como leído');
+        this.notification.success('Marcado como resuelto');
         this.loadDetalle(id);
       },
-      error: () => this.notification.error('Error al marcar como leído'),
+      error: () => this.notification.error('Error al marcar como resuelto'),
     });
   }
 
