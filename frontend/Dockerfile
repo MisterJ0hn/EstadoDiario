@@ -11,6 +11,7 @@ FROM nginx:alpine
 COPY --from=build /app/dist/estado-diario-crm/browser /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Crear el archivo PID y dar permisos al usuario nginx en las rutas necesarias
+USER root
 RUN touch /tmp/nginx.pid && \
     chown -R nginx:nginx /tmp/nginx.pid /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
 
