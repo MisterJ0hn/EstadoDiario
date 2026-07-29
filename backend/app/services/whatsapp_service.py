@@ -61,8 +61,8 @@ class WhatsappService:
             try:
                 movimiento = agenda.estado_diario
                 mensaje = client.messages.create(
-                    from_=config.twilio_numero_whatsapp,
-                    to=f"whatsapp:{agenda.whatsapp_telefono}",
+                    from_=self._a_canal_whatsapp(config.twilio_numero_whatsapp),
+                    to=self._a_canal_whatsapp(agenda.whatsapp_telefono),
                     content_sid=config.plantilla_content_sid,
                     content_variables=self._variables_plantilla(agenda, movimiento),
                 )
@@ -88,6 +88,17 @@ class WhatsappService:
             "enviados": enviados,
             "errores": errores,
         }
+
+    @staticmethod
+    def _a_canal_whatsapp(numero: str) -> str:
+        """Normaliza a "whatsapp:+E164": admite que el número ya venga con
+        el prefijo, sin él, o con mayúsculas/espacios distintos. El SID de
+        Twilio (error 63007, "no Channel with the specified From address")
+        aparece justamente si falta este prefijo."""
+        numero = numero.strip()
+        if numero.lower().startswith("whatsapp:"):
+            numero = numero.split(":", 1)[1].strip()
+        return f"whatsapp:{numero}"
 
     @staticmethod
     def _variables_plantilla(agenda: EstadoDiarioAgenda, movimiento) -> str:
