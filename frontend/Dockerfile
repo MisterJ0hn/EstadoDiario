@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build -- --configuration=production
 
 # Stage 2: Serve with Nginx (Usando Debian Slim oficial para Nginx)
-FROM nginx:alpine-slim
+FROM nginx:bookworm
 
 # 1. Copiar los archivos de Angular
 COPY --from=build /app/dist/estado-diario-crm/browser /usr/share/nginx/html
