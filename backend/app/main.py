@@ -63,7 +63,11 @@ app.include_router(api_router)
 
 # Base.metadata.create_all() crea tablas nuevas pero nunca altera una tabla
 # que ya existe. Las columnas agregadas a tablas viejas necesitan este
-# ALTER TABLE explícito (idempotente: no falla si la columna ya está).
+# ALTER TABLE explícito. El servidor de producción corre PostgreSQL 9.2
+# (sin soporte hace años), que NO entiende "ADD COLUMN IF NOT EXISTS" ni
+# "CREATE INDEX IF NOT EXISTS" (llegaron en 9.6 y 9.5 respectivamente), así
+# que la idempotencia se resuelve a mano consultando el catálogo antes de
+# cada ALTER/CREATE en vez de usar esas cláusulas.
 _COLUMNAS_NUEVAS = [
     ("usuario", "telefono", "VARCHAR(30)"),
     ("estado_diario_agenda", "nivel", "VARCHAR(20) DEFAULT 'medio'"),
@@ -87,19 +91,38 @@ _INDICES_NUEVOS = [
 ]
 
 
+def _columna_existe(conn, tabla: str, columna: str) -> bool:
+    fila = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = :tabla AND column_name = :columna"
+        ),
+        {"tabla": tabla, "columna": columna},
+    ).first()
+    return fila is not None
+
+
+def _indice_existe(conn, nombre: str) -> bool:
+    fila = conn.execute(
+        text("SELECT 1 FROM pg_indexes WHERE indexname = :nombre"),
+        {"nombre": nombre},
+    ).first()
+    return fila is not None
+
+
 def _aplicar_columnas_nuevas() -> None:
     with engine.begin() as conn:
         for tabla, columna, tipo_sql in _COLUMNAS_NUEVAS:
             try:
-                conn.execute(
-                    text(f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {columna} {tipo_sql}")
-                )
+                if not _columna_existe(conn, tabla, columna):
+                    conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo_sql}"))
             except Exception as e:
                 logger.error("No se pudo agregar %s.%s: %s", tabla, columna, e)
 
         for nombre, tabla, columna in _INDICES_NUEVOS:
             try:
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {nombre} ON {tabla} ({columna})"))
+                if not _indice_existe(conn, nombre):
+                    conn.execute(text(f"CREATE INDEX {nombre} ON {tabla} ({columna})"))
             except Exception as e:
                 logger.error("No se pudo crear el índice %s: %s", nombre, e)
 
