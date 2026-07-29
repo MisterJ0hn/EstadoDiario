@@ -1,25 +1,20 @@
-# Stage 1: Build
-FROM node:20-alpine AS build
+# Stage 1: Build (Usando Debian Slim)
+FROM node:20-slim AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npm run build -- --configuration=production
 
-# Stage 2: Serve with Nginx
-#FROM nginx:alpine
-FROM nginxinc/nginx-unprivileged:alpine
+# Stage 2: Serve with Nginx (Usando Debian Slim ejecutado como root)
+FROM nginx:slim
 
-# 1. Modificar el archivo de configuración maestro de Nginx para usar /tmp/nginx.pid de forma global
-#USER root
-#RUN sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|g' /etc/nginx/nginx.conf
+# 1. Copiar los archivos de Angular
 COPY --from=build /app/dist/estado-diario-crm/browser /usr/share/nginx/html
+
+# 2. Copiar tu configuración de Nginx
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-# Crear el archivo PID y dar permisos al usuario nginx en las rutas necesarias
-#RUN chown -R nginx:nginx /run /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
 
-
-# Cambiar al usuario sin privilegios antes de correr Nginx
-#USER nginx
+# 3. Forzar explicitamente el puerto tradicional
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
