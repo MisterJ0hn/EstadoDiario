@@ -77,16 +77,28 @@ class MarcarPendienteRequest(BaseModel):
     username: str | None = None
     mensaje: str | None = None
     fecha_hora: str | None = None
+    # Recordatorio por WhatsApp (Twilio): opcional, requiere mensaje+fecha_hora
+    # (es decir, que además se esté creando la entrada de agenda).
+    notificar_whatsapp: bool = False
+    whatsapp_telefono: str | None = None
+    fecha_hora_whatsapp: str | None = None
 
 
-# ── Agenda ────────────────────────────────────────────────
+# ── Agenda / Recordatorio ─────────────────────────────────
 class AgendaResponse(BaseModel):
     id: int
     detalle: str
     fecha_hora: datetime
     fecha_hora_registro: datetime
+    nivel: str = "medio"
+    finalizado: bool = False
+    fecha_finalizacion: datetime | None = None
+    notificar_whatsapp: bool = False
+    fecha_hora_whatsapp: datetime | None = None
     enviado: bool
     fecha_envio: datetime | None = None
+    google_event_id: str | None = None
+    google_sync_error: str | None = None
     usuario_registro: str | None = None
 
     class Config:
@@ -103,6 +115,28 @@ class AgendaListResponse(BaseModel):
     exito: bool = True
     total: int
     agendas: list[AgendaResponse]
+
+
+class FinalizarAgendaRequest(BaseModel):
+    marcar_resuelto: bool = False
+
+
+class RecordatorioVigenteResponse(BaseModel):
+    id: int
+    estado_diario_id: int
+    detalle: str
+    fecha_hora: datetime
+    nivel: str
+    usuario_registro: str | None = None
+    movimiento_caratulado: str | None = None
+    movimiento_rol: str | None = None
+    movimiento_tribunal: str | None = None
+
+
+class CalendarioResponse(BaseModel):
+    exito: bool = True
+    total: int
+    recordatorios: list[RecordatorioVigenteResponse]
 
 
 # ── Webhook ───────────────────────────────────────────────

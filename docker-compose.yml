@@ -32,6 +32,7 @@ services:
       - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL}
       - MAIL_ENCRYPTION_KEY=${MAIL_ENCRYPTION_KEY:-}
       - TIMEZONE=${TIMEZONE:-America/Santiago}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:8090}
     ports:
       - "${BACKEND_PORT:-8091}:8000"
     volumes:

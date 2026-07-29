@@ -45,6 +45,7 @@ class UsuarioService:
             password_hash=get_password_hash(datos.password),
             nombre=datos.nombre,
             apellido=datos.apellido,
+            telefono=datos.telefono,
             rol=datos.rol,
             activo=datos.activo,
         )
@@ -71,6 +72,7 @@ class UsuarioService:
         usuario.email = datos.email
         usuario.nombre = datos.nombre
         usuario.apellido = datos.apellido
+        usuario.telefono = datos.telefono
         usuario.rol = datos.rol
         usuario.activo = datos.activo
 

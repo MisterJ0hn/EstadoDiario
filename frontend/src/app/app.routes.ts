@@ -43,6 +43,11 @@ export const routes: Routes = [
               ),
             data: { filter: 'movimientos' },
           },
+          {
+            path: 'calendario',
+            loadComponent: () =>
+              import('./features/calendario/calendario.component').then((m) => m.CalendarioComponent),
+          },
           // Rutas antiguas: redirigen a la vista unificada con pestañas
           { path: 'no-leidos', redirectTo: () => redirectToTab('no-leidos') },
           { path: 'leidos', redirectTo: () => redirectToTab('leidos') },
@@ -63,6 +68,11 @@ export const routes: Routes = [
               ),
           },
         ],
+      },
+      {
+        path: 'perfil',
+        loadComponent: () =>
+          import('./features/perfil/perfil.component').then((m) => m.PerfilComponent),
       },
       {
         path: 'configuracion',
@@ -87,6 +97,20 @@ export const routes: Routes = [
             loadComponent: () =>
               import('./features/configuracion/components/usuarios/usuarios.component').then(
                 (m) => m.UsuariosComponent
+              ),
+          },
+          {
+            path: 'google-calendar',
+            loadComponent: () =>
+              import('./features/configuracion/components/google-config/google-config.component').then(
+                (m) => m.GoogleConfigComponent
+              ),
+          },
+          {
+            path: 'whatsapp',
+            loadComponent: () =>
+              import('./features/configuracion/components/whatsapp-config/whatsapp-config.component').then(
+                (m) => m.WhatsappConfigComponent
               ),
           },
           { path: '', redirectTo: 'correo', pathMatch: 'full' },

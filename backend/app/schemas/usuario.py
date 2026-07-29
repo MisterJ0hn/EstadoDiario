@@ -31,6 +31,7 @@ class UsuarioResponse(BaseModel):
     email: str
     nombre: str | None
     apellido: str | None
+    telefono: str | None = None
     rol: str
     activo: bool
     fecha_creacion: datetime
@@ -50,6 +51,8 @@ class UsuarioCreate(_ConEmail):
     password: str = Field(..., min_length=8, max_length=128)
     nombre: Optional[str] = Field(default=None, max_length=200)
     apellido: Optional[str] = Field(default=None, max_length=200)
+    # Número por defecto para recordatorios de WhatsApp; editable al crear cada uno.
+    telefono: Optional[str] = Field(default=None, max_length=30)
     rol: Rol = "usuario"
     activo: bool = True
 
@@ -61,5 +64,6 @@ class UsuarioUpdate(_ConEmail):
     password: Optional[str] = Field(default=None, min_length=8, max_length=128)
     nombre: Optional[str] = Field(default=None, max_length=200)
     apellido: Optional[str] = Field(default=None, max_length=200)
+    telefono: Optional[str] = Field(default=None, max_length=30)
     rol: Rol = "usuario"
     activo: bool = True

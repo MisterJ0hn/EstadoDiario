@@ -17,6 +17,8 @@ from app.schemas.estado_diario import (
     MarcarPendienteRequest,
     AgendaCreateRequest,
     AgendaListResponse,
+    CalendarioResponse,
+    FinalizarAgendaRequest,
     WebhookResponse,
     EstadoDiarioOrigenListResponse,
     EstadoDiarioOrigenResponse,
@@ -238,6 +240,20 @@ def pendientes(
     return service.get_movimientos_pendientes(jurisdiccion, fecha, rut, page, limit)
 
 
+@router.get(
+    "/calendario",
+    response_model=CalendarioResponse,
+    summary="Recordatorios vigentes (no finalizados) para el calendario",
+)
+def calendario(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Admin ve los recordatorios de todos; cada usuario ve solo los suyos."""
+    service = EstadoDiarioService(db)
+    return service.get_calendario(current_user)
+
+
 # ── Detalle ───────────────────────────────────────────────
 
 @router.get(
@@ -281,7 +297,8 @@ def marcar_pendiente(
 ):
     service = EstadoDiarioService(db)
     return service.marcar_pendiente(
-        estado_diario_id, body.nivel, body.username, body.mensaje, body.fecha_hora
+        estado_diario_id, body.nivel, body.username, body.mensaje, body.fecha_hora,
+        body.notificar_whatsapp, body.whatsapp_telefono, body.fecha_hora_whatsapp,
     )
 
 
@@ -313,6 +330,20 @@ def crear_agenda(
 ):
     service = EstadoDiarioService(db)
     return service.crear_agenda(estado_diario_id, body.detalle, body.fecha_hora, body.username)
+
+
+@router.post(
+    "/agendas/{agenda_id}/finalizar",
+    summary="Finalizar un recordatorio (con opción de marcar el movimiento resuelto)",
+)
+def finalizar_agenda(
+    agenda_id: int,
+    body: FinalizarAgendaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    service = EstadoDiarioService(db)
+    return service.finalizar_agenda(agenda_id, body.marcar_resuelto, current_user)
 
 
 # ── Webhook Twilio ────────────────────────────────────────

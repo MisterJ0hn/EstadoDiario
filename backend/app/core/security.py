@@ -42,3 +42,13 @@ def decode_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+
+def create_state_token(data: dict, expires_delta: timedelta) -> str:
+    """Token corto para el parámetro `state` de un flujo OAuth de terceros
+    (ej. Google Calendar). No es un access/refresh token: lleva su propio
+    `type` para que decode_token + chequeo de `type` no lo confunda con uno."""
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + expires_delta
+    to_encode.update({"exp": expire, "type": "oauth_state"})
+    return jwt.encode(to_encode, settings.BACKEND_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)

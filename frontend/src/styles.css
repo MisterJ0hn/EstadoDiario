@@ -104,6 +104,15 @@
   .badge-neutral {
     @apply badge bg-neutral-100 text-neutral-600;
   }
+  /* Niveles de urgencia de recordatorios: bajo=naranjo, medio=amarillo,
+     alto=rojo (badge-danger). No se reutiliza `warning` (ámbar) para
+     "amarillo": queda demasiado cerca del naranjo nuevo. */
+  .badge-orange {
+    @apply badge bg-orange-100 text-orange-700;
+  }
+  .badge-yellow {
+    @apply badge bg-yellow-100 text-yellow-700;
+  }
 
   /* ── Alerts ──────────────────────────── */
   .alert {

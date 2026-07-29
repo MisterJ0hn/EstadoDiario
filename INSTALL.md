@@ -156,6 +156,39 @@ docker exec ed_backend python -m app.jobs.revisar_correo --forzar
 Todo lo que ocurre queda en **Bitácora de Correo**, incluidos los mensajes
 descartados y los días en que no llegó ningún archivo.
 
+## Recordatorios: Google Calendar y WhatsApp (opcional)
+
+Cada abogado conecta su propio Google Calendar desde **Mi Perfil** (OAuth
+individual, sin organización de Google Workspace). El administrador
+configura las credenciales del proyecto de Google y de Twilio desde
+**Administración → Google Calendar** y **Administración → WhatsApp**; ambas
+viven en la base de datos, cifradas, igual que la contraseña de correo — no
+van en el `.env`.
+
+Variables de entorno necesarias: solo `PUBLIC_BASE_URL` (la URL pública del
+sitio, sin barra final), usada para armar el redirect URI de Google
+(`PUBLIC_BASE_URL/api/v1/google-calendar/callback`) — hay que registrar ese
+mismo redirect URI en la consola de Google Cloud al crear el Client ID.
+
+**Importante para producción**: al ser una app sin organización de Google
+Workspace, mientras el proyecto de Google Cloud esté en modo *Testing* los
+`refresh_token` caducan a los 7 días y cada abogado tendría que reconectar
+semanalmente. Hay que publicar la app (*In production* en la pantalla de
+consentimiento OAuth) para uso real; sin verificar ante Google se muestra un
+aviso "app no verificada" (se puede continuar) y hay un tope aproximado de
+100 cuentas conectadas.
+
+Envío de WhatsApp — cron cada 5 minutos, revisa qué recordatorios ya
+llegaron a su fecha/hora de envío:
+
+```bash
+# crontab -e  en el host
+*/5 * * * * docker exec ed_backend python -m app.jobs.enviar_recordatorios_whatsapp >> /var/log/estado_diario_whatsapp.log 2>&1
+```
+
+Requiere una cuenta Twilio con WhatsApp Business aprobado y una plantilla de
+mensaje ya aprobada (Content SID), pegados en **Administración → WhatsApp**.
+
 ## Datos Iniciales (Seeds)
 
 Al iniciar el backend, se crean automáticamente:

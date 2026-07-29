@@ -6,6 +6,7 @@ export interface Usuario {
   email: string;
   nombre: string | null;
   apellido: string | null;
+  telefono: string | null;
   rol: RolUsuario;
   activo: boolean;
   fecha_creacion: string;
@@ -23,6 +24,7 @@ export interface UsuarioCreate {
   password: string;
   nombre: string | null;
   apellido: string | null;
+  telefono?: string | null;
   rol: RolUsuario;
   activo: boolean;
 }
@@ -33,6 +35,7 @@ export interface UsuarioUpdate {
   password?: string | null;
   nombre: string | null;
   apellido: string | null;
+  telefono?: string | null;
   rol: RolUsuario;
   activo: boolean;
 }

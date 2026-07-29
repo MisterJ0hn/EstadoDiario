@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, tap } from 'rxjs';
 import { environment } from '@env/environment';
-import { LoginRequest, TokenResponse, UserInfo } from '../models/auth.model';
+import { ActualizarPerfilRequest, LoginRequest, TokenResponse, UserInfo } from '../models/auth.model';
 
 const TOKEN_KEY = 'ed_access_token';
 const REFRESH_KEY = 'ed_refresh_token';
@@ -53,6 +53,15 @@ export class AuthService {
       },
       error: () => this.logout(),
     });
+  }
+
+  actualizarPerfil(datos: ActualizarPerfilRequest): Observable<UserInfo> {
+    return this.http.put<UserInfo>(`${this.apiUrl}/me`, datos).pipe(
+      tap((user) => {
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+        this._user.set(user);
+      })
+    );
   }
 
   logout(): void {

@@ -116,9 +116,17 @@ import { RolUsuario, Usuario } from '@core/models/usuario.model';
               </div>
             </div>
 
-            <div>
-              <label class="form-label">Correo electrónico <span class="text-danger-600">*</span></label>
-              <input type="email" class="form-input" [(ngModel)]="modelo.email" autocomplete="off" />
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="form-label">Correo electrónico <span class="text-danger-600">*</span></label>
+                <input type="email" class="form-input" [(ngModel)]="modelo.email" autocomplete="off" />
+              </div>
+              <div>
+                <label class="form-label">Teléfono</label>
+                <input type="text" class="form-input" [(ngModel)]="modelo.telefono"
+                       placeholder="+56912345678" autocomplete="off" />
+                <p class="text-xs text-neutral-400 mt-1">Número por defecto para recordatorios de WhatsApp.</p>
+              </div>
             </div>
 
             <div>
@@ -195,6 +203,7 @@ export class UsuariosComponent implements OnInit {
       password: '',
       nombre: '',
       apellido: '',
+      telefono: '',
       rol: 'usuario' as RolUsuario,
       activo: true,
     };
@@ -228,6 +237,7 @@ export class UsuariosComponent implements OnInit {
       password: '',
       nombre: u.nombre ?? '',
       apellido: u.apellido ?? '',
+      telefono: u.telefono ?? '',
       rol: u.rol,
       activo: u.activo,
     };
@@ -271,6 +281,7 @@ export class UsuariosComponent implements OnInit {
       email: this.modelo.email.trim(),
       nombre: this.modelo.nombre.trim() || null,
       apellido: this.modelo.apellido.trim() || null,
+      telefono: this.modelo.telefono.trim() || null,
       rol: this.modelo.rol,
       activo: this.modelo.activo,
     };

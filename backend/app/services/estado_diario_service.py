@@ -13,6 +13,7 @@ from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_agenda_repository import EstadoDiarioAgendaRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from app.repositories.api_log_repository import ApiLogRepository
+from app.services.google_calendar_service import GoogleCalendarService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class EstadoDiarioService:
         self.agenda_repo = EstadoDiarioAgendaRepository(db)
         self.user_repo = UsuarioRepository(db)
         self.log_repo = ApiLogRepository(db)
+        self.google_service = GoogleCalendarService(db)
 
     def _create_log(self, endpoint: str, request_data: str = "") -> ApiLlamadoEstadoDiario:
         log = ApiLlamadoEstadoDiario(
@@ -139,10 +141,20 @@ class EstadoDiarioService:
         self._save_log(log, True, json.dumps({"exito": True}))
         return {"exito": True}
 
+    @staticmethod
+    def _parse_fecha_hora(valor: str) -> datetime:
+        try:
+            return datetime.strptime(valor, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return datetime.fromisoformat(valor)
+
     def marcar_pendiente(self, estado_diario_id: int, nivel: str, username: Optional[str] = None,
-                         mensaje: Optional[str] = None, fecha_hora: Optional[str] = None):
+                         mensaje: Optional[str] = None, fecha_hora: Optional[str] = None,
+                         notificar_whatsapp: bool = False, whatsapp_telefono: Optional[str] = None,
+                         fecha_hora_whatsapp: Optional[str] = None):
         log = self._create_log("pendiente", json.dumps({
-            "nivel": nivel, "username": username, "mensaje": mensaje, "fecha_hora": fecha_hora
+            "nivel": nivel, "username": username, "mensaje": mensaje, "fecha_hora": fecha_hora,
+            "notificar_whatsapp": notificar_whatsapp,
         }))
 
         ed = self.repo.find_by_id(estado_diario_id)
@@ -157,6 +169,13 @@ class EstadoDiarioService:
             raise BadRequestException("El campo nivel es obligatorio y debe ser bajo, medio o alto")
 
         agendar = bool(mensaje and mensaje.strip() and fecha_hora)
+
+        if notificar_whatsapp and not agendar:
+            self._save_log(log, False, error="WhatsApp requiere mensaje y fecha_hora")
+            raise BadRequestException("Para notificar por WhatsApp debe indicar mensaje y fecha_hora")
+        if notificar_whatsapp and not fecha_hora_whatsapp:
+            self._save_log(log, False, error="Falta fecha_hora_whatsapp")
+            raise BadRequestException("Indique la fecha y hora de envío del WhatsApp")
 
         usuario = None
         if agendar or username:
@@ -174,24 +193,84 @@ class EstadoDiarioService:
         ed.fecha_pendiente = datetime.now(timezone.utc)
         ed.usuario_pendiente = usuario
 
+        agenda = None
         if agendar:
-            try:
-                fecha_hora_dt = datetime.strptime(fecha_hora, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                fecha_hora_dt = datetime.fromisoformat(fecha_hora)
-
             agenda = EstadoDiarioAgenda(
                 estado_diario=ed,
                 detalle=mensaje.strip(),
-                fecha_hora=fecha_hora_dt,
+                fecha_hora=self._parse_fecha_hora(fecha_hora),
+                nivel=nivel,
                 usuario_registro=usuario,
                 fecha_hora_registro=datetime.now(timezone.utc),
+                notificar_whatsapp=notificar_whatsapp,
+                whatsapp_telefono=(whatsapp_telefono or (usuario.telefono if usuario else None))
+                    if notificar_whatsapp else None,
+                fecha_hora_whatsapp=self._parse_fecha_hora(fecha_hora_whatsapp)
+                    if notificar_whatsapp else None,
             )
             self.db.add(agenda)
 
         self.db.commit()
+
+        # Sincronización con Google Calendar: best-effort, no debe romper la
+        # respuesta si Google falla o el usuario no conectó su cuenta.
+        if agenda is not None and usuario is not None:
+            self.db.refresh(agenda)
+            self.google_service.crear_o_actualizar_evento(agenda, usuario)
+            self.db.commit()
+
         self._save_log(log, True, json.dumps({"exito": True}))
         return {"exito": True}
+
+    def finalizar_agenda(self, agenda_id: int, marcar_resuelto: bool, current_user):
+        log = self._create_log("finalizar_agenda", json.dumps({
+            "agenda_id": agenda_id, "marcar_resuelto": marcar_resuelto,
+        }))
+
+        agenda = self.agenda_repo.find_by_id(agenda_id)
+        if not agenda:
+            self._save_log(log, False, error="Agenda no encontrada")
+            raise NotFoundException("Recordatorio no encontrado")
+
+        log.estado_diario_id = agenda.estado_diario_id
+
+        agenda.finalizado = True
+        agenda.fecha_finalizacion = datetime.now(timezone.utc)
+        agenda.usuario_finaliza_id = current_user.id
+
+        if marcar_resuelto:
+            # Mismo comportamiento que el botón "Resolver" del resto de la
+            # app: no se duplica lógica, solo se reutiliza.
+            self.marcar_leido(agenda.estado_diario_id, current_user.id)
+
+        # El evento se sincroniza en el calendario de quien lo creó, no en
+        # el de quien lo finaliza (puede ser un admin finalizando por otro).
+        dueno = agenda.usuario_registro or current_user
+        self.google_service.finalizar_evento(agenda, dueno)
+
+        self.db.commit()
+        self._save_log(log, True, json.dumps({"exito": True}))
+        return {"exito": True}
+
+    def get_calendario(self, current_user):
+        usuario_id = None if current_user.rol == "admin" else current_user.id
+        agendas = self.agenda_repo.find_vigentes(usuario_id)
+
+        recordatorios = [
+            {
+                "id": a.id,
+                "estado_diario_id": a.estado_diario_id,
+                "detalle": a.detalle,
+                "fecha_hora": a.fecha_hora.isoformat(),
+                "nivel": a.nivel,
+                "usuario_registro": a.usuario_registro.username if a.usuario_registro else None,
+                "movimiento_caratulado": a.estado_diario.caratulado if a.estado_diario else None,
+                "movimiento_rol": a.estado_diario.rol if a.estado_diario else None,
+                "movimiento_tribunal": a.estado_diario.tribunal if a.estado_diario else None,
+            }
+            for a in agendas
+        ]
+        return {"exito": True, "total": len(recordatorios), "recordatorios": recordatorios}
 
     def crear_agenda(self, estado_diario_id: int, detalle: str, fecha_hora_str: str,
                      username: Optional[str] = None):
@@ -244,8 +323,15 @@ class EstadoDiarioService:
                 "detalle": a.detalle,
                 "fecha_hora": a.fecha_hora.isoformat() if a.fecha_hora else None,
                 "fecha_hora_registro": a.fecha_hora_registro.isoformat() if a.fecha_hora_registro else None,
+                "nivel": a.nivel,
+                "finalizado": a.finalizado,
+                "fecha_finalizacion": a.fecha_finalizacion.isoformat() if a.fecha_finalizacion else None,
+                "notificar_whatsapp": a.notificar_whatsapp,
+                "fecha_hora_whatsapp": a.fecha_hora_whatsapp.isoformat() if a.fecha_hora_whatsapp else None,
                 "enviado": a.enviado,
                 "fecha_envio": a.fecha_envio.isoformat() if a.fecha_envio else None,
+                "google_event_id": a.google_event_id,
+                "google_sync_error": a.google_sync_error,
                 "usuario_registro": a.usuario_registro.username if a.usuario_registro else None,
             }
             for a in agendas

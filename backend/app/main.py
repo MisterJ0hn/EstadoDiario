@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.logging_config import setup_logging
@@ -19,6 +20,9 @@ from app.models import (  # noqa: F401
     api_llamado_estado_diario,
     configuracion_correo,
     correo_log,
+    google_credencial,
+    configuracion_google,
+    configuracion_whatsapp,
 )
 
 setup_logging()
@@ -57,10 +61,54 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(api_router)
 
 
+# Base.metadata.create_all() crea tablas nuevas pero nunca altera una tabla
+# que ya existe. Las columnas agregadas a tablas viejas necesitan este
+# ALTER TABLE explícito (idempotente: no falla si la columna ya está).
+_COLUMNAS_NUEVAS = [
+    ("usuario", "telefono", "VARCHAR(30)"),
+    ("estado_diario_agenda", "nivel", "VARCHAR(20) DEFAULT 'medio'"),
+    ("estado_diario_agenda", "finalizado", "BOOLEAN DEFAULT FALSE"),
+    ("estado_diario_agenda", "fecha_finalizacion", "TIMESTAMPTZ"),
+    ("estado_diario_agenda", "usuario_finaliza_id", "INTEGER REFERENCES usuario(id)"),
+    ("estado_diario_agenda", "notificar_whatsapp", "BOOLEAN DEFAULT FALSE"),
+    ("estado_diario_agenda", "whatsapp_telefono", "VARCHAR(30)"),
+    ("estado_diario_agenda", "fecha_hora_whatsapp", "TIMESTAMPTZ"),
+    ("estado_diario_agenda", "google_event_id", "VARCHAR(255)"),
+    ("estado_diario_agenda", "google_calendar_id", "VARCHAR(255)"),
+    ("estado_diario_agenda", "google_sync_error", "TEXT"),
+]
+
+# create_all() tampoco crea índices en columnas agregadas a tablas
+# existentes (solo en tablas nuevas). Estos calzan con index=True en el
+# modelo de EstadoDiarioAgenda.
+_INDICES_NUEVOS = [
+    ("ix_estado_diario_agenda_finalizado", "estado_diario_agenda", "finalizado"),
+    ("ix_estado_diario_agenda_usuario_finaliza_id", "estado_diario_agenda", "usuario_finaliza_id"),
+]
+
+
+def _aplicar_columnas_nuevas() -> None:
+    with engine.begin() as conn:
+        for tabla, columna, tipo_sql in _COLUMNAS_NUEVAS:
+            try:
+                conn.execute(
+                    text(f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {columna} {tipo_sql}")
+                )
+            except Exception as e:
+                logger.error("No se pudo agregar %s.%s: %s", tabla, columna, e)
+
+        for nombre, tabla, columna in _INDICES_NUEVOS:
+            try:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {nombre} ON {tabla} ({columna})"))
+            except Exception as e:
+                logger.error("No se pudo crear el índice %s: %s", nombre, e)
+
+
 @app.on_event("startup")
 def on_startup():
     logger.info("Creando tablas en la base de datos...")
     Base.metadata.create_all(bind=engine)
+    _aplicar_columnas_nuevas()
     logger.info("Aplicación iniciada - Ambiente: %s", settings.APP_ENV)
 
     # Seed initial data

@@ -16,6 +16,11 @@ export interface UserInfo {
   email: string;
   nombre: string | null;
   apellido: string | null;
+  telefono: string | null;
   rol: string;
   activo: boolean;
+}
+
+export interface ActualizarPerfilRequest {
+  telefono: string | null;
 }

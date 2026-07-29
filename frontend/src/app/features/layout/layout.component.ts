@@ -81,6 +81,15 @@ import { NotificationService } from '@core/services/notification.service';
             @if (showLabels()) { <span>Movimientos</span> }
           </a>
 
+          <a routerLink="/estado-diario/calendario" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
+             (click)="mobileOpen.set(false)"
+             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            @if (showLabels()) { <span>Calendario</span> }
+          </a>
+
           @if (auth.isAdmin()) {
             <div class="pt-4 mt-2 border-t border-neutral-700">
               @if (showLabels()) {
@@ -112,20 +121,43 @@ import { NotificationService } from '@core/services/notification.service';
                 </svg>
                 @if (showLabels()) { <span>Bitácora de Correo</span> }
               </a>
+
+              <a routerLink="/configuracion/google-calendar" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
+                 (click)="mobileOpen.set(false)"
+                 class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                @if (showLabels()) { <span>Google Calendar</span> }
+              </a>
+
+              <a routerLink="/configuracion/whatsapp" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
+                 (click)="mobileOpen.set(false)"
+                 class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                @if (showLabels()) { <span>WhatsApp</span> }
+              </a>
             </div>
           }
         </nav>
 
         <div class="border-t border-neutral-700 p-4 shrink-0">
-          <div class="flex items-center gap-3">
+          <a routerLink="/perfil" (click)="mobileOpen.set(false)" class="flex items-center gap-3 group">
             <div class="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-sm font-bold shrink-0">
               {{ (auth.user()?.nombre || 'U')[0] | uppercase }}
             </div>
             @if (showLabels()) {
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium truncate">{{ auth.user()?.nombre }} {{ auth.user()?.apellido }}</p>
+                <p class="text-sm font-medium truncate group-hover:underline">{{ auth.user()?.nombre }} {{ auth.user()?.apellido }}</p>
                 <p class="text-xs text-neutral-400 truncate">{{ auth.user()?.rol }}</p>
               </div>
+            }
+          </a>
+          <div class="flex items-center gap-3 mt-1">
+            @if (showLabels()) {
+              <div class="flex-1"></div>
               <button (click)="auth.logout()" class="text-neutral-400 hover:text-white" title="Cerrar sesión">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

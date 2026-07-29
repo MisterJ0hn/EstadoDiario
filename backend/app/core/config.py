@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     # Zona horaria usada para interpretar la hora de ejecución programada
     TIMEZONE: str = "America/Santiago"
 
+    # URL pública del sitio (sin barra final). Se usa para armar el
+    # redirect_uri de Google OAuth y para volver al frontend tras conectar.
+    # El Client ID/Secret de Google viven en la BD (ConfiguracionGoogle),
+    # no acá: esto solo dice dónde vive la app.
+    PUBLIC_BASE_URL: str = "http://localhost:8090"
+
+    @property
+    def google_redirect_uri(self) -> str:
+        return f"{self.PUBLIC_BASE_URL}/api/v1/google-calendar/callback"
+
     @property
     def DATABASE_URL(self) -> str:
         # client_encoding explícito: si la BD del host se creó con encoding

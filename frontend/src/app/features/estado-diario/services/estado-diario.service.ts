@@ -9,6 +9,9 @@ import {
   AgendaListResponse,
   JurisdiccionListResponse,
   ApiResponse,
+  CalendarioResponse,
+  FinalizarAgendaRequest,
+  MarcarPendienteRequest,
 } from '@core/models/estado-diario.model';
 
 @Injectable({ providedIn: 'root' })
@@ -74,14 +77,11 @@ export class EstadoDiarioService {
     return this.http.post<ApiResponse>(`${this.apiUrl}/${id}/leido`, {});
   }
 
-  marcarPendiente(
-    id: number,
-    data: { nivel: string; username?: string; mensaje?: string; fecha_hora?: string }
-  ): Observable<ApiResponse> {
+  marcarPendiente(id: number, data: MarcarPendienteRequest): Observable<ApiResponse> {
     return this.http.post<ApiResponse>(`${this.apiUrl}/${id}/pendiente`, data);
   }
 
-  // ── Agendas ────────────────────────────
+  // ── Agendas / Recordatorios ─────────────
   getAgendas(estadoDiarioId: number): Observable<AgendaListResponse> {
     return this.http.get<AgendaListResponse>(`${this.apiUrl}/${estadoDiarioId}/agendas`);
   }
@@ -91,5 +91,13 @@ export class EstadoDiarioService {
     data: { detalle: string; fecha_hora: string; username?: string }
   ): Observable<ApiResponse & { id?: number }> {
     return this.http.post<ApiResponse & { id?: number }>(`${this.apiUrl}/${estadoDiarioId}/agenda`, data);
+  }
+
+  finalizarAgenda(agendaId: number, data: FinalizarAgendaRequest): Observable<ApiResponse> {
+    return this.http.post<ApiResponse>(`${this.apiUrl}/agendas/${agendaId}/finalizar`, data);
+  }
+
+  getCalendario(): Observable<CalendarioResponse> {
+    return this.http.get<CalendarioResponse>(`${this.apiUrl}/calendario`);
   }
 }

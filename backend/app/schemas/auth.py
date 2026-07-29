@@ -23,8 +23,15 @@ class UserInfo(BaseModel):
     email: str
     nombre: str | None
     apellido: str | None
+    telefono: str | None = None
     rol: str
     activo: bool
 
     class Config:
         from_attributes = True
+
+
+class ActualizarPerfilRequest(BaseModel):
+    """Autoservicio: solo el propio teléfono, no email/rol/password."""
+
+    telefono: str | None = Field(default=None, max_length=30)

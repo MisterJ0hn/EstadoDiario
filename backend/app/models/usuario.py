@@ -16,6 +16,9 @@ class Usuario(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     nombre: Mapped[Optional[str]] = mapped_column(String(200))
     apellido: Mapped[Optional[str]] = mapped_column(String(200))
+    # Formato libre (E.164 recomendado, ej. +56912345678): número por defecto
+    # para los recordatorios de WhatsApp, editable al crear cada uno.
+    telefono: Mapped[Optional[str]] = mapped_column(String(30))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     rol: Mapped[str] = mapped_column(String(50), default="usuario")  # admin, usuario
     fecha_creacion: Mapped[datetime] = mapped_column(

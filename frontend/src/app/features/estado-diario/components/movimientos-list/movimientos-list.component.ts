@@ -117,7 +117,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                         <span class="badge-success">Resuelto</span>
                       } @else if (m.pendiente) {
                         <span
-                          [class]="m.nivel_pendiente === 'alto' ? 'badge-danger' : m.nivel_pendiente === 'medio' ? 'badge-warning' : 'badge-info'"
+                          [class]="claseNivel(m.nivel_pendiente)"
                         >Pendiente - {{ m.nivel_pendiente }}</span>
                       } @else {
                         <span class="badge-neutral">No leído</span>
@@ -199,6 +199,12 @@ export class MovimientosListComponent implements OnInit {
   filterRut = '';
 
   title = computed(() => (this.isOrigen() ? 'Movimientos del Origen' : 'Movimientos'));
+
+  claseNivel(nivel: string | null): string {
+    if (nivel === 'alto') return 'badge-danger';
+    if (nivel === 'medio') return 'badge-yellow';
+    return 'badge-orange';
+  }
 
   ngOnInit(): void {
     const filter = this.route.snapshot.data['filter'] || 'movimientos';

@@ -60,13 +60,22 @@ export interface MovimientoListResponse {
   movimientos: Movimiento[];
 }
 
+export type NivelRecordatorio = 'bajo' | 'medio' | 'alto';
+
 export interface Agenda {
   id: number;
   detalle: string;
   fecha_hora: string;
   fecha_hora_registro: string;
+  nivel: NivelRecordatorio;
+  finalizado: boolean;
+  fecha_finalizacion: string | null;
+  notificar_whatsapp: boolean;
+  fecha_hora_whatsapp: string | null;
   enviado: boolean;
   fecha_envio: string | null;
+  google_event_id: string | null;
+  google_sync_error: string | null;
   usuario_registro: string | null;
 }
 
@@ -74,6 +83,38 @@ export interface AgendaListResponse {
   exito: boolean;
   total: number;
   agendas: Agenda[];
+}
+
+export interface MarcarPendienteRequest {
+  nivel: NivelRecordatorio;
+  username?: string;
+  mensaje?: string;
+  fecha_hora?: string;
+  notificar_whatsapp?: boolean;
+  whatsapp_telefono?: string | null;
+  fecha_hora_whatsapp?: string;
+}
+
+export interface RecordatorioVigente {
+  id: number;
+  estado_diario_id: number;
+  detalle: string;
+  fecha_hora: string;
+  nivel: NivelRecordatorio;
+  usuario_registro: string | null;
+  movimiento_caratulado: string | null;
+  movimiento_rol: string | null;
+  movimiento_tribunal: string | null;
+}
+
+export interface CalendarioResponse {
+  exito: boolean;
+  total: number;
+  recordatorios: RecordatorioVigente[];
+}
+
+export interface FinalizarAgendaRequest {
+  marcar_resuelto: boolean;
 }
 
 export interface ApiResponse {
