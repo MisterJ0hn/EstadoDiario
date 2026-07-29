@@ -26,9 +26,13 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
+        # client_encoding explícito: si la BD del host se creó con encoding
+        # SQL_ASCII, psycopg2 hereda el códec ascii y falla al insertar
+        # texto acentuado (UnicodeEncodeError sobre 'ó', 'ñ', etc.).
         return (
             f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            f"?client_encoding=utf8"
         )
 
     @property

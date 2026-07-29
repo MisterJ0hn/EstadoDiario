@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import uuid
@@ -22,6 +23,8 @@ from app.schemas.estado_diario import (
 from app.services.estado_diario_service import EstadoDiarioService
 from app.services.import_service import ImportService
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/estado-diario", tags=["Estado Diario"])
 
@@ -154,6 +157,10 @@ def upload_file(
         result = service.import_file(filepath, rut_final, fecha_final, current_user.id, file.filename)
         return {"exito": True, "rut": rut_final, "fecha": str(fecha_final), **result}
     except Exception as e:
+        # Sin el traceback en el log, el mensaje que ve el usuario no basta
+        # para ubicar la causa (p.ej. errores de encoding de psycopg2).
+        logger.exception("Fallo al importar %s", file.filename)
+        db.rollback()
         return {"exito": False, "mensaje": f"Error al procesar el archivo: {e}"}
 
 
