@@ -44,7 +44,11 @@ class EstadoDiarioRepository:
         if status_filter == "resuelto":
             query = query.filter(EstadoDiario.leido == True)
         elif status_filter == "pendiente":
-            query = query.filter(EstadoDiario.pendiente == True)
+            # Resuelto gana sobre pendiente: al marcarlo leído (desde la app o
+            # desde el botón "Resuelto" del WhatsApp) sale de esta pestaña. La
+            # marca `pendiente` no se borra, para conservar el nivel y quién lo
+            # dejó pendiente en el detalle y en el historial.
+            query = query.filter(EstadoDiario.pendiente == True, EstadoDiario.leido == False)
         else:
             # No leídos: ni resuelto ni marcado pendiente (ver requerimiento
             # de que un pendiente deje de listarse como no leído).
