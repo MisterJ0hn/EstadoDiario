@@ -193,7 +193,8 @@ def eliminar_origen(
 )
 def no_leidos(
     jurisdiccion: int | None = Query(None),
-    fecha: str | None = Query(None),
+    fecha_desde: str | None = Query(None),
+    fecha_hasta: str | None = Query(None),
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
@@ -201,7 +202,7 @@ def no_leidos(
     _=Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_no_leidos(jurisdiccion, fecha, rut, page, limit)
+    return service.get_movimientos_no_leidos(jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit)
 
 
 @router.get(
@@ -211,7 +212,8 @@ def no_leidos(
 )
 def leidos(
     jurisdiccion: int | None = Query(None),
-    fecha: str | None = Query(None),
+    fecha_desde: str | None = Query(None),
+    fecha_hasta: str | None = Query(None),
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
@@ -219,7 +221,7 @@ def leidos(
     _=Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_leidos(jurisdiccion, fecha, rut, page, limit)
+    return service.get_movimientos_leidos(jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit)
 
 
 @router.get(
@@ -229,7 +231,8 @@ def leidos(
 )
 def pendientes(
     jurisdiccion: int | None = Query(None),
-    fecha: str | None = Query(None),
+    fecha_desde: str | None = Query(None),
+    fecha_hasta: str | None = Query(None),
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
@@ -237,7 +240,7 @@ def pendientes(
     _=Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_pendientes(jurisdiccion, fecha, rut, page, limit)
+    return service.get_movimientos_pendientes(jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit)
 
 
 @router.get(

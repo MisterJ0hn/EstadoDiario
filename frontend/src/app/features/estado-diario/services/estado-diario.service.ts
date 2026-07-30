@@ -50,11 +50,19 @@ export class EstadoDiarioService {
   // ── Movimientos ────────────────────────
   getMovimientos(
     filter: 'no-leidos' | 'leidos' | 'pendientes',
-    params: { jurisdiccion?: number; fecha?: string; rut?: string; page?: number; limit?: number } = {}
+    params: {
+      jurisdiccion?: number;
+      fecha_desde?: string;
+      fecha_hasta?: string;
+      rut?: string;
+      page?: number;
+      limit?: number;
+    } = {}
   ): Observable<MovimientoListResponse> {
     let httpParams = new HttpParams();
     if (params.jurisdiccion) httpParams = httpParams.set('jurisdiccion', params.jurisdiccion);
-    if (params.fecha) httpParams = httpParams.set('fecha', params.fecha);
+    if (params.fecha_desde) httpParams = httpParams.set('fecha_desde', params.fecha_desde);
+    if (params.fecha_hasta) httpParams = httpParams.set('fecha_hasta', params.fecha_hasta);
     if (params.rut) httpParams = httpParams.set('rut', params.rut);
     if (params.page) httpParams = httpParams.set('page', params.page);
     if (params.limit) httpParams = httpParams.set('limit', params.limit);

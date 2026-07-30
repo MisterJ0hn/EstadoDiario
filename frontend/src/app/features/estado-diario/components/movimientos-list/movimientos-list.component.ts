@@ -6,13 +6,14 @@ import { forkJoin } from 'rxjs';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
+import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 
 type Tab = 'no-leidos' | 'leidos' | 'pendientes';
 
 @Component({
   selector: 'app-movimientos-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, RecordatorioModalComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -53,7 +54,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
         <!-- Filters -->
         <div class="card">
           <div class="card-body">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label class="form-label">Jurisdicción</label>
                 <select class="form-select" [(ngModel)]="filterJurisdiccion" (ngModelChange)="onFilter()">
@@ -64,8 +65,12 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                 </select>
               </div>
               <div>
-                <label class="form-label">Fecha</label>
-                <input type="date" class="form-input" [(ngModel)]="filterFecha" (ngModelChange)="onFilter()" />
+                <label class="form-label">Fecha desde</label>
+                <input type="date" class="form-input" [(ngModel)]="filterFechaDesde" (ngModelChange)="onFilter()" />
+              </div>
+              <div>
+                <label class="form-label">Fecha hasta</label>
+                <input type="date" class="form-input" [(ngModel)]="filterFechaHasta" (ngModelChange)="onFilter()" />
               </div>
               <div>
                 <label class="form-label">RUT</label>
@@ -109,16 +114,22 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
               <tbody>
                 @for (m of movimientos(); track m.id) {
                   <tr>
-                    <td class="font-medium">{{ m.rol || '-' }}</td>
-                    <td class="max-w-[200px] truncate" [title]="m.caratulado || ''">{{ m.caratulado || '-' }}</td>
+                    <td class="font-medium">
+                      <a [routerLink]="['/estado-diario', m.id]" class="hover:text-primary-600 hover:underline">
+                        {{ m.rol || '-' }}
+                      </a>
+                    </td>
+                    <td class="max-w-[200px] truncate" [title]="m.caratulado || ''">
+                      <a [routerLink]="['/estado-diario', m.id]" class="hover:text-primary-600 hover:underline">
+                        {{ m.caratulado || '-' }}
+                      </a>
+                    </td>
                     <td>{{ m.tribunal || '-' }}</td>
                     <td>
                       @if (m.leido) {
                         <span class="badge-success">Resuelto</span>
                       } @else if (m.pendiente) {
-                        <span
-                          [class]="claseNivel(m.nivel_pendiente)"
-                        >Pendiente - {{ m.nivel_pendiente }}</span>
+                        <span [class]="claseNivel(m.nivel_pendiente)">Pendiente - {{ m.nivel_pendiente }}</span>
                       } @else {
                         <span class="badge-neutral">No leído</span>
                       }
@@ -133,13 +144,32 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                         -
                       }
                     </td>
-                    <td>
-                      <div class="flex items-center gap-1">
-                        <a [routerLink]="['/estado-diario', m.id]" class="btn-outline btn-sm">Detalle</a>
-                        @if (!m.leido) {
-                          <button (click)="onMarcarLeido(m.id)" class="btn-success btn-sm">Resolver</button>
+                    <td class="relative">
+                      @if (!m.leido) {
+                        <button (click)="toggleMenu(m.id, $event)" class="btn-outline btn-sm" title="Acciones">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        @if (menuAbiertoId() === m.id) {
+                          <!-- Backdrop invisible para cerrar el menú al hacer click afuera -->
+                          <div class="fixed inset-0 z-10" (click)="cerrarMenu()"></div>
+                          <div class="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-neutral-200 bg-white shadow-lg py-1">
+                            <button (click)="onResolver(m.id)"
+                                    class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                              Resolver
+                            </button>
+                            <button (click)="onPendiente(m.id)"
+                                    class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                              Pendiente
+                            </button>
+                            <button (click)="onAgendar(m.id)"
+                                    class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                              Agendar
+                            </button>
+                          </div>
                         }
-                      </div>
+                      }
                     </td>
                   </tr>
                 } @empty {
@@ -170,6 +200,12 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
         </div>
       }
     </div>
+
+    <app-recordatorio-modal
+      [movimientoId]="recordatorioMovimientoId()"
+      (cerrado)="recordatorioMovimientoId.set(null)"
+      (guardado)="onRecordatorioGuardado()"
+    />
   `,
 })
 export class MovimientosListComponent implements OnInit {
@@ -195,8 +231,12 @@ export class MovimientosListComponent implements OnInit {
   isOrigen = signal(false);
   activeTab = signal<Tab>('no-leidos');
   filterJurisdiccion: number | null = null;
-  filterFecha = '';
+  filterFechaDesde = '';
+  filterFechaHasta = '';
   filterRut = '';
+
+  menuAbiertoId = signal<number | null>(null);
+  recordatorioMovimientoId = signal<number | null>(null);
 
   title = computed(() => (this.isOrigen() ? 'Movimientos del Origen' : 'Movimientos'));
 
@@ -245,6 +285,7 @@ export class MovimientosListComponent implements OnInit {
 
   loadData(): void {
     this.loading.set(true);
+    this.cerrarMenu();
 
     if (this.isOrigen()) {
       const origenId = Number(this.route.snapshot.paramMap.get('id'));
@@ -260,12 +301,7 @@ export class MovimientosListComponent implements OnInit {
         },
       });
     } else {
-      const params: Record<string, unknown> = { page: this.currentPage(), limit: 20 };
-      if (this.filterJurisdiccion) params['jurisdiccion'] = this.filterJurisdiccion;
-      if (this.filterFecha) params['fecha'] = this.filterFecha;
-      if (this.filterRut) params['rut'] = this.filterRut;
-
-      this.service.getMovimientos(this.activeTab(), params as any).subscribe({
+      this.service.getMovimientos(this.activeTab(), this.buildParams()).subscribe({
         next: (res) => {
           this.movimientos.set(res.movimientos);
           this.total.set(res.total);
@@ -281,15 +317,32 @@ export class MovimientosListComponent implements OnInit {
     }
   }
 
+  private buildParams(): {
+    jurisdiccion?: number;
+    fecha_desde?: string;
+    fecha_hasta?: string;
+    rut?: string;
+    page: number;
+    limit: number;
+  } {
+    const params: {
+      jurisdiccion?: number;
+      fecha_desde?: string;
+      fecha_hasta?: string;
+      rut?: string;
+      page: number;
+      limit: number;
+    } = { page: this.currentPage(), limit: 20 };
+    if (this.filterJurisdiccion) params.jurisdiccion = this.filterJurisdiccion;
+    if (this.filterFechaDesde) params.fecha_desde = this.filterFechaDesde;
+    if (this.filterFechaHasta) params.fecha_hasta = this.filterFechaHasta;
+    if (this.filterRut) params.rut = this.filterRut;
+    return params;
+  }
+
   /** Totales por estado para los contadores de las pestañas (respetan los filtros activos). */
   loadCounts(): void {
-    const params: { jurisdiccion?: number; fecha?: string; rut?: string; page: number; limit: number } = {
-      page: 1,
-      limit: 1,
-    };
-    if (this.filterJurisdiccion) params.jurisdiccion = this.filterJurisdiccion;
-    if (this.filterFecha) params.fecha = this.filterFecha;
-    if (this.filterRut) params.rut = this.filterRut;
+    const params = { ...this.buildParams(), page: 1, limit: 1 };
 
     forkJoin({
       'no-leidos': this.service.getMovimientos('no-leidos', params),
@@ -314,7 +367,8 @@ export class MovimientosListComponent implements OnInit {
 
   onClearFilters(): void {
     this.filterJurisdiccion = null;
-    this.filterFecha = '';
+    this.filterFechaDesde = '';
+    this.filterFechaHasta = '';
     this.filterRut = '';
     this.onFilter();
   }
@@ -324,7 +378,17 @@ export class MovimientosListComponent implements OnInit {
     this.loadData();
   }
 
-  onMarcarLeido(id: number): void {
+  toggleMenu(id: number, event: MouseEvent): void {
+    event.stopPropagation();
+    this.menuAbiertoId.set(this.menuAbiertoId() === id ? null : id);
+  }
+
+  cerrarMenu(): void {
+    this.menuAbiertoId.set(null);
+  }
+
+  onResolver(id: number): void {
+    this.cerrarMenu();
     this.service.marcarLeido(id).subscribe({
       next: () => {
         this.notification.success('Marcado como resuelto');
@@ -333,5 +397,30 @@ export class MovimientosListComponent implements OnInit {
       },
       error: () => this.notification.error('Error al marcar como resuelto'),
     });
+  }
+
+  onPendiente(id: number): void {
+    this.cerrarMenu();
+    if (!confirm('¿Marcar este movimiento como pendiente?')) return;
+
+    this.service.marcarPendiente(id, { nivel: 'medio' }).subscribe({
+      next: () => {
+        this.notification.success('Marcado como pendiente');
+        this.loadData();
+        this.loadCounts();
+      },
+      error: (err) => this.notification.error(err.error?.detail || 'Error al marcar como pendiente'),
+    });
+  }
+
+  onAgendar(id: number): void {
+    this.cerrarMenu();
+    this.recordatorioMovimientoId.set(id);
+  }
+
+  onRecordatorioGuardado(): void {
+    this.recordatorioMovimientoId.set(null);
+    this.loadData();
+    this.loadCounts();
   }
 }

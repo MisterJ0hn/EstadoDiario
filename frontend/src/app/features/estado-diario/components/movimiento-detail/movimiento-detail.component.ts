@@ -4,13 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
-import { AuthService } from '@core/services/auth.service';
-import { Movimiento, Agenda, NivelRecordatorio } from '@core/models/estado-diario.model';
+import { Movimiento, Agenda } from '@core/models/estado-diario.model';
+import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 
 @Component({
   selector: 'app-movimiento-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RecordatorioModalComponent],
   template: `
     <div class="space-y-6">
       @if (loading()) {
@@ -35,8 +35,8 @@ import { Movimiento, Agenda, NivelRecordatorio } from '@core/models/estado-diari
           <div class="flex gap-2">
             @if (!movimiento()!.leido) {
               <button (click)="onMarcarLeido()" class="btn-success">Marcar como Resuelto</button>
+              <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning">Crear Recordatorio</button>
             }
-            <button (click)="abrirRecordatorioModal()" class="btn-warning">Crear Recordatorio</button>
           </div>
         </div>
 
@@ -140,7 +140,9 @@ import { Movimiento, Agenda, NivelRecordatorio } from '@core/models/estado-diari
         <div class="card">
           <div class="card-header flex items-center justify-between">
             <h3 class="text-lg font-semibold">Recordatorios</h3>
-            <button (click)="abrirRecordatorioModal()" class="btn-outline btn-sm">Nuevo Recordatorio</button>
+            @if (!movimiento()!.leido) {
+              <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-outline btn-sm">Nuevo Recordatorio</button>
+            }
           </div>
           @if (agendas().length > 0) {
             <div class="table-wrapper">
@@ -197,87 +199,26 @@ import { Movimiento, Agenda, NivelRecordatorio } from '@core/models/estado-diari
         </div>
       }
 
-      <!-- Crear Recordatorio -->
-      @if (showRecordatorioModal()) {
-        <div class="modal-backdrop" (click)="showRecordatorioModal.set(false)">
-          <div class="modal-content" (click)="$event.stopPropagation()">
-            <div class="modal-header">
-              <h3 class="text-lg font-semibold">Crear Recordatorio</h3>
-              <button (click)="showRecordatorioModal.set(false)" class="text-neutral-400 hover:text-neutral-600">&times;</button>
-            </div>
-            <div class="modal-body space-y-4">
-              <div>
-                <label class="form-label">Nivel de urgencia</label>
-                <select class="form-select" [(ngModel)]="recNivel">
-                  <option value="bajo">Bajo</option>
-                  <option value="medio">Medio</option>
-                  <option value="alto">Alto</option>
-                </select>
-              </div>
-              <div>
-                <label class="form-label">Detalle</label>
-                <textarea class="form-input" rows="3" [(ngModel)]="recDetalle" placeholder="Descripción del recordatorio..."></textarea>
-              </div>
-              <div>
-                <label class="form-label">Fecha del recordatorio</label>
-                <input type="date" class="form-input" [(ngModel)]="recFecha" />
-                <p class="text-xs text-neutral-400 mt-1">
-                  Se agrega como evento de todo el día en tu Google Calendar (si está conectado).
-                </p>
-              </div>
-
-              <hr class="border-neutral-200" />
-
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" [(ngModel)]="recNotificarWhatsapp" />
-                <span class="text-sm text-neutral-700">Notificar por WhatsApp</span>
-              </label>
-
-              @if (recNotificarWhatsapp) {
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label class="form-label">Teléfono</label>
-                    <input type="text" class="form-input" [(ngModel)]="recTelefono" placeholder="+56912345678" />
-                  </div>
-                  <div>
-                    <label class="form-label">Fecha y hora de envío</label>
-                    <input type="datetime-local" class="form-input" [(ngModel)]="recFechaHoraWhatsapp" />
-                  </div>
-                </div>
-              }
-            </div>
-            <div class="modal-footer">
-              <button (click)="showRecordatorioModal.set(false)" class="btn-secondary">Cancelar</button>
-              <button (click)="onCrearRecordatorio()" class="btn-primary" [disabled]="saving()">
-                {{ saving() ? 'Guardando...' : 'Guardar' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      }
+      <app-recordatorio-modal
+        [movimientoId]="recordatorioMovimientoId()"
+        (cerrado)="recordatorioMovimientoId.set(null)"
+        (guardado)="onRecordatorioGuardado()"
+      />
     </div>
   `,
 })
 export class MovimientoDetailComponent implements OnInit {
   private service = inject(EstadoDiarioService);
   private notification = inject(NotificationService);
-  private auth = inject(AuthService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
   movimiento = signal<Movimiento | null>(null);
   agendas = signal<Agenda[]>([]);
   loading = signal(true);
-  saving = signal(false);
 
-  // Modal "Crear Recordatorio"
-  showRecordatorioModal = signal(false);
-  recNivel: NivelRecordatorio = 'medio';
-  recDetalle = '';
-  recFecha = '';
-  recNotificarWhatsapp = false;
-  recTelefono = '';
-  recFechaHoraWhatsapp = '';
+  /** id del movimiento para el que se abre el modal "Crear Recordatorio"; null = cerrado */
+  recordatorioMovimientoId = signal<number | null>(null);
 
   ngOnInit(): void {
     const id = Number(this.route.snapshot.paramMap.get('id'));
@@ -325,52 +266,10 @@ export class MovimientoDetailComponent implements OnInit {
     });
   }
 
-  abrirRecordatorioModal(): void {
-    this.recNivel = 'medio';
-    this.recDetalle = '';
-    this.recFecha = '';
-    this.recNotificarWhatsapp = false;
-    this.recTelefono = this.auth.user()?.telefono ?? '';
-    this.recFechaHoraWhatsapp = '';
-    this.showRecordatorioModal.set(true);
-  }
-
-  onCrearRecordatorio(): void {
-    if (!this.recDetalle.trim() || !this.recFecha) {
-      this.notification.warning('Complete el detalle y la fecha del recordatorio');
-      return;
-    }
-    if (this.recNotificarWhatsapp && (!this.recTelefono.trim() || !this.recFechaHoraWhatsapp)) {
-      this.notification.warning('Para notificar por WhatsApp indique teléfono y fecha/hora de envío');
-      return;
-    }
-
+  onRecordatorioGuardado(): void {
     const id = this.movimiento()!.id;
-    const user = this.auth.user();
-    this.saving.set(true);
-
-    this.service.marcarPendiente(id, {
-      nivel: this.recNivel,
-      username: user?.username,
-      mensaje: this.recDetalle,
-      fecha_hora: `${this.recFecha} 00:00:00`,
-      notificar_whatsapp: this.recNotificarWhatsapp,
-      whatsapp_telefono: this.recNotificarWhatsapp ? this.recTelefono.trim() : undefined,
-      fecha_hora_whatsapp: this.recNotificarWhatsapp
-        ? this.recFechaHoraWhatsapp.replace('T', ' ') + ':00'
-        : undefined,
-    }).subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.showRecordatorioModal.set(false);
-        this.notification.success('Recordatorio creado');
-        this.loadDetalle(id);
-        this.loadAgendas(id);
-      },
-      error: (err) => {
-        this.saving.set(false);
-        this.notification.error(err.error?.detail || 'Error al crear el recordatorio');
-      },
-    });
+    this.recordatorioMovimientoId.set(null);
+    this.loadDetalle(id);
+    this.loadAgendas(id);
   }
 }

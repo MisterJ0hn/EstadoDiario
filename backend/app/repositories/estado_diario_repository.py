@@ -32,10 +32,42 @@ class EstadoDiarioRepository:
             .all()
         )
 
+    @staticmethod
+    def _aplicar_filtros_comunes(
+        query,
+        jurisdiccion_id: Optional[int],
+        fecha_desde: Optional[str],
+        fecha_hasta: Optional[str],
+        rut: Optional[str],
+        status_filter: Optional[str],
+    ):
+        if status_filter == "resuelto":
+            query = query.filter(EstadoDiario.leido == True)
+        elif status_filter == "pendiente":
+            query = query.filter(EstadoDiario.pendiente == True)
+        else:
+            # No leídos: ni resuelto ni marcado pendiente (ver requerimiento
+            # de que un pendiente deje de listarse como no leído).
+            query = query.filter(EstadoDiario.leido == False, EstadoDiario.pendiente == False)
+
+        if jurisdiccion_id:
+            query = query.filter(EstadoDiario.jurisdiccion_id == jurisdiccion_id)
+
+        if fecha_desde:
+            query = query.filter(EstadoDiarioOrigen.fecha >= fecha_desde)
+        if fecha_hasta:
+            query = query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
+
+        if rut:
+            query = query.filter(EstadoDiarioOrigen.rut == rut)
+
+        return query
+
     def _build_filtered_query(
         self,
         jurisdiccion_id: Optional[int] = None,
-        fecha: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         status_filter: Optional[str] = None,  # None = no-leidos, 'resuelto', 'pendiente'
     ):
@@ -48,29 +80,15 @@ class EstadoDiarioRepository:
                 joinedload(EstadoDiario.usuario_pendiente),
             )
         )
-
-        if status_filter == "resuelto":
-            query = query.filter(EstadoDiario.leido == True)
-        elif status_filter == "pendiente":
-            query = query.filter(EstadoDiario.pendiente == True)
-        else:
-            query = query.filter(EstadoDiario.leido == False)
-
-        if jurisdiccion_id:
-            query = query.filter(EstadoDiario.jurisdiccion_id == jurisdiccion_id)
-
-        if fecha:
-            query = query.filter(EstadoDiarioOrigen.fecha == fecha)
-
-        if rut:
-            query = query.filter(EstadoDiarioOrigen.rut == rut)
-
-        return query
+        return self._aplicar_filtros_comunes(
+            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+        )
 
     def count_filtered(
         self,
         jurisdiccion_id: Optional[int] = None,
-        fecha: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         status_filter: Optional[str] = None,
     ) -> int:
@@ -78,34 +96,23 @@ class EstadoDiarioRepository:
             self.db.query(func.count(EstadoDiario.id))
             .join(EstadoDiario.estado_diario_origen)
         )
-
-        if status_filter == "resuelto":
-            query = query.filter(EstadoDiario.leido == True)
-        elif status_filter == "pendiente":
-            query = query.filter(EstadoDiario.pendiente == True)
-        else:
-            query = query.filter(EstadoDiario.leido == False)
-
-        if jurisdiccion_id:
-            query = query.filter(EstadoDiario.jurisdiccion_id == jurisdiccion_id)
-        if fecha:
-            query = query.filter(EstadoDiarioOrigen.fecha == fecha)
-        if rut:
-            query = query.filter(EstadoDiarioOrigen.rut == rut)
-
+        query = self._aplicar_filtros_comunes(
+            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+        )
         return query.scalar()
 
     def find_filtered(
         self,
         jurisdiccion_id: Optional[int] = None,
-        fecha: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         status_filter: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
-        query = self._build_filtered_query(jurisdiccion_id, fecha, rut, status_filter)
-        total = self.count_filtered(jurisdiccion_id, fecha, rut, status_filter)
+        query = self._build_filtered_query(jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter)
+        total = self.count_filtered(jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter)
 
         total_pages = 1
         current_page = 1

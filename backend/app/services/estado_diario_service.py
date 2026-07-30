@@ -47,17 +47,18 @@ class EstadoDiarioService:
     def get_movimientos_no_leidos(
         self,
         jurisdiccion_id: Optional[int] = None,
-        fecha: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
         log = self._create_log("no-leidos", json.dumps({
-            "jurisdiccion": jurisdiccion_id, "fecha": fecha, "rut": rut
+            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha, rut, None, page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, None, page, limit
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -74,17 +75,18 @@ class EstadoDiarioService:
     def get_movimientos_leidos(
         self,
         jurisdiccion_id: Optional[int] = None,
-        fecha: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
         log = self._create_log("leidos", json.dumps({
-            "jurisdiccion": jurisdiccion_id, "fecha": fecha, "rut": rut
+            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha, rut, "resuelto", page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "resuelto", page, limit
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -101,17 +103,18 @@ class EstadoDiarioService:
     def get_movimientos_pendientes(
         self,
         jurisdiccion_id: Optional[int] = None,
-        fecha: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
         log = self._create_log("pendientes", json.dumps({
-            "jurisdiccion": jurisdiccion_id, "fecha": fecha, "rut": rut
+            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha, rut, "pendiente", page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "pendiente", page, limit
             )
             data = [self._map_movimiento(m, include_pendiente=True) for m in items]
             result = {
@@ -163,6 +166,12 @@ class EstadoDiarioService:
             raise NotFoundException("Estado diario no encontrado")
 
         log.estado_diario_id = ed.id
+
+        if ed.leido:
+            self._save_log(log, False, error="Movimiento ya resuelto")
+            raise BadRequestException(
+                "El movimiento ya está resuelto; no se pueden crear recordatorios ni marcarlo pendiente"
+            )
 
         if nivel not in ("bajo", "medio", "alto"):
             self._save_log(log, False, error="Nivel inválido")
