@@ -65,6 +65,7 @@ class WhatsappService:
                     to=self._a_canal_whatsapp(agenda.whatsapp_telefono),
                     content_sid=config.plantilla_content_sid,
                     content_variables=self._variables_plantilla(agenda, movimiento),
+                    body=agenda.detalle,
                 )
                 agenda.enviado = True
                 agenda.fecha_envio = datetime.now(timezone.utc)
@@ -102,11 +103,12 @@ class WhatsappService:
 
     @staticmethod
     def _variables_plantilla(agenda: EstadoDiarioAgenda, movimiento) -> str:
+        # Mismo contrato que la plantilla ya aprobada en Twilio (heredada del
+        # sistema anterior en Symfony): 3 variables, rol / detalle / id.
         import json
 
         return json.dumps({
-            "1": movimiento.caratulado or movimiento.rol or "Movimiento",
-            "2": movimiento.tribunal or "-",
-            "3": agenda.fecha_hora.strftime("%d-%m-%Y"),
-            "4": str(movimiento.id),
+            "1": str(movimiento.rol or ""),
+            "2": str(agenda.detalle or ""),
+            "3": str(movimiento.id),
         })
