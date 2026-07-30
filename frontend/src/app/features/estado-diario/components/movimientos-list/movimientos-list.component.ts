@@ -206,6 +206,67 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
       (cerrado)="recordatorioMovimientoId.set(null)"
       (guardado)="onRecordatorioGuardado()"
     />
+
+    <!-- Confirmar "Pendiente" -->
+    @if (confirmarPendienteId() !== null) {
+      <div class="modal-backdrop" (click)="cancelarPendiente()">
+        <div class="modal-content max-w-sm" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h3 class="text-lg font-semibold">Marcar como pendiente</h3>
+            <button (click)="cancelarPendiente()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="flex items-start gap-3">
+              <div class="shrink-0 w-10 h-10 rounded-full bg-warning-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-warning-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+              </div>
+              <p class="text-sm text-neutral-600 mt-2">
+                ¿Confirma que quiere marcar este movimiento como <strong>pendiente</strong>?
+                Dejará de aparecer en No Leídos.
+              </p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button (click)="cancelarPendiente()" class="btn-secondary" [disabled]="confirmandoPendiente()">Cancelar</button>
+            <button (click)="confirmarPendiente()" class="btn-warning" [disabled]="confirmandoPendiente()">
+              {{ confirmandoPendiente() ? 'Guardando...' : 'Sí, marcar pendiente' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Confirmar "Resolver" -->
+    @if (confirmarResolverId() !== null) {
+      <div class="modal-backdrop" (click)="cancelarResolver()">
+        <div class="modal-content max-w-sm" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h3 class="text-lg font-semibold">Marcar como resuelto</h3>
+            <button (click)="cancelarResolver()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="flex items-start gap-3">
+              <div class="shrink-0 w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p class="text-sm text-neutral-600 mt-2">
+                ¿Confirma que quiere marcar este movimiento como <strong>resuelto</strong>?
+              </p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button (click)="cancelarResolver()" class="btn-secondary" [disabled]="confirmandoResolver()">Cancelar</button>
+            <button (click)="confirmarResolver()" class="btn-success" [disabled]="confirmandoResolver()">
+              {{ confirmandoResolver() ? 'Guardando...' : 'Sí, marcar resuelto' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class MovimientosListComponent implements OnInit {
@@ -237,6 +298,10 @@ export class MovimientosListComponent implements OnInit {
 
   menuAbiertoId = signal<number | null>(null);
   recordatorioMovimientoId = signal<number | null>(null);
+  confirmarPendienteId = signal<number | null>(null);
+  confirmandoPendiente = signal(false);
+  confirmarResolverId = signal<number | null>(null);
+  confirmandoResolver = signal(false);
 
   title = computed(() => (this.isOrigen() ? 'Movimientos del Origen' : 'Movimientos'));
 
@@ -389,27 +454,61 @@ export class MovimientosListComponent implements OnInit {
 
   onResolver(id: number): void {
     this.cerrarMenu();
+    this.confirmarResolverId.set(id);
+  }
+
+  cancelarResolver(): void {
+    if (this.confirmandoResolver()) return;
+    this.confirmarResolverId.set(null);
+  }
+
+  confirmarResolver(): void {
+    const id = this.confirmarResolverId();
+    if (id === null) return;
+
+    this.confirmandoResolver.set(true);
     this.service.marcarLeido(id).subscribe({
       next: () => {
+        this.confirmandoResolver.set(false);
+        this.confirmarResolverId.set(null);
         this.notification.success('Marcado como resuelto');
         this.loadData();
         if (!this.isOrigen()) this.loadCounts();
       },
-      error: () => this.notification.error('Error al marcar como resuelto'),
+      error: () => {
+        this.confirmandoResolver.set(false);
+        this.notification.error('Error al marcar como resuelto');
+      },
     });
   }
 
   onPendiente(id: number): void {
     this.cerrarMenu();
-    if (!confirm('¿Marcar este movimiento como pendiente?')) return;
+    this.confirmarPendienteId.set(id);
+  }
 
+  cancelarPendiente(): void {
+    if (this.confirmandoPendiente()) return;
+    this.confirmarPendienteId.set(null);
+  }
+
+  confirmarPendiente(): void {
+    const id = this.confirmarPendienteId();
+    if (id === null) return;
+
+    this.confirmandoPendiente.set(true);
     this.service.marcarPendiente(id, { nivel: 'medio' }).subscribe({
       next: () => {
+        this.confirmandoPendiente.set(false);
+        this.confirmarPendienteId.set(null);
         this.notification.success('Marcado como pendiente');
         this.loadData();
         this.loadCounts();
       },
-      error: (err) => this.notification.error(err.error?.detail || 'Error al marcar como pendiente'),
+      error: (err) => {
+        this.confirmandoPendiente.set(false);
+        this.notification.error(err.error?.detail || 'Error al marcar como pendiente');
+      },
     });
   }
 

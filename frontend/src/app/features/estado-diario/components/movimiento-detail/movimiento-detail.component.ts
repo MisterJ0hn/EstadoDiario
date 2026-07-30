@@ -34,7 +34,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
           </div>
           <div class="flex gap-2">
             @if (!movimiento()!.leido) {
-              <button (click)="onMarcarLeido()" class="btn-success">Marcar como Resuelto</button>
+              <button (click)="confirmarResolver.set(true)" class="btn-success">Marcar como Resuelto</button>
               <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning">Crear Recordatorio</button>
             }
           </div>
@@ -204,6 +204,36 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
         (cerrado)="recordatorioMovimientoId.set(null)"
         (guardado)="onRecordatorioGuardado()"
       />
+
+      <!-- Confirmar "Resolver" -->
+      @if (confirmarResolver()) {
+        <div class="modal-backdrop" (click)="cancelarResolver()">
+          <div class="modal-content max-w-sm" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold">Marcar como resuelto</h3>
+              <button (click)="cancelarResolver()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="flex items-start gap-3">
+                <div class="shrink-0 w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
+                  <svg class="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <p class="text-sm text-neutral-600 mt-2">
+                  ¿Confirma que quiere marcar este movimiento como <strong>resuelto</strong>?
+                </p>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button (click)="cancelarResolver()" class="btn-secondary" [disabled]="confirmandoResolver()">Cancelar</button>
+              <button (click)="onMarcarLeido()" class="btn-success" [disabled]="confirmandoResolver()">
+                {{ confirmandoResolver() ? 'Guardando...' : 'Sí, marcar resuelto' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
 })
@@ -219,6 +249,9 @@ export class MovimientoDetailComponent implements OnInit {
 
   /** id del movimiento para el que se abre el modal "Crear Recordatorio"; null = cerrado */
   recordatorioMovimientoId = signal<number | null>(null);
+
+  confirmarResolver = signal(false);
+  confirmandoResolver = signal(false);
 
   ngOnInit(): void {
     const id = Number(this.route.snapshot.paramMap.get('id'));
@@ -255,14 +288,25 @@ export class MovimientoDetailComponent implements OnInit {
     return 'badge-orange';
   }
 
+  cancelarResolver(): void {
+    if (this.confirmandoResolver()) return;
+    this.confirmarResolver.set(false);
+  }
+
   onMarcarLeido(): void {
     const id = this.movimiento()!.id;
+    this.confirmandoResolver.set(true);
     this.service.marcarLeido(id).subscribe({
       next: () => {
+        this.confirmandoResolver.set(false);
+        this.confirmarResolver.set(false);
         this.notification.success('Marcado como resuelto');
         this.loadDetalle(id);
       },
-      error: () => this.notification.error('Error al marcar como resuelto'),
+      error: () => {
+        this.confirmandoResolver.set(false);
+        this.notification.error('Error al marcar como resuelto');
+      },
     });
   }
 
