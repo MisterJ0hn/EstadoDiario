@@ -4,10 +4,10 @@ import re
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
-from app.core.config import UPLOAD_DIR
+from app.core.config import UPLOAD_DIR, settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.usuario import Usuario
@@ -351,15 +351,71 @@ def finalizar_agenda(
 
 # ── Webhook Twilio ────────────────────────────────────────
 
+async def _leer_datos_webhook(request: Request) -> dict:
+    """Twilio postea application/x-www-form-urlencoded, pero se aceptan
+    además JSON y query string para poder probar el endpoint a mano (el
+    Symfony original leía las tres fuentes en el mismo orden)."""
+    try:
+        formulario = await request.form()
+        if formulario:
+            return {clave: str(valor) for clave, valor in formulario.multi_items()}
+    except Exception:
+        logger.warning("No se pudo leer el body como formulario", exc_info=True)
+
+    try:
+        cuerpo = await request.json()
+        if isinstance(cuerpo, dict) and cuerpo:
+            return cuerpo
+    except Exception:
+        pass  # Body vacío o no-JSON: se cae a los query params.
+
+    return dict(request.query_params)
+
+
+def _urls_candidatas(request: Request) -> list[str]:
+    """URLs contra las que se prueba la firma de Twilio.
+
+    Twilio firma la URL exacta que tiene configurada en su consola. El backend
+    corre detrás del proxy del frontend, así que ve otra cosa (http y un host
+    interno): se prueba primero la URL pública (PUBLIC_BASE_URL, el mismo
+    ajuste que usa el OAuth de Google), luego lo que reporta el proxy y por
+    último la que ve el propio backend.
+    """
+    ruta = request.url.path
+    if request.url.query:
+        ruta = f"{ruta}?{request.url.query}"
+
+    candidatas = [f"{settings.PUBLIC_BASE_URL.rstrip('/')}{ruta}"]
+
+    proto = request.headers.get("x-forwarded-proto")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if proto and host:
+        candidatas.append(f"{proto}://{host}{ruta}")
+
+    candidatas.append(str(request.url))
+    return list(dict.fromkeys(candidatas))  # sin repetidos, conservando el orden
+
+
 @router.post(
     "/request-tw",
     response_model=WebhookResponse,
-    summary="Webhook Twilio (sin autenticación)",
+    summary="Webhook Twilio (sin autenticación, valida X-Twilio-Signature)",
 )
-def webhook_twilio(
-    datos: dict | None = None,
+async def webhook_twilio(
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    """Endpoint público para recibir callbacks de Twilio."""
+    """Endpoint público para recibir callbacks de Twilio.
+
+    No lleva Bearer token porque quien llama es Twilio; lo que autentica el
+    request es la firma X-Twilio-Signature (se puede desactivar desde la
+    configuración de WhatsApp, ver ConfiguracionWhatsapp.validar_firma_webhook).
+    Con la firma activa solo pasan los POST form-urlencoded reales de Twilio.
+    """
+    datos = await _leer_datos_webhook(request)
     service = EstadoDiarioService(db)
-    return service.webhook_twilio(datos or {})
+    return service.webhook_twilio(
+        datos,
+        firma=request.headers.get("X-Twilio-Signature"),
+        urls=_urls_candidatas(request),
+    )

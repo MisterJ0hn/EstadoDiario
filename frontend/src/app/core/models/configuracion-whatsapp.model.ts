@@ -4,6 +4,7 @@ export interface ConfiguracionWhatsapp {
   tiene_auth_token: boolean;
   twilio_numero_whatsapp: string | null;
   plantilla_content_sid: string | null;
+  validar_firma_webhook: boolean;
   fecha_modificacion: string;
 }
 
@@ -14,6 +15,7 @@ export interface ConfiguracionWhatsappUpdate {
   twilio_auth_token?: string | null;
   twilio_numero_whatsapp: string | null;
   plantilla_content_sid: string | null;
+  validar_firma_webhook: boolean;
 }
 
 export interface OperacionResponse {

@@ -30,6 +30,7 @@ def _a_response(config) -> ConfiguracionWhatsappResponse:
         tiene_auth_token=bool(config.twilio_auth_token_cifrado),
         twilio_numero_whatsapp=config.twilio_numero_whatsapp,
         plantilla_content_sid=config.plantilla_content_sid,
+        validar_firma_webhook=config.validar_firma_webhook,
         fecha_modificacion=config.fecha_modificacion,
     )
 
@@ -60,6 +61,7 @@ def guardar_configuracion(
     config.twilio_account_sid = datos.twilio_account_sid
     config.twilio_numero_whatsapp = datos.twilio_numero_whatsapp
     config.plantilla_content_sid = datos.plantilla_content_sid
+    config.validar_firma_webhook = datos.validar_firma_webhook
 
     # Campo vacío = el admin no quiso cambiar el auth token existente
     if datos.twilio_auth_token:

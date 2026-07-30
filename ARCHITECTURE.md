@@ -213,3 +213,18 @@ frontend/src/app/
 | GET    | /api/v1/estado-diario/{id}/agendas          | Listar agendas               |
 | POST   | /api/v1/estado-diario/{id}/agenda           | Crear entrada de agenda      |
 | POST   | /api/v1/estado-diario/request-tw            | Webhook Twilio (público)     |
+
+### Webhook de Twilio (`/api/v1/estado-diario/request-tw`)
+
+Recibe las respuestas de los botones de los recordatorios de WhatsApp. En la
+consola de Twilio debe quedar configurado con la **URL pública** del sitio
+(`PUBLIC_BASE_URL` + la ruta), porque esa URL es parte de la firma.
+
+- Es público (sin Bearer): quien llama es Twilio. Lo autentica la cabecera
+  `X-Twilio-Signature`, validada con el Auth Token; se puede desactivar en
+  Configuración → WhatsApp si la firma no calza.
+- Ubica el recordatorio por `OriginalRepliedMessageSid` = `estado_diario_agenda.twilio_sid`.
+- Botón "Resuelto": marca el movimiento leído y finaliza el recordatorio.
+- Cualquier otro botón: posterga `ButtonPayload` minutos creando un
+  recordatorio nuevo (copia del original) y finalizando el anterior.
+- Cada llamada, aceptada o rechazada, queda en `api_llamado_estado_diario`.

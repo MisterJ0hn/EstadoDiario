@@ -142,6 +142,9 @@ class CalendarioResponse(BaseModel):
 # ── Webhook ───────────────────────────────────────────────
 class WebhookResponse(BaseModel):
     exito: bool = True
+    # Qué se hizo con el callback (resuelto, postergado, o por qué se ignoró).
+    # Queda también en api_llamado_estado_diario.json_response.
+    mensaje: Optional[str] = None
 
 
 # ── Response genérico ─────────────────────────────────────

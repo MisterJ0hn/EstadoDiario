@@ -37,6 +37,21 @@ class EstadoDiarioAgendaRepository:
             query = query.filter(EstadoDiarioAgenda.usuario_registro_id == usuario_id)
         return query.order_by(EstadoDiarioAgenda.fecha_hora.asc()).all()
 
+    def find_by_twilio_sid(self, twilio_sid: str) -> Optional[EstadoDiarioAgenda]:
+        """Recordatorio cuyo WhatsApp corresponde al SID que Twilio devuelve en
+        el callback. Se toma el más reciente porque una postergación reenvía el
+        mismo detalle y podría repetirse un SID reutilizado por Twilio."""
+        return (
+            self.db.query(EstadoDiarioAgenda)
+            .options(
+                joinedload(EstadoDiarioAgenda.estado_diario),
+                joinedload(EstadoDiarioAgenda.usuario_registro),
+            )
+            .filter(EstadoDiarioAgenda.twilio_sid == twilio_sid)
+            .order_by(EstadoDiarioAgenda.id.desc())
+            .first()
+        )
+
     def find_pendientes_whatsapp(self, ahora: datetime) -> list[EstadoDiarioAgenda]:
         """Recordatorios con WhatsApp programado, aún no enviados ni
         finalizados, cuya hora de envío ya llegó."""

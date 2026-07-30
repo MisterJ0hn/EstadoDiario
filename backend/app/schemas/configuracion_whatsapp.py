@@ -12,6 +12,7 @@ class ConfiguracionWhatsappResponse(BaseModel):
     tiene_auth_token: bool = False
     twilio_numero_whatsapp: str | None
     plantilla_content_sid: str | None
+    validar_firma_webhook: bool
     fecha_modificacion: datetime
 
     class Config:
@@ -25,6 +26,7 @@ class ConfiguracionWhatsappUpdate(BaseModel):
     twilio_auth_token: Optional[str] = None
     twilio_numero_whatsapp: Optional[str] = Field(default=None, max_length=40)
     plantilla_content_sid: Optional[str] = Field(default=None, max_length=64)
+    validar_firma_webhook: bool = True
 
 
 class OperacionResponse(BaseModel):

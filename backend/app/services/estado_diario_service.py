@@ -1,11 +1,11 @@
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundException, BadRequestException
+from app.core.exceptions import NotFoundException, BadRequestException, ForbiddenException
 from app.models.estado_diario import EstadoDiario
 from app.models.estado_diario_agenda import EstadoDiarioAgenda
 from app.models.api_llamado_estado_diario import ApiLlamadoEstadoDiario
@@ -14,6 +14,7 @@ from app.repositories.estado_diario_agenda_repository import EstadoDiarioAgendaR
 from app.repositories.usuario_repository import UsuarioRepository
 from app.repositories.api_log_repository import ApiLogRepository
 from app.services.google_calendar_service import GoogleCalendarService
+from app.services.whatsapp_service import WhatsappService
 
 logger = logging.getLogger(__name__)
 
@@ -347,27 +348,148 @@ class EstadoDiarioService:
         ]
         return {"exito": True, "total": len(data), "agendas": data}
 
-    def webhook_twilio(self, datos: dict):
-        log = self._create_log("request-tw", json.dumps(datos))
+    def webhook_twilio(
+        self,
+        datos: dict,
+        firma: Optional[str] = None,
+        urls: Optional[list[str]] = None,
+    ):
+        """Callback de Twilio con la respuesta de botón de un recordatorio.
+
+        Público (sin Bearer): quien llama es Twilio, no nuestro frontend. Lo
+        que autentica el request es la firma X-Twilio-Signature, calculada con
+        el Auth Token; sin ella cualquiera que conozca la URL podría marcar
+        movimientos como resueltos. Todo el request queda guardado en
+        api_llamado_estado_diario, exitoso o no.
+
+        El mensaje original se identifica por OriginalRepliedMessageSid, que
+        calza con EstadoDiarioAgenda.twilio_sid guardado al enviarlo. El botón
+        "Resuelto" marca el movimiento leído; cualquier otro botón posterga, y
+        su ButtonPayload son los minutos de postergación.
+
+        Nunca lanza por datos que no calzan (SID desconocido, botón sin
+        payload): responde exito=true con el motivo, para que Twilio no
+        reintente indefinidamente algo que no va a cambiar. Solo un fallo real
+        (por ejemplo, la base caída) propaga el error y devuelve 500.
+        """
+        log = self._create_log("request-tw", json.dumps(datos, ensure_ascii=False, default=str))
+
+        # Antes del try: un rechazo por firma no es un error a reintentar, se
+        # registra una sola vez y corta con 403.
+        motivo = WhatsappService(self.db).validar_firma_twilio(urls or [], datos, firma)
+        if motivo:
+            logger.warning("Webhook Twilio rechazado: %s", motivo)
+            self._save_log(log, False, error=motivo)
+            raise ForbiddenException("Firma de Twilio inválida")
 
         try:
-            button_text = datos.get("ButtonText")
-            button_payload = datos.get("ButtonPayload")
+            button_text = str(datos.get("ButtonText") or "").strip()
+            button_payload = str(datos.get("ButtonPayload") or "").strip()
+            twilio_sid = str(datos.get("OriginalRepliedMessageSid") or "").strip()
 
-            if button_payload and str(button_payload).isdigit():
-                ed = self.repo.find_by_id(int(button_payload))
-                if ed:
-                    log.estado_diario_id = ed.id
-                    if button_text and button_text.strip().lower() == "resuelto":
-                        ed.leido = True
-                        ed.fecha_leido = datetime.now(timezone.utc)
+            if not button_payload.isdigit():
+                return self._responder_webhook(log, "Sin ButtonPayload numérico: nada que procesar")
 
-            self.db.commit()
-            self._save_log(log, True, json.dumps({"exito": True}))
-            return {"exito": True}
+            if not twilio_sid:
+                return self._responder_webhook(log, "Sin OriginalRepliedMessageSid: nada que procesar")
+
+            agenda = self.agenda_repo.find_by_twilio_sid(twilio_sid)
+            if agenda is None:
+                return self._responder_webhook(
+                    log, f"No hay recordatorio con el SID {twilio_sid}"
+                )
+
+            ed = agenda.estado_diario
+            if ed is None:
+                return self._responder_webhook(
+                    log, f"El recordatorio {agenda.id} no tiene movimiento asociado"
+                )
+
+            log.estado_diario_id = ed.id
+
+            if button_text.lower() == "resuelto":
+                mensaje = self._webhook_resolver(agenda, ed)
+            else:
+                mensaje = self._webhook_postergar(agenda, ed, int(button_payload))
+
+            return self._responder_webhook(log, mensaje)
         except Exception as e:
+            logger.exception("Fallo procesando el webhook de Twilio")
+            self.db.rollback()
             self._save_log(log, False, error=str(e))
             raise
+
+    def _responder_webhook(self, log: ApiLlamadoEstadoDiario, mensaje: str) -> dict:
+        respuesta = {"exito": True, "mensaje": mensaje}
+        logger.info("Webhook Twilio: %s", mensaje)
+        self._save_log(log, True, json.dumps(respuesta, ensure_ascii=False))
+        return respuesta
+
+    def _webhook_resolver(self, agenda: EstadoDiarioAgenda, ed: EstadoDiario) -> str:
+        """Botón "Resuelto": el movimiento queda leído y el recordatorio
+        finalizado, igual que el botón "Resolver" de la app. Quien responde el
+        WhatsApp es el dueño del recordatorio, así que él figura como autor."""
+        ahora = datetime.now(timezone.utc)
+
+        ed.leido = True
+        ed.fecha_leido = ahora
+        ed.usuario_leido_id = agenda.usuario_registro_id
+
+        agenda.finalizado = True
+        agenda.fecha_finalizacion = ahora
+        agenda.usuario_finaliza_id = agenda.usuario_registro_id
+
+        if agenda.usuario_registro is not None:
+            self.google_service.finalizar_evento(agenda, agenda.usuario_registro)
+
+        self.db.commit()
+        return f"Movimiento {ed.id} resuelto desde el recordatorio {agenda.id}"
+
+    def _webhook_postergar(self, agenda: EstadoDiarioAgenda, ed: EstadoDiario, minutos: int) -> str:
+        """Cualquier otro botón posterga N minutos: se agenda un recordatorio
+        nuevo copiando el original (el original ya está enviado y el job no lo
+        reenvía) y se finaliza el anterior para que no queden duplicados
+        vigentes en el calendario tras varias postergaciones."""
+        ahora = datetime.now(timezone.utc)
+        nueva_fecha = ahora + timedelta(minutes=minutos)
+
+        nueva = EstadoDiarioAgenda(
+            estado_diario=ed,
+            detalle=agenda.detalle,
+            fecha_hora=nueva_fecha,
+            fecha_hora_registro=ahora,
+            nivel=agenda.nivel,
+            usuario_registro_id=agenda.usuario_registro_id,
+            # Se reenvía por el mismo canal: sin esto el job de WhatsApp no lo
+            # tomaría y la postergación quedaría muda.
+            notificar_whatsapp=True,
+            whatsapp_telefono=agenda.whatsapp_telefono,
+            fecha_hora_whatsapp=nueva_fecha,
+            enviado=False,
+        )
+        self.db.add(nueva)
+
+        agenda.finalizado = True
+        agenda.fecha_finalizacion = ahora
+        agenda.usuario_finaliza_id = agenda.usuario_registro_id
+
+        usuario = agenda.usuario_registro
+        if usuario is not None:
+            self.google_service.finalizar_evento(agenda, usuario)
+
+        self.db.commit()
+
+        # Google Calendar es best-effort: si falla, el recordatorio ya quedó
+        # guardado y el error se registra en la propia agenda.
+        if usuario is not None:
+            self.db.refresh(nueva)
+            self.google_service.crear_o_actualizar_evento(nueva, usuario)
+            self.db.commit()
+
+        return (
+            f"Recordatorio {agenda.id} postergado {minutos} minutos "
+            f"(nuevo recordatorio {nueva.id} para {nueva_fecha.isoformat()})"
+        )
 
     def get_movimiento_detalle(self, estado_diario_id: int):
         ed = self.repo.find_by_id(estado_diario_id)

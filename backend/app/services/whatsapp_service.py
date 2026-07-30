@@ -7,6 +7,7 @@ esos mensajes. No lo reemplaza.
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -89,6 +90,40 @@ class WhatsappService:
             "enviados": enviados,
             "errores": errores,
         }
+
+    def validar_firma_twilio(
+        self, urls: list[str], params: dict, firma: Optional[str]
+    ) -> Optional[str]:
+        """Verifica la cabecera X-Twilio-Signature del webhook /request-tw.
+
+        Devuelve None si el request es legítimo (o si la validación está
+        desactivada en la configuración) y, si no, el motivo del rechazo.
+
+        Twilio firma con el Auth Token sobre la URL exacta configurada en su
+        consola más los parámetros del POST; por eso se prueban varias URLs
+        candidatas (ver el endpoint): detrás del proxy el backend ve http y un
+        host interno, no la URL pública que Twilio usó para firmar.
+        """
+        config = self.config_repo.get_or_create()
+
+        if not config.validar_firma_webhook:
+            return None
+
+        if not config.twilio_auth_token_cifrado:
+            return "La validación de firma está activa pero falta el Auth Token de Twilio"
+
+        if not firma:
+            return "Falta la cabecera X-Twilio-Signature"
+
+        from twilio.request_validator import RequestValidator
+
+        validador = RequestValidator(descifrar(config.twilio_auth_token_cifrado))
+        for url in urls:
+            if validador.validate(url, params, firma):
+                logger.debug("Firma de Twilio válida para %s", url)
+                return None
+
+        return f"Firma X-Twilio-Signature inválida (URLs probadas: {', '.join(urls) or 'ninguna'})"
 
     @staticmethod
     def _a_canal_whatsapp(numero: str) -> str:

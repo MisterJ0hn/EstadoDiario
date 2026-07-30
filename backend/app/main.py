@@ -80,6 +80,7 @@ _COLUMNAS_NUEVAS = [
     ("estado_diario_agenda", "google_event_id", "VARCHAR(255)"),
     ("estado_diario_agenda", "google_calendar_id", "VARCHAR(255)"),
     ("estado_diario_agenda", "google_sync_error", "TEXT"),
+    ("configuracion_whatsapp", "validar_firma_webhook", "BOOLEAN DEFAULT TRUE"),
 ]
 
 # create_all() tampoco crea índices en columnas agregadas a tablas

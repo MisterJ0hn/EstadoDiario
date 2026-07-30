@@ -70,6 +70,21 @@ import { ConfiguracionWhatsappUpdate } from '@core/models/configuracion-whatsapp
               </p>
             </div>
 
+            <hr class="border-neutral-200" />
+
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" class="mt-1" [(ngModel)]="modelo.validar_firma_webhook" />
+              <span>
+                <span class="font-medium text-neutral-800">Validar la firma de los callbacks de Twilio</span>
+                <span class="block text-sm text-neutral-500">
+                  El webhook que recibe las respuestas de los botones es público. Con esto activo solo
+                  se aceptan los requests firmados por Twilio con el Auth Token. Desactívelo únicamente
+                  si los callbacks empiezan a rechazarse por firma inválida (revise antes que la URL
+                  configurada en Twilio sea la pública del sitio).
+                </span>
+              </span>
+            </label>
+
             @if (mensaje()) {
               <div [class]="mensajeEsError() ? 'alert-danger' : 'alert-info'">{{ mensaje() }}</div>
             }
@@ -98,6 +113,7 @@ export class WhatsappConfigComponent implements OnInit {
     twilio_auth_token: '',
     twilio_numero_whatsapp: '',
     plantilla_content_sid: '',
+    validar_firma_webhook: true,
   };
 
   cargando = signal(true);
@@ -118,6 +134,7 @@ export class WhatsappConfigComponent implements OnInit {
           twilio_auth_token: '',
           twilio_numero_whatsapp: config.twilio_numero_whatsapp ?? '',
           plantilla_content_sid: config.plantilla_content_sid ?? '',
+          validar_firma_webhook: config.validar_firma_webhook,
         };
         this.tieneAuthToken.set(config.tiene_auth_token);
         this.cargando.set(false);
