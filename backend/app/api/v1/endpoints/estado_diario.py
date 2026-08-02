@@ -88,29 +88,52 @@ def movimientos_por_origen(
     return {"exito": True, "total": len(data), "movimientos": data}
 
 
-def _parse_filename(filename: str) -> tuple[str | None, date | None]:
-    """
-    Extrae RUT y fecha del nombre del archivo.
-    Formato esperado: EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls
-    Ejemplo: EstadoDiario17314741-4_15_07_2026.xls
-    """
-    name = os.path.splitext(filename)[0]  # sin extensión
+# Formato actual: estadoDiario_{RUT}_{DV}_{DDMMYYYY}
+# El dígito verificador va en un campo propio que suele venir vacío, de ahí el
+# doble guion bajo: estadoDiario_16952077__28072026.xls. La fecha viene pegada,
+# sin separadores. Se aceptan además el guion como separador del DV y el DV
+# ausente sin dejar el campo vacío.
+_PATRON_FECHA_PEGADA = re.compile(
+    r"^estadoDiario_(\d+)(?:-|_)?([\dkK])?_+(\d{2})(\d{2})(\d{4})$",
+    re.IGNORECASE,
+)
 
-    # Patrón: EstadoDiario + RUT + _ + DD_MM_YYYY
-    match = re.match(
-        r"^EstadoDiario(\d+[\-kK]\d?)_(\d{1,2})_(\d{1,2})_(\d{4})$",
-        name,
-    )
+# Formato anterior, aún soportado para no romper archivos guardados o reenvíos
+# viejos: EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls
+_PATRON_FECHA_SEPARADA = re.compile(
+    r"^estadoDiario_?(\d+(?:-[\dkK])?)_+(\d{1,2})_(\d{1,2})_(\d{4})$",
+    re.IGNORECASE,
+)
+
+
+def _a_fecha(anio: str, mes: str, dia: str) -> date | None:
+    """Los archivos vienen en DDMMYYYY; una fecha imposible (32/13) devuelve
+    None para que el llamador lo trate como nombre no reconocido."""
+    try:
+        return date(int(anio), int(mes), int(dia))
+    except ValueError:
+        return None
+
+
+def _parse_filename(filename: str) -> tuple[str | None, date | None]:
+    """Extrae RUT y fecha del nombre del archivo de estado diario.
+
+    Acepta los dos formatos que ha usado el PJUD:
+      estadoDiario_16952077__28072026.xls   (actual)
+      EstadoDiario17314741-4_15_07_2026.xls (anterior)
+    """
+    name = os.path.splitext(filename or "")[0]
+
+    match = _PATRON_FECHA_PEGADA.match(name)
     if match:
-        rut = match.group(1)
-        dia = int(match.group(2))
-        mes = int(match.group(3))
-        anio = int(match.group(4))
-        try:
-            fecha = date(anio, mes, dia)
-        except ValueError:
-            fecha = None
-        return rut, fecha
+        cuerpo, dv, dia, mes, anio = match.groups()
+        rut = f"{cuerpo}-{dv}" if dv else cuerpo
+        return rut, _a_fecha(anio, mes, dia)
+
+    match = _PATRON_FECHA_SEPARADA.match(name)
+    if match:
+        rut, dia, mes, anio = match.groups()
+        return rut, _a_fecha(anio, mes, dia)
 
     return None, None
 
@@ -149,9 +172,9 @@ def upload_file(
     fecha_final = fecha_date or parsed_fecha
 
     if not rut_final:
-        return {"exito": False, "mensaje": "No se pudo determinar el RUT. Proporciónelo manualmente o use el formato: EstadoDiarioRUT_DD_MM_YYYY.xls"}
+        return {"exito": False, "mensaje": "No se pudo determinar el RUT. Proporciónelo manualmente o use el formato: estadoDiario_{RUT}__{DDMMYYYY}.xls"}
     if not fecha_final:
-        return {"exito": False, "mensaje": "No se pudo determinar la fecha. Proporciónela manualmente o use el formato: EstadoDiarioRUT_DD_MM_YYYY.xls"}
+        return {"exito": False, "mensaje": "No se pudo determinar la fecha. Proporciónela manualmente o use el formato: estadoDiario_{RUT}__{DDMMYYYY}.xls"}
 
     filename = f"{uuid.uuid4().hex}{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)

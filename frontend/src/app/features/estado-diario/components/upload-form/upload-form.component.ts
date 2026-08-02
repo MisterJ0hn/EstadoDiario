@@ -121,7 +121,7 @@ export class UploadFormComponent {
   ejemploNombre(): string {
     return this.tipo === 'movimientos'
       ? 'Movimientos_16952077__30_07_2026.xls'
-      : 'EstadoDiario17314741-4_15_07_2026.xls';
+      : 'estadoDiario_16952077__28072026.xls';
   }
 
   onFileSelect(event: Event): void {
@@ -145,18 +145,38 @@ export class UploadFormComponent {
   private parseFilename(filename: string): void {
     const name = filename.replace(/\.\w+$/, ''); // quitar extensión
 
-    // Formato estado diario:  EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls
-    // Formato movimientos:    Movimientos_{RUT}__{DD}_{MM}_{YYYY}.xls
-    const matchEd = name.match(/^EstadoDiario(\d+[\-kK]?\d?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
+    // Estado diario, formato actual: estadoDiario_{RUT}_{DV}_{DDMMYYYY}.xls
+    // El dígito verificador va en un campo propio que suele venir vacío (de
+    // ahí el doble guion bajo) y la fecha viene pegada, sin separadores.
+    const matchEdNuevo = name.match(
+      /^estadoDiario_(\d+)(?:-|_)?([\dkK])?_+(\d{2})(\d{2})(\d{4})$/i
+    );
+    // Estado diario, formato anterior: EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls
+    const matchEdViejo = name.match(
+      /^estadoDiario_?(\d+(?:-[\dkK])?)_+(\d{1,2})_(\d{1,2})_(\d{4})$/i
+    );
+    // Movimientos: Movimientos_{RUT}__{DD}_{MM}_{YYYY}.xls
     const matchMov = name.match(/^Movimientos_(\d+[\-kK]?\d?)_+(\d{1,2})_(\d{1,2})_(\d{4})$/i);
-    const match = matchEd ?? matchMov;
 
     // El nombre manda sobre el selector: es el dato más confiable del tipo.
-    if (matchEd) this.tipo = 'estado_diario';
+    if (matchEdNuevo || matchEdViejo) this.tipo = 'estado_diario';
     if (matchMov) this.tipo = 'movimientos';
 
+    // El formato nuevo parte el RUT en cuerpo y dígito verificador; los otros
+    // dos lo traen entero, así que se normalizan a la misma forma.
+    let match: RegExpMatchArray | null = null;
+    let rutDetectado = '';
+    if (matchEdNuevo) {
+      const [, cuerpo, dv] = matchEdNuevo;
+      rutDetectado = dv ? `${cuerpo}-${dv}` : cuerpo;
+      match = [matchEdNuevo[0], rutDetectado, matchEdNuevo[3], matchEdNuevo[4], matchEdNuevo[5]];
+    } else if (matchEdViejo ?? matchMov) {
+      match = matchEdViejo ?? matchMov;
+      rutDetectado = match![1];
+    }
+
     if (match) {
-      const rut = match[1];
+      const rut = rutDetectado;
       const dia = match[2].padStart(2, '0');
       const mes = match[3].padStart(2, '0');
       const anio = match[4];

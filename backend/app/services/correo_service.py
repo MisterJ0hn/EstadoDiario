@@ -391,7 +391,7 @@ class CorreoService:
                 nombre_archivo=nombre_original,
                 detalle=(
                     "No se pudo deducir RUT y fecha del nombre. Formatos esperados: "
-                    "EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls o "
+                    "estadoDiario_{RUT}__{DDMMYYYY}.xls o "
                     "Movimientos_{RUT}_{DD}_{MM}_{YYYY}.xls"
                 ),
                 disparo=disparo,
