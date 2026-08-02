@@ -20,8 +20,14 @@ class EstadoDiarioAgendaRepository:
             .all()
         )
 
-    def find_by_id(self, aid: int) -> Optional[EstadoDiarioAgenda]:
-        return self.db.get(EstadoDiarioAgenda, aid)
+    def find_by_id(self, aid: int, usuario_id: Optional[int] = None) -> Optional[EstadoDiarioAgenda]:
+        """`usuario_id=None` = sin filtro (admin). El dueño de un recordatorio
+        es quien lo creó, igual criterio que en find_vigentes.
+        """
+        query = self.db.query(EstadoDiarioAgenda).filter(EstadoDiarioAgenda.id == aid)
+        if usuario_id is not None:
+            query = query.filter(EstadoDiarioAgenda.usuario_registro_id == usuario_id)
+        return query.first()
 
     def find_vigentes(self, usuario_id: Optional[int]) -> list[EstadoDiarioAgenda]:
         """Recordatorios no finalizados. `usuario_id=None` = todos (admin)."""

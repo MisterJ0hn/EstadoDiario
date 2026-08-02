@@ -1,9 +1,9 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
-import { EstadoDiarioOrigen } from '@core/models/estado-diario.model';
+import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model';
 
 @Component({
   selector: 'app-origenes-list',
@@ -12,10 +12,10 @@ import { EstadoDiarioOrigen } from '@core/models/estado-diario.model';
   template: `
     <div class="space-y-6">
       <!-- Header -->
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Orígenes</h1>
-          <p class="text-neutral-500 mt-1">Archivos de estado diario cargados</p>
+          <h1 class="text-2xl font-bold text-neutral-800">Archivos</h1>
+          <p class="text-neutral-500 mt-1">{{ subtitulo() }}</p>
         </div>
         <a routerLink="/estado-diario/upload" class="btn-primary">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -23,6 +23,31 @@ import { EstadoDiarioOrigen } from '@core/models/estado-diario.model';
           </svg>
           Cargar Archivo
         </a>
+      </div>
+
+      <!-- Pestañas por tipo de archivo -->
+      <div class="border-b border-neutral-200">
+        <nav class="-mb-px flex gap-1 overflow-x-auto" role="tablist">
+          @for (t of tabs; track t.key) {
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="activeTab() === t.key"
+              (click)="selectTab(t.key)"
+              class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors"
+              [class]="activeTab() === t.key
+                ? 'border-primary-600 text-primary-700'
+                : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'"
+            >
+              {{ t.label }}
+              @if (activeTab() === t.key) {
+                <span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-primary-100 text-primary-700">
+                  {{ total() }}
+                </span>
+              }
+            </button>
+          }
+        </nav>
       </div>
 
       <!-- Table -->
@@ -45,7 +70,7 @@ import { EstadoDiarioOrigen } from '@core/models/estado-diario.model';
                   <th>Archivo</th>
                   <th>Fecha Carga</th>
                   <th>Usuario</th>
-                  <th>Movimientos</th>
+                  <th>{{ columnaContador() }}</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -63,16 +88,25 @@ import { EstadoDiarioOrigen } from '@core/models/estado-diario.model';
                     </td>
                     <td>
                       <div class="flex items-center gap-2">
-                        <a [routerLink]="['/estado-diario/origen', o.id, 'movimientos']"
+                        <a [routerLink]="verLink(o)" [queryParams]="verQueryParams(o)"
                            class="btn-outline btn-sm">Ver</a>
-                        <button (click)="onDelete(o.id)" class="btn-danger btn-sm">Eliminar</button>
+                        <!--
+                          Botón "Eliminar" oculto por decisión de negocio: los archivos
+                          cargados no se borran desde la interfaz. El método onDelete() y el
+                          llamado a deleteOrigen() se mantienen intactos a propósito.
+                          Para reactivarlo, cambiar la condición del bloque de abajo de
+                          false a true (o eliminar el bloque y dejar el botón suelto).
+                        -->
+                        @if (false) {
+                          <button (click)="onDelete(o.id)" class="btn-danger btn-sm">Eliminar</button>
+                        }
                       </div>
                     </td>
                   </tr>
                 } @empty {
                   <tr>
                     <td colspan="8" class="text-center py-10 text-neutral-400">
-                      No hay orígenes cargados
+                      No hay archivos cargados
                     </td>
                   </tr>
                 }
@@ -102,6 +136,14 @@ import { EstadoDiarioOrigen } from '@core/models/estado-diario.model';
 export class OrigenesListComponent implements OnInit {
   private service = inject(EstadoDiarioService);
   private notification = inject(NotificationService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+
+  /** Los dos tipos de Excel que maneja el sistema; el `key` es el valor que espera el backend. */
+  readonly tabs: { key: TipoOrigen; label: string }[] = [
+    { key: 'estado_diario', label: 'Estado Diario' },
+    { key: 'movimientos', label: 'Movimientos' },
+  ];
 
   origenes = signal<EstadoDiarioOrigen[]>([]);
   loading = signal(true);
@@ -109,13 +151,59 @@ export class OrigenesListComponent implements OnInit {
   totalPages = signal(1);
   total = signal(0);
 
+  activeTab = signal<TipoOrigen>('estado_diario');
+
+  subtitulo = computed(() =>
+    this.activeTab() === 'movimientos'
+      ? 'Archivos de movimientos cargados'
+      : 'Archivos de estado diario cargados'
+  );
+
+  /** El contador de filas por archivo significa algo distinto en cada pestaña. */
+  columnaContador = computed(() =>
+    this.activeTab() === 'movimientos' ? 'Movimientos' : 'Estado Diario'
+  );
+
   ngOnInit(): void {
+    const queryTab = this.route.snapshot.queryParamMap.get('tab');
+    this.activeTab.set(this.normalizeTab(queryTab) ?? 'estado_diario');
     this.loadPage(1);
+  }
+
+  private normalizeTab(value: string | null): TipoOrigen | null {
+    return this.tabs.some((t) => t.key === value) ? (value as TipoOrigen) : null;
+  }
+
+  selectTab(tab: TipoOrigen): void {
+    if (this.activeTab() === tab) return;
+    this.activeTab.set(tab);
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    this.loadPage(1);
+  }
+
+  /**
+   * "Ver" lleva a la vista que corresponde al tipo de archivo: el estado diario
+   * tiene su listado por origen, y los movimientos se filtran por `origen_id`
+   * en el módulo Movimientos.
+   */
+  verLink(o: EstadoDiarioOrigen): (string | number)[] {
+    return o.tipo === 'movimientos'
+      ? ['/movimientos']
+      : ['/estado-diario/origen', o.id, 'movimientos'];
+  }
+
+  verQueryParams(o: EstadoDiarioOrigen): Record<string, number> | null {
+    return o.tipo === 'movimientos' ? { origen_id: o.id } : null;
   }
 
   loadPage(page: number): void {
     this.loading.set(true);
-    this.service.getOrigenes(page).subscribe({
+    this.service.getOrigenes(page, 20, this.activeTab()).subscribe({
       next: (res) => {
         this.origenes.set(res.origenes);
         this.currentPage.set(res.page);
@@ -125,17 +213,17 @@ export class OrigenesListComponent implements OnInit {
       },
       error: () => {
         this.loading.set(false);
-        this.notification.error('Error al cargar orígenes');
+        this.notification.error('Error al cargar los archivos');
       },
     });
   }
 
   onDelete(id: number): void {
-    if (!confirm('¿Está seguro de eliminar este origen y todos sus movimientos?')) return;
+    if (!confirm('¿Está seguro de eliminar este archivo y todo su estado diario?')) return;
 
     this.service.deleteOrigen(id).subscribe({
       next: () => {
-        this.notification.success('Origen eliminado correctamente');
+        this.notification.success('Archivo eliminado correctamente');
         this.loadPage(this.currentPage());
       },
       error: () => this.notification.error('Error al eliminar'),

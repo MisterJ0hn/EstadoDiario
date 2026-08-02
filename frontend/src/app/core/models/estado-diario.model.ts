@@ -9,10 +9,14 @@ export interface JurisdiccionListResponse {
   jurisdicciones: Jurisdiccion[];
 }
 
+/** Tipo de archivo cargado: separa las pestañas de la vista Archivos. */
+export type TipoOrigen = 'estado_diario' | 'movimientos';
+
 export interface EstadoDiarioOrigen {
   id: number;
   rut: string | null;
   fecha: string | null;
+  tipo: TipoOrigen;
   nombre_archivo: string | null;
   url: string | null;
   fecha_carga: string;
@@ -44,6 +48,8 @@ export interface Movimiento {
   corte: string | null;
   leido: boolean;
   fecha_leido: string | null;
+  /** Comentario opcional que se deja al marcar el registro como resuelto */
+  observacion_resuelto: string | null;
   pendiente: boolean;
   nivel_pendiente: string | null;
   fecha_pendiente: string | null;

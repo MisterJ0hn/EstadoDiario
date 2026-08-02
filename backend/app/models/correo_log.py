@@ -26,6 +26,13 @@ class CorreoLog(Base):
     __tablename__ = "correo_log"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # Dueño de la casilla que se revisó. Desde que hay una casilla por usuario
+    # es imprescindible: sin esto, la corrida de un usuario contaría como la
+    # del día para todos (y cada uno vería el movimiento de correo ajeno).
+    # Nulo solo en las filas anteriores al cambio.
+    usuario_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("usuario.id"), index=True
+    )
     fecha: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )

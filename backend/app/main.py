@@ -81,6 +81,16 @@ _COLUMNAS_NUEVAS = [
     ("estado_diario_agenda", "google_calendar_id", "VARCHAR(255)"),
     ("estado_diario_agenda", "google_sync_error", "TEXT"),
     ("configuracion_whatsapp", "validar_firma_webhook", "BOOLEAN DEFAULT TRUE"),
+    # Observación opcional al marcar un movimiento como resuelto.
+    ("estado_diario", "observacion_resuelto", "TEXT"),
+    # Discrimina estado diario vs. movimientos en la tabla de archivos. El
+    # DEFAULT deja las filas existentes como 'estado_diario', que es lo que son.
+    ("estado_diario_origen", "tipo", "VARCHAR(20) DEFAULT 'estado_diario'"),
+    # Dueño de la casilla IMAP: la configuración pasó de global a una por
+    # usuario. La fila global heredada queda con usuario_id NULL.
+    ("configuracion_correo", "usuario_id", "INTEGER REFERENCES usuario(id)"),
+    # Dueño de la casilla revisada, para que la bitácora también quede aislada.
+    ("correo_log", "usuario_id", "INTEGER REFERENCES usuario(id)"),
 ]
 
 # create_all() tampoco crea índices en columnas agregadas a tablas
@@ -89,6 +99,15 @@ _COLUMNAS_NUEVAS = [
 _INDICES_NUEVOS = [
     ("ix_estado_diario_agenda_finalizado", "estado_diario_agenda", "finalizado"),
     ("ix_estado_diario_agenda_usuario_finaliza_id", "estado_diario_agenda", "usuario_finaliza_id"),
+    ("ix_estado_diario_origen_tipo", "estado_diario_origen", "tipo"),
+    ("ix_correo_log_usuario_id", "correo_log", "usuario_id"),
+]
+
+# El unique de configuracion_correo.usuario_id (una casilla por usuario) no lo
+# puede crear create_all() porque la tabla ya existe, y _INDICES_NUEVOS crea
+# índices no únicos. Va aparte.
+_INDICES_UNICOS_NUEVOS = [
+    ("ux_configuracion_correo_usuario_id", "configuracion_correo", "usuario_id"),
 ]
 
 
@@ -127,12 +146,62 @@ def _aplicar_columnas_nuevas() -> None:
             except Exception as e:
                 logger.error("No se pudo crear el índice %s: %s", nombre, e)
 
+        for nombre, tabla, columna in _INDICES_UNICOS_NUEVOS:
+            try:
+                if not _indice_existe(conn, nombre):
+                    conn.execute(
+                        text(f"CREATE UNIQUE INDEX {nombre} ON {tabla} ({columna})")
+                    )
+            except Exception as e:
+                logger.error("No se pudo crear el índice único %s: %s", nombre, e)
+
+
+def _asignar_datos_huerfanos() -> None:
+    """Los archivos cargados antes del aislamiento por usuario pueden no tener
+    dueño. Sin dueño no los vería nadie salvo el admin, así que se le asignan
+    explícitamente a él en vez de dejarlos invisibles.
+
+    Es idempotente: en la segunda corrida ya no queda ninguna fila con
+    usuario_carga_id NULL y el UPDATE no afecta nada.
+    """
+    with engine.begin() as conn:
+        try:
+            admin_id = conn.execute(
+                text("SELECT id FROM usuario WHERE rol = 'admin' ORDER BY id LIMIT 1")
+            ).scalar()
+            if admin_id is None:
+                return
+
+            resultado = conn.execute(
+                text(
+                    "UPDATE estado_diario_origen SET usuario_carga_id = :admin "
+                    "WHERE usuario_carga_id IS NULL"
+                ),
+                {"admin": admin_id},
+            )
+            if resultado.rowcount:
+                logger.info(
+                    "Se asignaron %d archivos sin dueño al admin (id=%d)",
+                    resultado.rowcount,
+                    admin_id,
+                )
+
+            conn.execute(
+                text(
+                    "UPDATE estado_diario_origen SET tipo = 'estado_diario' "
+                    "WHERE tipo IS NULL"
+                )
+            )
+        except Exception as e:
+            logger.error("No se pudieron asignar los datos huérfanos: %s", e)
+
 
 @app.on_event("startup")
 def on_startup():
     logger.info("Creando tablas en la base de datos...")
     Base.metadata.create_all(bind=engine)
     _aplicar_columnas_nuevas()
+    _asignar_datos_huerfanos()
     logger.info("Aplicación iniciada - Ambiente: %s", settings.APP_ENV)
 
     # Seed initial data

@@ -12,6 +12,7 @@ import {
   CalendarioResponse,
   FinalizarAgendaRequest,
   MarcarPendienteRequest,
+  TipoOrigen,
 } from '@core/models/estado-diario.model';
 
 @Injectable({ providedIn: 'root' })
@@ -27,8 +28,9 @@ export class EstadoDiarioService {
   }
 
   // ── Orígenes ───────────────────────────
-  getOrigenes(page = 1, perPage = 20): Observable<OrigenListResponse> {
-    const params = new HttpParams().set('page', page).set('per_page', perPage);
+  getOrigenes(page = 1, perPage = 20, tipo?: TipoOrigen): Observable<OrigenListResponse> {
+    let params = new HttpParams().set('page', page).set('per_page', perPage);
+    if (tipo) params = params.set('tipo', tipo);
     return this.http.get<OrigenListResponse>(`${this.apiUrl}/origenes`, { params });
   }
 
@@ -81,8 +83,10 @@ export class EstadoDiarioService {
   }
 
   // ── Acciones ───────────────────────────
-  marcarLeido(id: number): Observable<ApiResponse> {
-    return this.http.post<ApiResponse>(`${this.apiUrl}/${id}/leido`, {});
+  /** La observación es opcional; si no se indica se manda el body vacío. */
+  marcarLeido(id: number, observacion?: string | null): Observable<ApiResponse> {
+    const body = observacion?.trim() ? { observacion: observacion.trim() } : {};
+    return this.http.post<ApiResponse>(`${this.apiUrl}/${id}/leido`, body);
   }
 
   marcarPendiente(id: number, data: MarcarPendienteRequest): Observable<ApiResponse> {

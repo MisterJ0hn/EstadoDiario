@@ -75,11 +75,13 @@
   .data-table thead {
     @apply bg-neutral-50;
   }
+  /* Espaciado compacto: las tablas suelen tener muchas columnas y se busca
+     mostrar la mayor cantidad de filas posible sin scroll. */
   .data-table th {
-    @apply px-4 py-3 text-left text-xs font-semibold text-neutral-600 uppercase tracking-wider;
+    @apply px-3 py-2 text-left text-xs font-semibold text-neutral-600 uppercase tracking-wider;
   }
   .data-table td {
-    @apply px-4 py-3 text-sm text-neutral-700 whitespace-nowrap;
+    @apply px-3 py-1.5 text-sm text-neutral-700 whitespace-nowrap;
   }
   .data-table tbody tr {
     @apply border-b border-neutral-100 hover:bg-primary-50/40 transition-colors;

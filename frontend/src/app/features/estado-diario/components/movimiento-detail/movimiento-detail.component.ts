@@ -31,12 +31,14 @@ import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component'
               </svg>
               Volver
             </button>
-            <h1 class="text-2xl font-bold text-neutral-800">Detalle del Movimiento #{{ movimiento()!.id }}</h1>
+            <h1 class="text-2xl font-bold text-neutral-800">Detalle del Estado Diario #{{ movimiento()!.id }}</h1>
           </div>
           <div class="flex gap-2">
             @if (!movimiento()!.leido) {
-              <button (click)="confirmarResolver.set(true)" class="btn-success">Marcar como Resuelto</button>
-              <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning">Crear Recordatorio</button>
+              <button (click)="abrirResolver()" class="btn-success">Marcar como Resuelto</button>
+              <!-- Marcar pendiente y agendar son una sola acción: el modal de
+                   recordatorio deja el registro pendiente con el nivel elegido ahí. -->
+              <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning">Marcar como Pendiente</button>
             }
           </div>
         </div>
@@ -109,6 +111,13 @@ import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component'
                 <div>
                   <span class="text-xs text-neutral-500">Fecha resolución:</span>
                   <span class="text-sm ml-2">{{ movimiento()!.fecha_leido | date:'dd/MM/yyyy HH:mm' }}</span>
+                </div>
+              }
+
+              @if (movimiento()!.observacion_resuelto) {
+                <div>
+                  <span class="text-xs text-neutral-500 uppercase">Observación</span>
+                  <p class="text-sm text-neutral-700 mt-1 whitespace-pre-line">{{ movimiento()!.observacion_resuelto }}</p>
                 </div>
               }
 
@@ -224,7 +233,7 @@ import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component'
               <h3 class="text-lg font-semibold">Marcar como resuelto</h3>
               <button (click)="cancelarResolver()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body space-y-4">
               <div class="flex items-start gap-3">
                 <div class="shrink-0 w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
                   <svg class="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -232,8 +241,14 @@ import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component'
                   </svg>
                 </div>
                 <p class="text-sm text-neutral-600 mt-2">
-                  ¿Confirma que quiere marcar este movimiento como <strong>resuelto</strong>?
+                  ¿Confirma que quiere marcar este registro como <strong>resuelto</strong>?
                 </p>
+              </div>
+              <div>
+                <label class="form-label">Observación (opcional)</label>
+                <textarea class="form-input" rows="3" [(ngModel)]="observacionResuelto"
+                          placeholder="Ej: se presentó escrito el 12-08-2026"></textarea>
+                <p class="text-xs text-neutral-400 mt-1">Queda registrada junto con la resolución.</p>
               </div>
             </div>
             <div class="modal-footer">
@@ -258,11 +273,13 @@ export class MovimientoDetailComponent implements OnInit {
   agendas = signal<Agenda[]>([]);
   loading = signal(true);
 
-  /** id del movimiento para el que se abre el modal "Crear Recordatorio"; null = cerrado */
+  /** id del registro para el que se abre el modal "Marcar como pendiente"; null = cerrado */
   recordatorioMovimientoId = signal<number | null>(null);
 
   confirmarResolver = signal(false);
   confirmandoResolver = signal(false);
+  /** Comentario opcional que acompaña al "resuelto" */
+  observacionResuelto = '';
 
   ngOnInit(): void {
     const id = Number(this.route.snapshot.paramMap.get('id'));
@@ -299,18 +316,25 @@ export class MovimientoDetailComponent implements OnInit {
     return 'badge-orange';
   }
 
+  abrirResolver(): void {
+    this.observacionResuelto = '';
+    this.confirmarResolver.set(true);
+  }
+
   cancelarResolver(): void {
     if (this.confirmandoResolver()) return;
+    this.observacionResuelto = '';
     this.confirmarResolver.set(false);
   }
 
   onMarcarLeido(): void {
     const id = this.movimiento()!.id;
     this.confirmandoResolver.set(true);
-    this.service.marcarLeido(id).subscribe({
+    this.service.marcarLeido(id, this.observacionResuelto).subscribe({
       next: () => {
         this.confirmandoResolver.set(false);
         this.confirmarResolver.set(false);
+        this.observacionResuelto = '';
         this.notification.success('Marcado como resuelto');
         this.loadDetalle(id);
       },

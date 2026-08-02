@@ -11,6 +11,7 @@ from app.models import (  # noqa: F401
     api_llamado_estado_diario,
     configuracion_correo,
     configuracion_google,
+    configuracion_smtp,
     configuracion_whatsapp,
     correo_log,
     estado_diario,
@@ -18,5 +19,7 @@ from app.models import (  # noqa: F401
     estado_diario_origen,
     google_credencial,
     jurisdiccion,
+    movimiento,
+    reporte_plantilla,
     usuario,
 )

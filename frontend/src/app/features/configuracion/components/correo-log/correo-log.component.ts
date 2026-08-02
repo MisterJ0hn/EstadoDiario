@@ -14,9 +14,10 @@ import { CorreoLog, ResultadoCorreo } from '@core/models/configuracion-correo.mo
     <div class="space-y-6">
       <div class="flex items-start justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Bitácora de Importación por Correo</h1>
+          <h1 class="text-2xl font-bold text-neutral-800">Bitácora de mi casilla de correo</h1>
           <p class="text-neutral-500 mt-1">
-            Muestra las importaciones; cambie el filtro para ver descartados, duplicados y errores
+            Importaciones hechas desde su casilla; cambie el filtro para ver descartados,
+            duplicados y errores
           </p>
         </div>
         <a routerLink="/configuracion/correo" class="btn-secondary shrink-0">Configuración</a>

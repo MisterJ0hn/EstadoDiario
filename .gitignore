@@ -22,7 +22,7 @@ backend/uploads/
 
 # ── Datos de prueba ───────────────────────────
 datos/
-
+ejemplos/
 # ── Node / Frontend ──────────────────────────
 node_modules/
 frontend/.angular/

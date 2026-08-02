@@ -9,6 +9,8 @@ class EstadoDiarioOrigenResponse(BaseModel):
     id: int
     rut: str | None
     fecha: date | None
+    # 'estado_diario' | 'movimientos'. Separa las pestañas de la vista Archivos.
+    tipo: str = "estado_diario"
     nombre_archivo: str | None
     url: str | None
     fecha_carga: datetime
@@ -66,6 +68,13 @@ class MovimientoListResponse(BaseModel):
     page: int = 1
     total_pages: int = 1
     movimientos: list[MovimientoResponse]
+
+
+class MarcarLeidoRequest(BaseModel):
+    """Body opcional de "marcar resuelto". Existe solo por la observación; si
+    no se envía nada, el movimiento igual se marca resuelto."""
+
+    observacion: str | None = None
 
 
 class MarcarLeidoResponse(BaseModel):

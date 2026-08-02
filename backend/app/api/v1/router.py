@@ -5,17 +5,23 @@ from app.api.v1.endpoints import (
     configuracion_correo,
     configuracion_google,
     configuracion_whatsapp,
+    dashboard,
     estado_diario,
     google_calendar,
     jurisdicciones,
+    movimientos,
+    reportes,
     usuarios,
 )
 
 api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(auth.router)
+api_router.include_router(dashboard.router)
 api_router.include_router(jurisdicciones.router)
 api_router.include_router(estado_diario.router)
+api_router.include_router(movimientos.router)
+api_router.include_router(reportes.router)
 api_router.include_router(configuracion_correo.router)
 api_router.include_router(usuarios.router)
 api_router.include_router(configuracion_google.router)

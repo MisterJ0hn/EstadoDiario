@@ -20,11 +20,15 @@ class CorreoLogRepository:
 
     def find_all_paginated(
         self,
+        usuario_id: Optional[int],
         page: int = 1,
         per_page: int = 20,
         resultado: Optional[str] = None,
     ):
+        """`usuario_id=None` = sin filtro (admin ve la bitácora de todos)."""
         query = self.db.query(CorreoLog)
+        if usuario_id is not None:
+            query = query.filter(CorreoLog.usuario_id == usuario_id)
         if resultado:
             query = query.filter(CorreoLog.resultado == resultado)
 
@@ -39,9 +43,18 @@ class CorreoLogRepository:
         )
         return items, total, total_pages
 
-    def ya_importado(self, message_id: str, nombre_archivo: Optional[str] = None) -> bool:
+    def ya_importado(
+        self,
+        message_id: str,
+        nombre_archivo: Optional[str] = None,
+        usuario_id: Optional[int] = None,
+    ) -> bool:
         """¿Este adjunto ya se importó con éxito? Evita reprocesar el mismo
-        correo si queda sin marcar como leído o si el job corre dos veces."""
+        correo si queda sin marcar como leído o si el job corre dos veces.
+
+        Se acota al dueño de la casilla: dos usuarios pueden recibir un reenvío
+        del mismo correo (mismo Message-ID) y cada uno necesita su copia.
+        """
         if not message_id:
             return False
         query = self.db.query(CorreoLog.id).filter(
@@ -50,24 +63,33 @@ class CorreoLogRepository:
         )
         if nombre_archivo:
             query = query.filter(CorreoLog.nombre_archivo == nombre_archivo)
+        if usuario_id is not None:
+            query = query.filter(CorreoLog.usuario_id == usuario_id)
         return self.db.query(query.exists()).scalar()
 
-    def existe_corrida_desde(self, desde: datetime, disparo: str = "programado") -> bool:
-        """¿Ya hubo una corrida de este tipo después de `desde`?
+    def existe_corrida_desde(
+        self,
+        desde: datetime,
+        disparo: str = "programado",
+        usuario_id: Optional[int] = None,
+    ) -> bool:
+        """¿Ya hubo una corrida de este tipo después de `desde`, para esta
+        casilla?
 
         El job la usa con la hora programada de hoy, de modo que el cron puede
-        invocarse cada 15 minutos sin repetir la importación del día.
+        invocarse cada 15 minutos sin repetir la importación del día. Con
+        casillas por usuario el filtro por dueño es obligatorio: si no, la
+        corrida del primer usuario daría por cumplido el turno de todos.
 
         Las fallas de conexión no cuentan como corrida: si el servidor IMAP
         estaba caído a la hora programada, el siguiente tick del cron debe
         volver a intentarlo en vez de dar el día por perdido.
         """
-        return self.db.query(
-            self.db.query(CorreoLog.id)
-            .filter(
-                CorreoLog.fecha >= desde,
-                CorreoLog.disparo == disparo,
-                CorreoLog.resultado != RESULTADO_CONEXION,
-            )
-            .exists()
-        ).scalar()
+        query = self.db.query(CorreoLog.id).filter(
+            CorreoLog.fecha >= desde,
+            CorreoLog.disparo == disparo,
+            CorreoLog.resultado != RESULTADO_CONEXION,
+        )
+        if usuario_id is not None:
+            query = query.filter(CorreoLog.usuario_id == usuario_id)
+        return self.db.query(query.exists()).scalar()

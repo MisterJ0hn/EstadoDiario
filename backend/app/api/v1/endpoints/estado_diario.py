@@ -13,6 +13,7 @@ from app.core.deps import get_current_user
 from app.models.usuario import Usuario
 from app.schemas.estado_diario import (
     MovimientoListResponse,
+    MarcarLeidoRequest,
     MarcarLeidoResponse,
     MarcarPendienteRequest,
     AgendaCreateRequest,
@@ -44,22 +45,26 @@ router = APIRouter(prefix="/estado-diario", tags=["Estado Diario"])
 def listar_origenes(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    tipo: str | None = Query(None, description="estado_diario | movimientos"),
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     repo = EstadoDiarioOrigenRepository(db)
-    items, total, total_pages = repo.find_all_paginated(page, per_page)
+    items, total, total_pages = repo.find_all_paginated(
+        EstadoDiarioService.alcance(current_user), tipo, page, per_page
+    )
     origenes = []
     for o in items:
         origenes.append(EstadoDiarioOrigenResponse(
             id=o.id,
             rut=o.rut,
             fecha=o.fecha,
+            tipo=o.tipo,
             nombre_archivo=o.nombre_archivo,
             url=o.url,
             fecha_carga=o.fecha_carga,
             usuario_carga=o.usuario_carga.username if o.usuario_carga else None,
-            total_movimientos=repo.count_movimientos(o.id),
+            total_movimientos=repo.count_registros(o),
         ))
     return EstadoDiarioOrigenListResponse(
         total=total, page=page, total_pages=total_pages, origenes=origenes,
@@ -73,11 +78,11 @@ def listar_origenes(
 def movimientos_por_origen(
     origen_id: int,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     from app.repositories.estado_diario_repository import EstadoDiarioRepository
     repo = EstadoDiarioRepository(db)
-    items = repo.find_by_origen(origen_id)
+    items = repo.find_by_origen(origen_id, EstadoDiarioService.alcance(current_user))
     service = EstadoDiarioService(db)
     data = [service._map_movimiento(m, include_pendiente=True) for m in items]
     return {"exito": True, "total": len(data), "movimientos": data}
@@ -174,10 +179,10 @@ def upload_file(
 def eliminar_origen(
     origen_id: int,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     repo = EstadoDiarioOrigenRepository(db)
-    origen = repo.find_by_id(origen_id)
+    origen = repo.find_by_id(origen_id, EstadoDiarioService.alcance(current_user))
     if not origen:
         return {"exito": False, "mensaje": "Origen no encontrado"}
     repo.delete(origen)
@@ -199,10 +204,12 @@ def no_leidos(
     page: int | None = Query(None),
     limit: int | None = Query(None),
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_no_leidos(jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit)
+    return service.get_movimientos_no_leidos(
+        service.alcance(current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+    )
 
 
 @router.get(
@@ -218,10 +225,12 @@ def leidos(
     page: int | None = Query(None),
     limit: int | None = Query(None),
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_leidos(jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit)
+    return service.get_movimientos_leidos(
+        service.alcance(current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+    )
 
 
 @router.get(
@@ -237,10 +246,12 @@ def pendientes(
     page: int | None = Query(None),
     limit: int | None = Query(None),
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_pendientes(jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit)
+    return service.get_movimientos_pendientes(
+        service.alcance(current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+    )
 
 
 @router.get(
@@ -266,10 +277,10 @@ def calendario(
 def detalle_movimiento(
     estado_diario_id: int,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimiento_detalle(estado_diario_id)
+    return service.get_movimiento_detalle(estado_diario_id, service.alcance(current_user))
 
 
 # ── Acciones ──────────────────────────────────────────────
@@ -281,11 +292,19 @@ def detalle_movimiento(
 )
 def marcar_leido(
     estado_diario_id: int,
+    body: MarcarLeidoRequest | None = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
+    """La observación es opcional: el body completo puede venir vacío, que es
+    como lo llaman los clientes que solo marcan resuelto sin comentario."""
     service = EstadoDiarioService(db)
-    return service.marcar_leido(estado_diario_id, current_user.id)
+    return service.marcar_leido(
+        estado_diario_id,
+        current_user.id,
+        service.alcance(current_user),
+        body.observacion if body else None,
+    )
 
 
 @router.post(
@@ -296,12 +315,13 @@ def marcar_pendiente(
     estado_diario_id: int,
     body: MarcarPendienteRequest,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
     return service.marcar_pendiente(
         estado_diario_id, body.nivel, body.username, body.mensaje, body.fecha_hora,
         body.notificar_whatsapp, body.whatsapp_telefono, body.fecha_hora_whatsapp,
+        service.alcance(current_user),
     )
 
 
@@ -315,10 +335,10 @@ def marcar_pendiente(
 def listar_agendas(
     estado_diario_id: int,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.get_agendas(estado_diario_id)
+    return service.get_agendas(estado_diario_id, service.alcance(current_user))
 
 
 @router.post(
@@ -329,10 +349,13 @@ def crear_agenda(
     estado_diario_id: int,
     body: AgendaCreateRequest,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     service = EstadoDiarioService(db)
-    return service.crear_agenda(estado_diario_id, body.detalle, body.fecha_hora, body.username)
+    return service.crear_agenda(
+        estado_diario_id, body.detalle, body.fecha_hora, body.username,
+        service.alcance(current_user),
+    )
 
 
 @router.post(

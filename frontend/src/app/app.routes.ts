@@ -19,6 +19,11 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       {
+        path: 'dashboard',
+        loadComponent: () =>
+          import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
+      },
+      {
         path: 'estado-diario',
         children: [
           {
@@ -70,16 +75,54 @@ export const routes: Routes = [
         ],
       },
       {
+        // Módulo Movimientos: reporte de estado procesal, solo consulta.
+        path: 'movimientos',
+        loadComponent: () =>
+          import('./features/movimientos/movimientos.component').then((m) => m.MovimientosComponent),
+      },
+      {
+        // Informes dinámicos: el usuario arma el informe, lo guarda y lo recibe
+        // por correo o lo descarga. La configuración SMTP va con el resto de la
+        // administración, más abajo.
+        path: 'informes',
+        canActivate: [authGuard],
+        children: [
+          {
+            path: '',
+            loadComponent: () =>
+              import('./features/reportes/reportes-list.component').then(
+                (m) => m.ReportesListComponent
+              ),
+          },
+          {
+            path: 'nuevo',
+            loadComponent: () =>
+              import('./features/reportes/reporte-form.component').then(
+                (m) => m.ReporteFormComponent
+              ),
+          },
+          {
+            path: ':id',
+            loadComponent: () =>
+              import('./features/reportes/reporte-form.component').then(
+                (m) => m.ReporteFormComponent
+              ),
+          },
+        ],
+      },
+      {
         path: 'perfil',
         loadComponent: () =>
           import('./features/perfil/perfil.component').then((m) => m.PerfilComponent),
       },
       {
+        // El guard va por ruta hija: la casilla de correo es de cada usuario, el
+        // resto de la configuración sigue siendo solo de administradores.
         path: 'configuracion',
-        canActivate: [adminGuard],
         children: [
           {
             path: 'correo',
+            canActivate: [authGuard],
             loadComponent: () =>
               import('./features/configuracion/components/correo-config/correo-config.component').then(
                 (m) => m.CorreoConfigComponent
@@ -87,6 +130,7 @@ export const routes: Routes = [
           },
           {
             path: 'correo/log',
+            canActivate: [authGuard],
             loadComponent: () =>
               import('./features/configuracion/components/correo-log/correo-log.component').then(
                 (m) => m.CorreoLogComponent
@@ -94,6 +138,7 @@ export const routes: Routes = [
           },
           {
             path: 'usuarios',
+            canActivate: [adminGuard],
             loadComponent: () =>
               import('./features/configuracion/components/usuarios/usuarios.component').then(
                 (m) => m.UsuariosComponent
@@ -101,13 +146,24 @@ export const routes: Routes = [
           },
           {
             path: 'google-calendar',
+            canActivate: [adminGuard],
             loadComponent: () =>
               import('./features/configuracion/components/google-config/google-config.component').then(
                 (m) => m.GoogleConfigComponent
               ),
           },
           {
+            // Cuenta de salida del sistema: una sola para todos, solo admin.
+            path: 'smtp',
+            canActivate: [adminGuard],
+            loadComponent: () =>
+              import('./features/configuracion/components/smtp-config/smtp-config.component').then(
+                (m) => m.SmtpConfigComponent
+              ),
+          },
+          {
             path: 'whatsapp',
+            canActivate: [adminGuard],
             loadComponent: () =>
               import('./features/configuracion/components/whatsapp-config/whatsapp-config.component').then(
                 (m) => m.WhatsappConfigComponent
@@ -116,7 +172,8 @@ export const routes: Routes = [
           { path: '', redirectTo: 'correo', pathMatch: 'full' },
         ],
       },
-      { path: '', redirectTo: 'estado-diario', pathMatch: 'full' },
+      // El dashboard es la página de inicio.
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },
   { path: '**', redirectTo: '' },

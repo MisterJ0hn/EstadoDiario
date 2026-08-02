@@ -63,7 +63,11 @@ class ImportService:
         # validación, reimportar el archivo duplica todos los movimientos, y
         # con la ingesta automática por correo eso ocurriría sin que nadie lo
         # note. Para recargar, primero hay que borrar el origen existente.
-        existente = self.origen_repo.find_by_rut_fecha(rut, fecha)
+        # La unicidad es por dueño: dos abogados pueden recibir legítimamente
+        # el estado diario del mismo RUT el mismo día en sus casillas.
+        existente = self.origen_repo.find_by_rut_fecha(
+            rut, fecha, usuario_id, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
+        )
         if existente:
             raise ValueError(
                 f"Ya existe un estado diario para el RUT {rut} del {fecha} "
@@ -95,6 +99,7 @@ class ImportService:
 
         origen = EstadoDiarioOrigen(
             usuario_carga_id=usuario_id,
+            tipo=EstadoDiarioOrigen.TIPO_ESTADO_DIARIO,
             rut=rut,
             fecha=fecha,
             nombre_archivo=nombre_archivo or os.path.basename(file_path),

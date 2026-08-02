@@ -1,0 +1,226 @@
+"""Endpoints del módulo Movimientos.
+
+Solo lectura + carga: no hay acciones sobre un movimiento (leído, pendiente,
+agenda) porque este reporte es de consulta. El aislamiento por usuario se
+resuelve con EstadoDiarioService.alcance(), el mismo criterio del resto de la
+app (admin ve todo, cada usuario ve solo los archivos que cargó).
+"""
+
+import logging
+import os
+import uuid
+from datetime import date
+
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
+from sqlalchemy.orm import Session
+
+from app.core.config import UPLOAD_DIR
+from app.core.database import get_db
+from app.core.deps import get_current_user
+from app.models.usuario import Usuario
+from app.repositories.movimiento_repository import MovimientoRepository
+from app.schemas.movimiento import (
+    ConteoMateria,
+    MovimientoListResponse,
+    MovimientoOrigenListResponse,
+    MovimientoOrigenResponse,
+    MovimientoResponse,
+    MovimientoResumenResponse,
+    MovimientoUploadResponse,
+)
+from app.services.estado_diario_service import EstadoDiarioService
+from app.services.movimiento_import_service import (
+    MovimientoImportService,
+    parse_nombre_archivo,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/movimientos", tags=["Movimientos"])
+
+
+@router.get(
+    "",
+    response_model=MovimientoListResponse,
+    summary="Listar movimientos (paginado y filtrado)",
+)
+def listar_movimientos(
+    materia: str | None = Query(None, description="Nombre de la hoja: Civil, Familia, ..."),
+    estado_causa: str | None = Query(None),
+    tribunal: str | None = Query(None, description="Coincidencia parcial"),
+    busqueda: str | None = Query(None, description="Busca en caratulado y rol/rit"),
+    rut: str | None = Query(None),
+    origen_id: int | None = Query(None),
+    fecha_desde: str | None = Query(None, description="Fecha del archivo (YYYY-MM-DD)"),
+    fecha_hasta: str | None = Query(None),
+    page: int | None = Query(None, ge=1),
+    limit: int | None = Query(None, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    repo = MovimientoRepository(db)
+    items, total, current_page, total_pages = repo.find_filtered(
+        usuario_id=EstadoDiarioService.alcance(current_user),
+        materia=materia,
+        estado_causa=estado_causa,
+        tribunal=tribunal,
+        busqueda=busqueda,
+        rut=rut,
+        origen_id=origen_id,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        page=page,
+        limit=limit,
+    )
+    return MovimientoListResponse(
+        total=total,
+        page=current_page,
+        total_pages=total_pages,
+        movimientos=[MovimientoResponse.from_model(m) for m in items],
+    )
+
+
+@router.get(
+    "/resumen",
+    response_model=MovimientoResumenResponse,
+    summary="Conteo por materia y valores disponibles de estado de causa",
+)
+def resumen(
+    estado_causa: str | None = Query(None),
+    tribunal: str | None = Query(None),
+    busqueda: str | None = Query(None),
+    rut: str | None = Query(None),
+    origen_id: int | None = Query(None),
+    fecha_desde: str | None = Query(None),
+    fecha_hasta: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Alimenta las pestañas por materia y el combo de estado de causa. La
+    agregación la hace la base de datos (GROUP BY / DISTINCT)."""
+    repo = MovimientoRepository(db)
+    alcance = EstadoDiarioService.alcance(current_user)
+    conteos = repo.contar_por_materia(
+        usuario_id=alcance,
+        estado_causa=estado_causa,
+        tribunal=tribunal,
+        busqueda=busqueda,
+        rut=rut,
+        origen_id=origen_id,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+    )
+    return MovimientoResumenResponse(
+        total=sum(c for _, c in conteos),
+        por_materia=[ConteoMateria(materia=m, total=c) for m, c in conteos],
+        estados_causa=repo.listar_estados_causa(usuario_id=alcance),
+    )
+
+
+@router.get(
+    "/archivos",
+    response_model=MovimientoOrigenListResponse,
+    summary="Listar archivos de movimientos cargados",
+)
+def listar_archivos(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    repo = MovimientoRepository(db)
+    alcance = EstadoDiarioService.alcance(current_user)
+    items, total, current_page, total_pages = repo.find_origenes_paginados(
+        usuario_id=alcance, page=page, per_page=per_page
+    )
+    return MovimientoOrigenListResponse(
+        total=total,
+        page=current_page,
+        total_pages=total_pages,
+        origenes=[
+            MovimientoOrigenResponse(
+                id=o.id,
+                rut=o.rut,
+                fecha=o.fecha,
+                nombre_archivo=o.nombre_archivo,
+                fecha_carga=o.fecha_carga,
+                usuario_carga=o.usuario_carga.username if o.usuario_carga else None,
+                total_movimientos=repo.count_filtered(
+                    usuario_id=alcance, origen_id=o.id
+                ),
+            )
+            for o in items
+        ],
+    )
+
+
+@router.post(
+    "/upload",
+    response_model=MovimientoUploadResponse,
+    summary="Subir archivo XLS/XLSX de movimientos",
+)
+def upload_movimientos(
+    file: UploadFile = File(...),
+    rut: str | None = Form(default=None),
+    fecha: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """El archivo queda a nombre del usuario que lo sube: él es su dueño y
+    nadie más (salvo el admin) verá esos movimientos."""
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".xls", ".xlsx", ".xlsm"):
+        return MovimientoUploadResponse(
+            exito=False, mensaje="Solo se permiten archivos XLS o XLSX"
+        )
+
+    rut = rut.strip() if rut else None
+    fecha = fecha.strip() if fecha else None
+
+    fecha_date: date | None = None
+    if fecha:
+        try:
+            fecha_date = date.fromisoformat(fecha)
+        except ValueError:
+            fecha_date = None
+
+    # Lo que no venga en el formulario se intenta sacar del nombre del archivo
+    # (Movimientos_16952077__30_07_2026.xls).
+    rut_archivo, fecha_archivo = parse_nombre_archivo(file.filename or "")
+    rut_final = rut or rut_archivo
+    fecha_final = fecha_date or fecha_archivo
+
+    if not rut_final:
+        return MovimientoUploadResponse(
+            exito=False,
+            mensaje="No se pudo determinar el RUT. Proporciónelo manualmente o use "
+                    "el formato: Movimientos_RUT_DD_MM_YYYY.xls",
+        )
+    if not fecha_final:
+        return MovimientoUploadResponse(
+            exito=False,
+            mensaje="No se pudo determinar la fecha. Proporciónela manualmente o use "
+                    "el formato: Movimientos_RUT_DD_MM_YYYY.xls",
+        )
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    filepath = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
+    with open(filepath, "wb") as f:
+        f.write(file.file.read())
+
+    try:
+        service = MovimientoImportService(db)
+        resultado = service.import_file(
+            filepath, rut_final, fecha_final, current_user.id, file.filename
+        )
+        return MovimientoUploadResponse(
+            exito=True, rut=rut_final, fecha=str(fecha_final), **resultado
+        )
+    except Exception as e:
+        # Sin traceback en el log, el mensaje que ve el usuario no alcanza para
+        # ubicar la causa (encoding, hoja inesperada, etc.).
+        logger.exception("Fallo al importar movimientos %s", file.filename)
+        db.rollback()
+        return MovimientoUploadResponse(
+            exito=False, mensaje=f"Error al procesar el archivo: {e}"
+        )

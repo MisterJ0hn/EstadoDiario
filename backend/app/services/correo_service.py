@@ -57,6 +57,10 @@ class CorreoService:
         self.db = db
         self.config_repo = ConfiguracionCorreoRepository(db)
         self.log_repo = CorreoLogRepository(db)
+        # Dueño de la casilla que se está revisando. Se fija en revisar() y lo
+        # lee _log(), que se invoca desde una decena de puntos: pasarlo por
+        # parámetro en todos ellos era mucha superficie para olvidarse en uno.
+        self._usuario_actual: Optional[int] = None
 
     # ── Conexión ──────────────────────────────────────────
 
@@ -75,13 +79,14 @@ class CorreoService:
             raise ErrorConfiguracion("No hay contraseña guardada para la casilla de correo")
         return descifrar(config.password_cifrado)
 
-    def probar_conexion(self, password_override: Optional[str] = None) -> dict:
-        """Valida credenciales y carpeta sin importar nada.
+    def probar_conexion(self, usuario_id: int, password_override: Optional[str] = None) -> dict:
+        """Valida credenciales y carpeta sin importar nada, sobre la casilla
+        del usuario indicado.
 
         `password_override` permite probar una contraseña recién escrita en el
         formulario antes de guardarla.
         """
-        config = self.config_repo.get_or_create()
+        config = self.config_repo.get_or_create(usuario_id)
         if not config.usuario:
             return {"exito": False, "mensaje": "Falta el usuario de la casilla"}
 
@@ -128,13 +133,62 @@ class CorreoService:
 
     # ── Ingesta ───────────────────────────────────────────
 
-    def revisar(self, disparo: str = "manual", usuario_id: Optional[int] = None) -> dict:
-        """Recorre la casilla e importa los adjuntos que correspondan.
+    def revisar_todas(self, disparo: str = "automatico") -> dict:
+        """Recorre TODAS las casillas activas, una por usuario.
 
-        Devuelve un resumen y deja una fila en correo_log por cada adjunto
-        evaluado, incluidos los descartados.
+        Es lo que ejecuta el job programado: ya no existe una casilla única del
+        sistema. Un fallo en la casilla de un usuario (credencial vencida, por
+        ejemplo) no puede impedir que se revisen las demás, así que cada una va
+        en su propio try.
         """
-        config = self.config_repo.get_or_create()
+        configs = self.config_repo.find_activas()
+        if not configs:
+            return {
+                "exito": True,
+                "mensaje": "No hay casillas de correo activas configuradas",
+                "casillas": 0,
+                "procesados": 0,
+            }
+
+        total = {"importados": 0, "descartados": 0, "duplicados": 0, "errores": 0}
+        detalle_por_usuario = []
+
+        for config in configs:
+            try:
+                resultado = self.revisar(config.usuario_id, disparo)
+            except Exception as e:
+                logger.exception(
+                    "Fallo revisando la casilla del usuario %s", config.usuario_id
+                )
+                resultado = {"exito": False, "mensaje": str(e)}
+
+            detalle_por_usuario.append(
+                {
+                    "usuario_id": config.usuario_id,
+                    "exito": resultado.get("exito", False),
+                    "mensaje": resultado.get("mensaje", ""),
+                }
+            )
+            for clave in total:
+                total[clave] += resultado.get(clave, 0)
+
+        return {
+            "exito": True,
+            "casillas": len(configs),
+            "procesados": sum(total.values()),
+            "detalle": detalle_por_usuario,
+            **total,
+        }
+
+    def revisar(self, usuario_id: int, disparo: str = "manual") -> dict:
+        """Recorre la casilla DEL USUARIO indicado e importa sus adjuntos.
+
+        Todo lo que se importe queda a nombre de ese usuario y ningún otro lo
+        verá. Devuelve un resumen y deja una fila en correo_log por cada
+        adjunto evaluado, incluidos los descartados.
+        """
+        config = self.config_repo.get_or_create(usuario_id)
+        self._usuario_actual = usuario_id
 
         if not config.activo:
             return {"exito": False, "mensaje": "La ingesta por correo está desactivada", "procesados": 0}
@@ -275,6 +329,11 @@ class CorreoService:
     ) -> None:
         # Import local para no crear un ciclo con el módulo de endpoints
         from app.api.v1.endpoints.estado_diario import _parse_filename
+        from app.models.estado_diario_origen import EstadoDiarioOrigen
+        from app.services.movimiento_import_service import (
+            MovimientoImportService,
+            parse_nombre_archivo as parse_nombre_movimientos,
+        )
 
         ext = os.path.splitext(nombre_original)[1].lower()
         if ext not in EXTENSIONES_VALIDAS:
@@ -306,7 +365,7 @@ class CorreoService:
             )
             return
 
-        if self.log_repo.ya_importado(message_id, nombre_original):
+        if self.log_repo.ya_importado(message_id, nombre_original, self._usuario_actual):
             resumen["duplicados"] += 1
             self._log(
                 RESULTADO_DUPLICADO, message_id=message_id, remitente=remitente, asunto=asunto,
@@ -315,16 +374,25 @@ class CorreoService:
             )
             return
 
-        # RUT y fecha salen del nombre; por correo no hay quien los escriba.
+        # RUT, fecha Y TIPO salen del nombre; por correo no hay quien los
+        # escriba. El tipo decide a qué parser va: los dos Excel del PJUD
+        # tienen columnas distintas y no son intercambiables.
         rut, fecha = _parse_filename(nombre_original)
+        tipo = EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
+
+        if not rut or not fecha:
+            rut, fecha = parse_nombre_movimientos(nombre_original)
+            tipo = EstadoDiarioOrigen.TIPO_MOVIMIENTOS
+
         if not rut or not fecha:
             resumen["descartados"] += 1
             self._log(
                 RESULTADO_DESCARTADO, message_id=message_id, remitente=remitente, asunto=asunto,
                 nombre_archivo=nombre_original,
                 detalle=(
-                    "No se pudo deducir RUT y fecha del nombre. "
-                    "Formato esperado: EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls"
+                    "No se pudo deducir RUT y fecha del nombre. Formatos esperados: "
+                    "EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls o "
+                    "Movimientos_{RUT}_{DD}_{MM}_{YYYY}.xls"
                 ),
                 disparo=disparo,
             )
@@ -337,7 +405,11 @@ class CorreoService:
             f.write(contenido)
 
         try:
-            resultado = ImportService(self.db).import_file(
+            if tipo == EstadoDiarioOrigen.TIPO_MOVIMIENTOS:
+                servicio = MovimientoImportService(self.db)
+            else:
+                servicio = ImportService(self.db)
+            resultado = servicio.import_file(
                 destino, rut, fecha, usuario_id, nombre_original
             )
         except Exception as e:
@@ -369,6 +441,7 @@ class CorreoService:
         disparo: str = "manual",
     ) -> None:
         self.log_repo.create(CorreoLog(
+            usuario_id=self._usuario_actual,
             message_id=message_id or None,
             remitente=remitente or None,
             asunto=asunto or None,

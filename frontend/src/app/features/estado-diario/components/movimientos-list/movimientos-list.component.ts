@@ -21,7 +21,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">{{ title() }}</h1>
-          <p class="text-neutral-500 mt-1">{{ total() }} movimientos encontrados</p>
+          <p class="text-neutral-500 mt-1">{{ total() }} registros encontrados</p>
         </div>
       </div>
 
@@ -108,7 +108,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                   <th>Tipo Causa</th>
                   <th>Fecha Ingreso</th>
                   <th>RUT</th>
-                  <th>Estado Diario</th>
+                  <th>Estado Causa</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -167,15 +167,13 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                             <div class="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-neutral-200 bg-white shadow-lg py-1">
                               <button (click)="onResolver(m.id)"
                                       class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
-                                Resolver
+                                Resuelto
                               </button>
+                              <!-- "Pendiente" abre el modal de recordatorio: marcar pendiente
+                                   y agendar son una sola acción. -->
                               <button (click)="onPendiente(m.id)"
                                       class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
                                 Pendiente
-                              </button>
-                              <button (click)="onAgendar(m.id)"
-                                      class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
-                                Agendar
                               </button>
                             </div>
                           }
@@ -186,7 +184,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                 } @empty {
                   <tr>
                     <td colspan="9" class="text-center py-10 text-neutral-400">
-                      No se encontraron movimientos
+                      No se encontraron registros del estado diario
                     </td>
                   </tr>
                 }
@@ -241,38 +239,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
       </div>
     }
 
-    <!-- Confirmar "Pendiente" -->
-    @if (confirmarPendienteId() !== null) {
-      <div class="modal-backdrop" (click)="cancelarPendiente()">
-        <div class="modal-content max-w-sm" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <h3 class="text-lg font-semibold">Marcar como pendiente</h3>
-            <button (click)="cancelarPendiente()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
-          </div>
-          <div class="modal-body">
-            <div class="flex items-start gap-3">
-              <div class="shrink-0 w-10 h-10 rounded-full bg-warning-100 flex items-center justify-center">
-                <svg class="w-5 h-5 text-warning-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                </svg>
-              </div>
-              <p class="text-sm text-neutral-600 mt-2">
-                ¿Confirma que quiere marcar este movimiento como <strong>pendiente</strong>?
-                Dejará de aparecer en No Leídos.
-              </p>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button (click)="cancelarPendiente()" class="btn-secondary" [disabled]="confirmandoPendiente()">Cancelar</button>
-            <button (click)="confirmarPendiente()" class="btn-warning" [disabled]="confirmandoPendiente()">
-              {{ confirmandoPendiente() ? 'Guardando...' : 'Sí, marcar pendiente' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- Confirmar "Resolver" -->
+    <!-- Confirmar "Resuelto" -->
     @if (confirmarResolverId() !== null) {
       <div class="modal-backdrop" (click)="cancelarResolver()">
         <div class="modal-content max-w-sm" (click)="$event.stopPropagation()">
@@ -280,7 +247,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
             <h3 class="text-lg font-semibold">Marcar como resuelto</h3>
             <button (click)="cancelarResolver()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
           </div>
-          <div class="modal-body">
+          <div class="modal-body space-y-4">
             <div class="flex items-start gap-3">
               <div class="shrink-0 w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
                 <svg class="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,8 +255,14 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                 </svg>
               </div>
               <p class="text-sm text-neutral-600 mt-2">
-                ¿Confirma que quiere marcar este movimiento como <strong>resuelto</strong>?
+                ¿Confirma que quiere marcar este registro como <strong>resuelto</strong>?
               </p>
+            </div>
+            <div>
+              <label class="form-label">Observación (opcional)</label>
+              <textarea class="form-input" rows="3" [(ngModel)]="observacionResuelto"
+                        placeholder="Ej: se presentó escrito el 12-08-2026"></textarea>
+              <p class="text-xs text-neutral-400 mt-1">Queda registrada junto con la resolución.</p>
             </div>
           </div>
           <div class="modal-footer">
@@ -331,16 +304,22 @@ export class MovimientosListComponent implements OnInit {
   filterRut = '';
 
   menuAbiertoId = signal<number | null>(null);
+
+  /**
+   * Id del registro para el que está abierto el modal de recordatorio; null = cerrado.
+   * Marcar "Pendiente" y agendar son una sola acción: el modal registra el
+   * recordatorio y deja el registro en estado pendiente con el nivel elegido ahí.
+   */
   recordatorioMovimientoId = signal<number | null>(null);
-  confirmarPendienteId = signal<number | null>(null);
 
   /** Movimiento cuyo modal de consulta al PJUD está abierto; null = cerrado */
   consultaPjud = signal<Movimiento | null>(null);
-  confirmandoPendiente = signal(false);
   confirmarResolverId = signal<number | null>(null);
   confirmandoResolver = signal(false);
+  /** Comentario opcional que acompaña al "resuelto"; se limpia en cada apertura del modal. */
+  observacionResuelto = '';
 
-  title = computed(() => (this.isOrigen() ? 'Movimientos del Origen' : 'Movimientos'));
+  title = computed(() => (this.isOrigen() ? 'Estado Diario del Archivo' : 'Estado Diario'));
 
   claseNivel(nivel: string | null): string {
     if (nivel === 'alto') return 'badge-danger';
@@ -399,7 +378,7 @@ export class MovimientosListComponent implements OnInit {
         },
         error: () => {
           this.loading.set(false);
-          this.notification.error('Error al cargar movimientos');
+          this.notification.error('Error al cargar el estado diario');
         },
       });
     } else {
@@ -413,7 +392,7 @@ export class MovimientosListComponent implements OnInit {
         },
         error: () => {
           this.loading.set(false);
-          this.notification.error('Error al cargar movimientos');
+          this.notification.error('Error al cargar el estado diario');
         },
       });
     }
@@ -491,11 +470,13 @@ export class MovimientosListComponent implements OnInit {
 
   onResolver(id: number): void {
     this.cerrarMenu();
+    this.observacionResuelto = '';
     this.confirmarResolverId.set(id);
   }
 
   cancelarResolver(): void {
     if (this.confirmandoResolver()) return;
+    this.observacionResuelto = '';
     this.confirmarResolverId.set(null);
   }
 
@@ -504,10 +485,11 @@ export class MovimientosListComponent implements OnInit {
     if (id === null) return;
 
     this.confirmandoResolver.set(true);
-    this.service.marcarLeido(id).subscribe({
+    this.service.marcarLeido(id, this.observacionResuelto).subscribe({
       next: () => {
         this.confirmandoResolver.set(false);
         this.confirmarResolverId.set(null);
+        this.observacionResuelto = '';
         this.notification.success('Marcado como resuelto');
         this.loadData();
         if (!this.isOrigen()) this.loadCounts();
@@ -519,37 +501,12 @@ export class MovimientosListComponent implements OnInit {
     });
   }
 
+  /**
+   * "Pendiente" abre el modal de recordatorio: ahí se elige el nivel de urgencia
+   * (bajo/medio/alto), que es el que queda guardado tanto en el registro como en
+   * el recordatorio. No se pregunta el nivel dos veces.
+   */
   onPendiente(id: number): void {
-    this.cerrarMenu();
-    this.confirmarPendienteId.set(id);
-  }
-
-  cancelarPendiente(): void {
-    if (this.confirmandoPendiente()) return;
-    this.confirmarPendienteId.set(null);
-  }
-
-  confirmarPendiente(): void {
-    const id = this.confirmarPendienteId();
-    if (id === null) return;
-
-    this.confirmandoPendiente.set(true);
-    this.service.marcarPendiente(id, { nivel: 'medio' }).subscribe({
-      next: () => {
-        this.confirmandoPendiente.set(false);
-        this.confirmarPendienteId.set(null);
-        this.notification.success('Marcado como pendiente');
-        this.loadData();
-        this.loadCounts();
-      },
-      error: (err) => {
-        this.confirmandoPendiente.set(false);
-        this.notification.error(err.error?.detail || 'Error al marcar como pendiente');
-      },
-    });
-  }
-
-  onAgendar(id: number): void {
     this.cerrarMenu();
     this.recordatorioMovimientoId.set(id);
   }

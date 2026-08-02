@@ -14,12 +14,25 @@ import { ConfiguracionCorreoUpdate } from '@core/models/configuracion-correo.mod
     <div class="max-w-3xl mx-auto space-y-6">
       <div class="flex items-start justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Importación por Correo</h1>
+          <h1 class="text-2xl font-bold text-neutral-800">Mi casilla de correo</h1>
           <p class="text-neutral-500 mt-1">
-            Descarga automáticamente los adjuntos de estado diario desde una casilla IMAP
+            Desde esta casilla se descargan automáticamente los adjuntos de estado diario que
+            quedan a su nombre
           </p>
         </div>
         <a routerLink="/configuracion/correo/log" class="btn-secondary shrink-0">Ver bitácora</a>
+      </div>
+
+      <!-- La confusión entre "mi correo" y "la casilla del PJUD" es la principal
+           fuente de errores de configuración: se aclara antes del formulario. -->
+      <div class="alert-info">
+        Esta configuración es <strong>suya</strong> y no afecta a los demás usuarios: los estados
+        diarios que lleguen a esta casilla se importan a su cuenta y solo usted (y el
+        administrador) los verá.
+        <span class="block mt-1">
+          <strong>No es su correo personal</strong> ni el que usa para entrar al sistema. Es una
+          casilla aparte, dedicada a recibir los Excel del Poder Judicial.
+        </span>
       </div>
 
       @if (cargando()) {
@@ -31,9 +44,9 @@ import { ConfiguracionCorreoUpdate } from '@core/models/configuracion-correo.mod
             <label class="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" class="mt-1" [(ngModel)]="modelo.activo" />
               <span>
-                <span class="font-medium text-neutral-800">Activar importación por correo</span>
+                <span class="font-medium text-neutral-800">Activar la importación desde mi casilla</span>
                 <span class="block text-sm text-neutral-500">
-                  Mientras esté desactivada no se revisa la casilla, ni manual ni automáticamente.
+                  Mientras esté desactivada no se revisa su casilla, ni manual ni automáticamente.
                 </span>
               </span>
             </label>
@@ -72,9 +85,12 @@ import { ConfiguracionCorreoUpdate } from '@core/models/configuracion-correo.mod
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label class="form-label">Usuario / dirección de correo</label>
+                <label class="form-label">Dirección de la casilla</label>
                 <input type="email" class="form-input" [(ngModel)]="modelo.usuario"
                        placeholder="estadodiario@estudio.cl" autocomplete="username" />
+                <p class="text-xs text-neutral-400 mt-1">
+                  La casilla que recibe los Excel del PJUD, no su correo personal.
+                </p>
               </div>
               <div>
                 <label class="form-label">
@@ -100,8 +116,8 @@ import { ConfiguracionCorreoUpdate } from '@core/models/configuracion-correo.mod
             <div>
               <h2 class="font-semibold text-neutral-800">Filtros de seguridad</h2>
               <p class="text-sm text-neutral-500 mb-3">
-                Una casilla es una entrada abierta: cualquiera que conozca la dirección puede enviar un
-                adjunto. La lista de remitentes es obligatoria.
+                Su casilla es una entrada abierta: cualquiera que conozca la dirección puede enviarle
+                un adjunto y quedaría importado a su nombre. La lista de remitentes es obligatoria.
               </p>
 
               <label class="form-label">Remitentes permitidos <span class="text-danger-600">*</span></label>
@@ -132,7 +148,7 @@ import { ConfiguracionCorreoUpdate } from '@core/models/configuracion-correo.mod
                   <label class="form-label">Hora de revisión</label>
                   <input type="time" class="form-input" [(ngModel)]="modelo.hora_ejecucion" />
                   <p class="text-xs text-neutral-400 mt-1">
-                    Se revisa una vez al día a partir de esta hora. Vacío = solo revisión manual.
+                    Su casilla se revisa una vez al día a partir de esta hora. Vacío = solo revisión manual.
                   </p>
                 </div>
                 <div class="flex items-end">
@@ -261,7 +277,7 @@ export class CorreoConfigComponent implements OnInit {
 
   private validar(): string | null {
     if (!this.modelo.host) return 'Indique el servidor IMAP';
-    if (!this.modelo.usuario) return 'Indique el usuario de la casilla';
+    if (!this.modelo.usuario) return 'Indique la dirección de su casilla';
     if (!this.modelo.password && !this.tienePassword()) return 'Indique la contraseña';
     if (this.modelo.activo && !this.modelo.remitentes_permitidos) {
       return 'Debe indicar al menos un remitente permitido para activar la ingesta';
@@ -335,7 +351,7 @@ export class CorreoConfigComponent implements OnInit {
       },
       error: (err) => {
         this.ocupado.set(false);
-        this.mensaje.set(err.error?.detail || 'No se pudo revisar la casilla');
+        this.mensaje.set(err.error?.detail || 'No se pudo revisar su casilla');
         this.mensajeEsError.set(true);
       },
     });

@@ -32,7 +32,6 @@ function claveDia(d: Date): string {
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Calendario</h1>
-          <p class="text-neutral-500 mt-1">Recordatorios vigentes (no finalizados)</p>
         </div>
         <div class="flex items-center gap-2">
           <button (click)="mesAnterior()" class="btn-secondary btn-sm" title="Mes anterior">
@@ -117,11 +116,11 @@ function claveDia(d: Date): string {
             <hr class="border-neutral-200" />
 
             <div>
-              <span class="text-xs text-neutral-500 uppercase">Movimiento</span>
+              <span class="text-xs text-neutral-500 uppercase">Estado Diario</span>
               <p class="font-medium mt-0.5">{{ r.movimiento_caratulado || '-' }}</p>
               <p class="text-sm text-neutral-500">{{ r.movimiento_rol || '-' }} · {{ r.movimiento_tribunal || '-' }}</p>
               <button (click)="verMovimiento(r)" class="text-primary-600 hover:underline text-sm mt-1">
-                Ver detalle del movimiento →
+                Ver detalle del registro →
               </button>
             </div>
 
@@ -138,7 +137,7 @@ function claveDia(d: Date): string {
               </div>
             } @else {
               <div class="rounded-lg border border-warning-200 bg-warning-50 p-3 space-y-3">
-                <p class="text-sm text-neutral-700">¿Marcar también el movimiento como resuelto?</p>
+                <p class="text-sm text-neutral-700">¿Marcar también el registro como resuelto?</p>
                 <div class="flex flex-col gap-2">
                   <button (click)="finalizar(true)" class="btn-success btn-sm" [disabled]="finalizando()">
                     Sí, marcar como resuelto
@@ -249,6 +248,7 @@ export class CalendarioComponent implements OnInit {
     this.mesActual.set(this.primerDiaDelMes(new Date()));
   }
 
+  /** Colores por nivel de urgencia: bajo = naranjo, medio = amarillo, alto = rojo. */
   claseChip(nivel: string): string {
     if (nivel === 'alto') return 'badge-danger';
     if (nivel === 'medio') return 'badge-yellow';
@@ -279,7 +279,7 @@ export class CalendarioComponent implements OnInit {
       next: () => {
         this.finalizando.set(false);
         this.notification.success(
-          marcarResuelto ? 'Recordatorio finalizado y movimiento marcado como resuelto' : 'Recordatorio finalizado'
+          marcarResuelto ? 'Recordatorio finalizado y registro marcado como resuelto' : 'Recordatorio finalizado'
         );
         this.recordatorios.set(this.recordatorios().filter((x) => x.id !== r.id));
         this.seleccionado.set(null);

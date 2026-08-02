@@ -7,9 +7,11 @@ import { AuthService } from '@core/services/auth.service';
 import { NivelRecordatorio } from '@core/models/estado-diario.model';
 
 /**
- * Modal "Crear Recordatorio", compartido entre el detalle de un movimiento
- * y el listado (acción "Agendar" del menú). El padre controla la apertura
- * pasando el id del movimiento; null = cerrado.
+ * Modal "Marcar como pendiente", compartido entre el detalle de un registro
+ * y el listado (acción "Pendiente" del menú). Marcar pendiente y agendar son
+ * una sola acción: aquí se elige el nivel de urgencia, que queda guardado tanto
+ * en el registro como en el recordatorio. El padre controla la apertura pasando
+ * el id del registro; null = cerrado.
  */
 @Component({
   selector: 'app-recordatorio-modal',
@@ -20,10 +22,13 @@ import { NivelRecordatorio } from '@core/models/estado-diario.model';
       <div class="modal-backdrop" (click)="cerrar()">
         <div class="modal-content" (click)="$event.stopPropagation()">
           <div class="modal-header">
-            <h3 class="text-lg font-semibold">Crear Recordatorio</h3>
+            <h3 class="text-lg font-semibold">Marcar como pendiente</h3>
             <button (click)="cerrar()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
           </div>
           <div class="modal-body space-y-4">
+            <p class="text-sm text-neutral-500">
+              El registro queda pendiente con el nivel de urgencia indicado y se agenda el recordatorio.
+            </p>
             <div>
               <label class="form-label">Nivel de urgencia</label>
               <select class="form-select" [(ngModel)]="nivel">
@@ -147,12 +152,12 @@ export class RecordatorioModalComponent {
     }).subscribe({
       next: () => {
         this.saving.set(false);
-        this.notification.success('Recordatorio creado');
+        this.notification.success('Marcado como pendiente');
         this.guardado.emit();
       },
       error: (err) => {
         this.saving.set(false);
-        this.notification.error(err.error?.detail || 'Error al crear el recordatorio');
+        this.notification.error(err.error?.detail || 'Error al marcar como pendiente');
       },
     });
   }

@@ -3,7 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
+import { MovimientoService } from '@features/movimientos/services/movimiento.service';
 import { NotificationService } from '@core/services/notification.service';
+import { TipoOrigen } from '@core/models/estado-diario.model';
 
 @Component({
   selector: 'app-upload-form',
@@ -13,14 +15,24 @@ import { NotificationService } from '@core/services/notification.service';
     <div class="max-w-2xl mx-auto space-y-6">
       <div>
         <h1 class="text-2xl font-bold text-neutral-800">Cargar Archivo</h1>
-        <p class="text-neutral-500 mt-1">Suba un archivo XLS/XLSX de estado diario</p>
+        <p class="text-neutral-500 mt-1">Suba un archivo XLS/XLSX de estado diario o de movimientos</p>
         <p class="text-xs text-neutral-400 mt-1">
-          El RUT y la fecha se extraen del nombre del archivo (Ej: EstadoDiario17314741-4_15_07_2026.xls)
+          El RUT y la fecha se extraen del nombre del archivo (Ej: {{ ejemploNombre() }})
         </p>
       </div>
 
       <div class="card">
         <div class="card-body space-y-5">
+          <!-- Tipo: son dos Excel distintos y van a endpoints distintos. Se
+               autodetecta por el nombre del archivo y se puede corregir a mano. -->
+          <div>
+            <label class="form-label">Tipo de archivo</label>
+            <select class="form-select" [(ngModel)]="tipo">
+              <option value="estado_diario">Estado Diario</option>
+              <option value="movimientos">Movimientos</option>
+            </select>
+          </div>
+
           <!-- Archivo primero -->
           <div>
             <label class="form-label">Archivo (XLS/XLSX)</label>
@@ -44,7 +56,7 @@ import { NotificationService } from '@core/services/notification.service';
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
                 <p class="text-neutral-500">Haga clic o arrastre un archivo aquí</p>
-                <p class="text-sm text-neutral-400 mt-1">Formato: EstadoDiarioRUT_DD_MM_YYYY.xls</p>
+                <p class="text-sm text-neutral-400 mt-1">Formato: {{ ejemploNombre() }}</p>
               }
             </div>
           </div>
@@ -64,7 +76,7 @@ import { NotificationService } from '@core/services/notification.service';
                      [class.bg-accent-50]="parsedInfo()?.rut" />
             </div>
             <div>
-              <label class="form-label">Fecha del Estado Diario</label>
+              <label class="form-label">Fecha del archivo</label>
               <input type="date" class="form-input" [(ngModel)]="fecha"
                      [class.bg-accent-50]="parsedInfo()?.fecha" />
             </div>
@@ -93,15 +105,24 @@ import { NotificationService } from '@core/services/notification.service';
 })
 export class UploadFormComponent {
   private service = inject(EstadoDiarioService);
+  private movimientoService = inject(MovimientoService);
   private notification = inject(NotificationService);
   private router = inject(Router);
 
   rut = '';
   fecha = '';
+  /** Los dos Excel del sistema tienen formatos y endpoints distintos. */
+  tipo: TipoOrigen = 'estado_diario';
   selectedFile = signal<File | null>(null);
   parsedInfo = signal<{ rut: string; fecha: string } | null>(null);
   uploading = signal(false);
   errorMsg = signal('');
+
+  ejemploNombre(): string {
+    return this.tipo === 'movimientos'
+      ? 'Movimientos_16952077__30_07_2026.xls'
+      : 'EstadoDiario17314741-4_15_07_2026.xls';
+  }
 
   onFileSelect(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -122,9 +143,17 @@ export class UploadFormComponent {
   }
 
   private parseFilename(filename: string): void {
-    // Formato: EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls
     const name = filename.replace(/\.\w+$/, ''); // quitar extensión
-    const match = name.match(/^EstadoDiario(\d+[\-kK]\d?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
+
+    // Formato estado diario:  EstadoDiario{RUT}_{DD}_{MM}_{YYYY}.xls
+    // Formato movimientos:    Movimientos_{RUT}__{DD}_{MM}_{YYYY}.xls
+    const matchEd = name.match(/^EstadoDiario(\d+[\-kK]?\d?)_(\d{1,2})_(\d{1,2})_(\d{4})$/);
+    const matchMov = name.match(/^Movimientos_(\d+[\-kK]?\d?)_+(\d{1,2})_(\d{1,2})_(\d{4})$/i);
+    const match = matchEd ?? matchMov;
+
+    // El nombre manda sobre el selector: es el dato más confiable del tipo.
+    if (matchEd) this.tipo = 'estado_diario';
+    if (matchMov) this.tipo = 'movimientos';
 
     if (match) {
       const rut = match[1];
@@ -148,14 +177,20 @@ export class UploadFormComponent {
     if (!this.selectedFile()) { this.errorMsg.set('Seleccione un archivo'); return; }
 
     this.uploading.set(true);
-    this.service.uploadFile(this.selectedFile()!, this.rut || undefined, this.fecha || undefined).subscribe({
+    const carga =
+      this.tipo === 'movimientos'
+        ? this.movimientoService.uploadFile(this.selectedFile()!, this.rut || undefined, this.fecha || undefined)
+        : this.service.uploadFile(this.selectedFile()!, this.rut || undefined, this.fecha || undefined);
+
+    carga.subscribe({
       next: (res) => {
         this.uploading.set(false);
         if (res.exito) {
           this.notification.success(
-            `Archivo cargado: ${res.movimientos_importados} movimientos importados`
+            `Archivo cargado: ${res.movimientos_importados} registros importados`
           );
-          this.router.navigate(['/estado-diario']);
+          // Vuelve a Archivos, en la pestaña del tipo que se acaba de cargar.
+          this.router.navigate(['/estado-diario'], { queryParams: { tab: this.tipo } });
         } else {
           this.errorMsg.set(res.mensaje || 'Error al cargar');
         }

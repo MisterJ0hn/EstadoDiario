@@ -38,10 +38,13 @@ def _zona() -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-def corresponde_ejecutar(db) -> tuple[bool, str]:
-    """Decide si toca correr ahora según la hora configurada."""
-    config = ConfiguracionCorreoRepository(db).get_or_create()
+def corresponde_ejecutar(db, config) -> tuple[bool, str]:
+    """Decide si toca correr ahora la casilla `config`.
 
+    Cada usuario tiene su propia casilla y su propia hora, así que la decisión
+    es por casilla y no global: que a uno le toque a las 09:00 no dice nada del
+    que la programó a las 14:00.
+    """
     if not config.activo:
         return False, "La ingesta por correo está desactivada"
     if not config.hora_ejecucion:
@@ -59,9 +62,11 @@ def corresponde_ejecutar(db) -> tuple[bool, str]:
     if ahora_local < programada_local:
         return False, f"Aún no son las {config.hora_ejecucion.strftime('%H:%M')}"
 
-    # ¿Ya se corrió para el turno de hoy?
+    # ¿Ya se corrió para el turno de hoy, en ESTA casilla?
     if CorreoLogRepository(db).existe_corrida_desde(
-        programada_local.astimezone(ZoneInfo("UTC")), disparo="programado"
+        programada_local.astimezone(ZoneInfo("UTC")),
+        disparo="programado",
+        usuario_id=config.usuario_id,
     ):
         return False, "La revisión de hoy ya se ejecutó"
 
@@ -79,15 +84,40 @@ def main() -> int:
     setup_logging()
     db = SessionLocal()
     try:
-        if not args.forzar:
-            procede, motivo = corresponde_ejecutar(db)
-            if not procede:
-                logger.info("Sin acción: %s", motivo)
-                return 0
+        configs = ConfiguracionCorreoRepository(db).find_activas()
+        if not configs:
+            logger.info("Sin acción: no hay casillas de correo activas")
+            return 0
 
-        resultado = CorreoService(db).revisar(disparo="programado")
-        logger.info("Revisión programada: %s", resultado.get("mensaje"))
-        return 0 if resultado.get("exito") else 1
+        servicio = CorreoService(db)
+        revisadas = 0
+        con_error = 0
+
+        for config in configs:
+            if not args.forzar:
+                procede, motivo = corresponde_ejecutar(db, config)
+                if not procede:
+                    logger.info("Casilla de usuario %s sin acción: %s", config.usuario_id, motivo)
+                    continue
+
+            # Una casilla con la credencial vencida no puede impedir que se
+            # revisen las demás.
+            try:
+                resultado = servicio.revisar(config.usuario_id, disparo="programado")
+                revisadas += 1
+                logger.info(
+                    "Casilla de usuario %s: %s", config.usuario_id, resultado.get("mensaje")
+                )
+                if not resultado.get("exito"):
+                    con_error += 1
+            except Exception:
+                con_error += 1
+                logger.exception(
+                    "Falló la revisión de la casilla del usuario %s", config.usuario_id
+                )
+
+        logger.info("Revisión programada: %d casillas revisadas, %d con error", revisadas, con_error)
+        return 1 if con_error else 0
     except Exception:
         logger.exception("La revisión programada falló")
         return 1

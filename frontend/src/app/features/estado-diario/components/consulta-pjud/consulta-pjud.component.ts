@@ -55,7 +55,7 @@ import { CampoConsulta, URL_OJV, camposConsulta, desglosarRol } from '@core/util
         }
       } @else {
         <p class="text-neutral-400 text-sm">
-          Este movimiento no trae datos suficientes para armar la búsqueda.
+          Este registro no trae datos suficientes para armar la búsqueda.
         </p>
       }
     </div>

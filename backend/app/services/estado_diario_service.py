@@ -28,6 +28,17 @@ class EstadoDiarioService:
         self.log_repo = ApiLogRepository(db)
         self.google_service = GoogleCalendarService(db)
 
+    @staticmethod
+    def alcance(current_user) -> Optional[int]:
+        """Traduce el usuario autenticado al filtro de propiedad que esperan
+        los repositorios: `None` para el admin (ve todo) y su propio id para
+        cualquier otro (ve solo lo que llegó a su casilla).
+
+        Único lugar donde se decide esto. Si mañana el admin deja de ver todo,
+        se cambia acá y no en veinte endpoints.
+        """
+        return None if current_user.rol == "admin" else current_user.id
+
     def _create_log(self, endpoint: str, request_data: str = "") -> ApiLlamadoEstadoDiario:
         log = ApiLlamadoEstadoDiario(
             endpoint=endpoint,
@@ -47,6 +58,7 @@ class EstadoDiarioService:
 
     def get_movimientos_no_leidos(
         self,
+        scope_usuario_id: Optional[int],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -59,7 +71,7 @@ class EstadoDiarioService:
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha_desde, fecha_hasta, rut, None, page, limit
+                scope_usuario_id, jurisdiccion_id, fecha_desde, fecha_hasta, rut, None, page, limit
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -75,6 +87,7 @@ class EstadoDiarioService:
 
     def get_movimientos_leidos(
         self,
+        scope_usuario_id: Optional[int],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -87,7 +100,7 @@ class EstadoDiarioService:
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "resuelto", page, limit
+                scope_usuario_id, jurisdiccion_id, fecha_desde, fecha_hasta, rut, "resuelto", page, limit
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -103,6 +116,7 @@ class EstadoDiarioService:
 
     def get_movimientos_pendientes(
         self,
+        scope_usuario_id: Optional[int],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -115,7 +129,7 @@ class EstadoDiarioService:
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "pendiente", page, limit
+                scope_usuario_id, jurisdiccion_id, fecha_desde, fecha_hasta, rut, "pendiente", page, limit
             )
             data = [self._map_movimiento(m, include_pendiente=True) for m in items]
             result = {
@@ -129,10 +143,22 @@ class EstadoDiarioService:
             self._save_log(log, False, error=str(e))
             raise
 
-    def marcar_leido(self, estado_diario_id: int, usuario_id: Optional[int] = None):
+    def marcar_leido(
+        self,
+        estado_diario_id: int,
+        usuario_id: Optional[int] = None,
+        scope_usuario_id: Optional[int] = None,
+        observacion: Optional[str] = None,
+    ):
+        """`usuario_id` es quién ejecuta la acción; `scope_usuario_id` es el
+        filtro de propiedad (None = admin). Son cosas distintas: un admin
+        resuelve un movimiento ajeno y queda registrado como autor.
+        """
         log = self._create_log("leido")
-        ed = self.repo.find_by_id(estado_diario_id)
+        ed = self.repo.find_by_id(estado_diario_id, scope_usuario_id)
         if not ed:
+            # Mismo 404 exista o no: si el movimiento es de otro usuario, un
+            # 403 confirmaría que ese id existe.
             self._save_log(log, False, error="No encontrado")
             raise NotFoundException("Estado diario no encontrado")
 
@@ -140,6 +166,9 @@ class EstadoDiarioService:
         ed.leido = True
         ed.fecha_leido = datetime.now(timezone.utc)
         ed.usuario_leido_id = usuario_id
+        if observacion is not None:
+            observacion = observacion.strip()
+            ed.observacion_resuelto = observacion or None
         self.repo.save()
 
         self._save_log(log, True, json.dumps({"exito": True}))
@@ -155,13 +184,14 @@ class EstadoDiarioService:
     def marcar_pendiente(self, estado_diario_id: int, nivel: str, username: Optional[str] = None,
                          mensaje: Optional[str] = None, fecha_hora: Optional[str] = None,
                          notificar_whatsapp: bool = False, whatsapp_telefono: Optional[str] = None,
-                         fecha_hora_whatsapp: Optional[str] = None):
+                         fecha_hora_whatsapp: Optional[str] = None,
+                         scope_usuario_id: Optional[int] = None):
         log = self._create_log("pendiente", json.dumps({
             "nivel": nivel, "username": username, "mensaje": mensaje, "fecha_hora": fecha_hora,
             "notificar_whatsapp": notificar_whatsapp,
         }))
 
-        ed = self.repo.find_by_id(estado_diario_id)
+        ed = self.repo.find_by_id(estado_diario_id, scope_usuario_id)
         if not ed:
             self._save_log(log, False, error="No encontrado")
             raise NotFoundException("Estado diario no encontrado")
@@ -237,7 +267,8 @@ class EstadoDiarioService:
             "agenda_id": agenda_id, "marcar_resuelto": marcar_resuelto,
         }))
 
-        agenda = self.agenda_repo.find_by_id(agenda_id)
+        scope = self.alcance(current_user)
+        agenda = self.agenda_repo.find_by_id(agenda_id, scope)
         if not agenda:
             self._save_log(log, False, error="Agenda no encontrada")
             raise NotFoundException("Recordatorio no encontrado")
@@ -249,9 +280,9 @@ class EstadoDiarioService:
         agenda.usuario_finaliza_id = current_user.id
 
         if marcar_resuelto:
-            # Mismo comportamiento que el botón "Resolver" del resto de la
+            # Mismo comportamiento que el botón "Resuelto" del resto de la
             # app: no se duplica lógica, solo se reutiliza.
-            self.marcar_leido(agenda.estado_diario_id, current_user.id)
+            self.marcar_leido(agenda.estado_diario_id, current_user.id, scope)
 
         # El evento se sincroniza en el calendario de quien lo creó, no en
         # el de quien lo finaliza (puede ser un admin finalizando por otro).
@@ -283,12 +314,12 @@ class EstadoDiarioService:
         return {"exito": True, "total": len(recordatorios), "recordatorios": recordatorios}
 
     def crear_agenda(self, estado_diario_id: int, detalle: str, fecha_hora_str: str,
-                     username: Optional[str] = None):
+                     username: Optional[str] = None, scope_usuario_id: Optional[int] = None):
         log = self._create_log("agenda", json.dumps({
             "detalle": detalle, "fecha_hora": fecha_hora_str, "username": username
         }))
 
-        ed = self.repo.find_by_id(estado_diario_id)
+        ed = self.repo.find_by_id(estado_diario_id, scope_usuario_id)
         if not ed:
             self._save_log(log, False, error="No encontrado")
             raise NotFoundException("Estado diario no encontrado")
@@ -321,8 +352,8 @@ class EstadoDiarioService:
         self._save_log(log, True, json.dumps({"exito": True, "id": agenda.id}))
         return {"exito": True, "id": agenda.id}
 
-    def get_agendas(self, estado_diario_id: int):
-        ed = self.repo.find_by_id(estado_diario_id)
+    def get_agendas(self, estado_diario_id: int, scope_usuario_id: Optional[int] = None):
+        ed = self.repo.find_by_id(estado_diario_id, scope_usuario_id)
         if not ed:
             raise NotFoundException("Estado diario no encontrado")
 
@@ -491,8 +522,8 @@ class EstadoDiarioService:
             f"(nuevo recordatorio {nueva.id} para {nueva_fecha.isoformat()})"
         )
 
-    def get_movimiento_detalle(self, estado_diario_id: int):
-        ed = self.repo.find_by_id(estado_diario_id)
+    def get_movimiento_detalle(self, estado_diario_id: int, scope_usuario_id: Optional[int] = None):
+        ed = self.repo.find_by_id(estado_diario_id, scope_usuario_id)
         if not ed:
             raise NotFoundException("Estado diario no encontrado")
         return {"exito": True, "movimiento": self._map_movimiento(ed, include_pendiente=True)}
@@ -514,6 +545,7 @@ class EstadoDiarioService:
             "corte": m.corte,
             "leido": m.leido,
             "fecha_leido": m.fecha_leido.isoformat() if m.fecha_leido else None,
+            "observacion_resuelto": m.observacion_resuelto,
             "pendiente": m.pendiente,
             "rut": m.estado_diario_origen.rut if m.estado_diario_origen else None,
             "fecha_estado_diario": m.estado_diario_origen.fecha.isoformat() if m.estado_diario_origen and m.estado_diario_origen.fecha else None,

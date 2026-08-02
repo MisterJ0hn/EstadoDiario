@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional, List
 
-from sqlalchemy import String, Date, DateTime, Boolean, ForeignKey
+from sqlalchemy import String, Date, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -28,12 +28,15 @@ class EstadoDiario(Base):
     fecha_ubicacion: Mapped[Optional[date]] = mapped_column(Date)
     corte: Mapped[Optional[str]] = mapped_column(String(255))
 
-    # Leído
+    # Leído (en la UI la acción se llama "Resuelto")
     leido: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     fecha_leido: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     usuario_leido_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("usuario.id"), index=True
     )
+    # Comentario opcional que el usuario escribe al marcar el movimiento como
+    # resuelto (por qué se cerró, qué se hizo). Puramente informativo.
+    observacion_resuelto: Mapped[Optional[str]] = mapped_column(Text)
 
     # Pendiente
     pendiente: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -44,7 +47,7 @@ class EstadoDiario(Base):
     )
 
     # Relationships
-    estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="movimientos")
+    estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="estados_diarios")
     jurisdiccion = relationship("Jurisdiccion")
     usuario_leido = relationship("Usuario", foreign_keys=[usuario_leido_id])
     usuario_pendiente = relationship("Usuario", foreign_keys=[usuario_pendiente_id])
