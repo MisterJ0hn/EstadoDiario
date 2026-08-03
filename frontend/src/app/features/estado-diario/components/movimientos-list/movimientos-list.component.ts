@@ -1,4 +1,4 @@
-import { Component, inject, signal, OnInit, computed } from '@angular/core';
+import { Component, inject, signal, OnInit, computed, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -8,13 +8,31 @@ import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component';
+import {
+  ChipFiltro,
+  FiltrosPanelComponent,
+} from '@shared/components/filtros-panel/filtros-panel.component';
 
 type Tab = 'no-leidos' | 'leidos' | 'pendientes';
+
+/** ISO (yyyy-MM-dd) a formato chileno. Se parte el string en vez de usar Date:
+ *  una fecha ISO pura se interpreta como UTC y en Chile corre un día. */
+function fmtFechaChip(iso: string): string {
+  const [anio, mes, dia] = iso.split('-');
+  return dia && mes && anio ? `${dia}-${mes}-${anio}` : iso;
+}
 
 @Component({
   selector: 'app-movimientos-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, RecordatorioModalComponent, ConsultaPjudComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterLink,
+    RecordatorioModalComponent,
+    ConsultaPjudComponent,
+    FiltrosPanelComponent,
+  ],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -52,39 +70,37 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
           </nav>
         </div>
 
-        <!-- Filters -->
-        <div class="card">
-          <div class="card-body">
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label class="form-label">Jurisdicción</label>
-                <select class="form-select" [(ngModel)]="filterJurisdiccion" (ngModelChange)="onFilter()">
-                  <option [ngValue]="null">Todas</option>
-                  @for (j of jurisdicciones(); track j.id) {
-                    <option [ngValue]="j.id">{{ j.nombre }}</option>
-                  }
-                </select>
-              </div>
-              <div>
-                <label class="form-label">Fecha desde</label>
-                <input type="date" class="form-input" [(ngModel)]="filterFechaDesde" (ngModelChange)="onFilter()" />
-              </div>
-              <div>
-                <label class="form-label">Fecha hasta</label>
-                <input type="date" class="form-input" [(ngModel)]="filterFechaHasta" (ngModelChange)="onFilter()" />
-              </div>
-              <div>
-                <label class="form-label">RUT</label>
-                <input type="text" class="form-input" [(ngModel)]="filterRut" placeholder="Ej: 16952077-1"
-                       (keyup.enter)="onFilter()" />
-              </div>
-              <div class="flex items-end gap-2">
-                <button (click)="onFilter()" class="btn-primary">Filtrar</button>
-                <button (click)="onClearFilters()" class="btn-secondary">Limpiar</button>
-              </div>
-            </div>
+        <!-- Filtros: los campos viven en el panel lateral; acá solo quedan los
+             badges de lo aplicado y el botón que lo abre. -->
+        <app-filtros-panel
+          [chips]="chipsFiltros()"
+          (aplicar)="onFilter()"
+          (limpiar)="onClearFilters()"
+          (quitar)="quitarFiltro($event)"
+        >
+          <div>
+            <label class="form-label" for="f-jurisdiccion">Jurisdicción</label>
+            <select id="f-jurisdiccion" class="form-select" [(ngModel)]="filterJurisdiccion">
+              <option [ngValue]="null">Todas</option>
+              @for (j of jurisdicciones(); track j.id) {
+                <option [ngValue]="j.id">{{ j.nombre }}</option>
+              }
+            </select>
           </div>
-        </div>
+          <div>
+            <label class="form-label" for="f-desde">Fecha desde</label>
+            <input id="f-desde" type="date" class="form-input" [(ngModel)]="filterFechaDesde" />
+          </div>
+          <div>
+            <label class="form-label" for="f-hasta">Fecha hasta</label>
+            <input id="f-hasta" type="date" class="form-input" [(ngModel)]="filterFechaHasta" />
+          </div>
+          <div>
+            <label class="form-label" for="f-rut">RUT</label>
+            <input id="f-rut" type="text" class="form-input" [(ngModel)]="filterRut"
+                   placeholder="Ej: 16952077-1" (keyup.enter)="aplicarDesdeCampo()" />
+          </div>
+        </app-filtros-panel>
       }
 
       <!-- Table -->
@@ -303,6 +319,10 @@ export class MovimientosListComponent implements OnInit {
   filterFechaHasta = '';
   filterRut = '';
 
+  /** Filtros ya aplicados, los que se ven como badges. */
+  readonly chipsFiltros = signal<ChipFiltro[]>([]);
+  private readonly panel = viewChild(FiltrosPanelComponent);
+
   menuAbiertoId = signal<number | null>(null);
 
   /**
@@ -442,8 +462,15 @@ export class MovimientosListComponent implements OnInit {
 
   onFilter(): void {
     this.currentPage.set(1);
+    this.sincronizarChips();
     this.loadData();
     this.loadCounts();
+  }
+
+  /** Enter dentro de un campo del panel: aplica sin obligar a ir al botón. */
+  aplicarDesdeCampo(): void {
+    this.panel()?.cerrar();
+    this.onFilter();
   }
 
   onClearFilters(): void {
@@ -452,6 +479,55 @@ export class MovimientosListComponent implements OnInit {
     this.filterFechaHasta = '';
     this.filterRut = '';
     this.onFilter();
+  }
+
+  /** Quita un solo filtro desde su badge y vuelve a consultar. */
+  quitarFiltro(clave: string): void {
+    switch (clave) {
+      case 'jurisdiccion':
+        this.filterJurisdiccion = null;
+        break;
+      case 'fecha_desde':
+        this.filterFechaDesde = '';
+        break;
+      case 'fecha_hasta':
+        this.filterFechaHasta = '';
+        break;
+      case 'rut':
+        this.filterRut = '';
+        break;
+    }
+    this.onFilter();
+  }
+
+  /**
+   * Los badges muestran lo que está APLICADO, no lo que hay escrito en el
+   * panel: si el usuario abre, escribe y cierra sin aplicar, la barra no debe
+   * mentir sobre qué se está consultando. Por eso se recalculan acá y no en un
+   * computed sobre los campos.
+   */
+  private sincronizarChips(): void {
+    const chips: ChipFiltro[] = [];
+
+    if (this.filterJurisdiccion) {
+      const j = this.jurisdicciones().find((x) => x.id === this.filterJurisdiccion);
+      chips.push({
+        clave: 'jurisdiccion',
+        etiqueta: 'Jurisdicción',
+        valor: j?.nombre ?? String(this.filterJurisdiccion),
+      });
+    }
+    if (this.filterFechaDesde) {
+      chips.push({ clave: 'fecha_desde', etiqueta: 'Desde', valor: fmtFechaChip(this.filterFechaDesde) });
+    }
+    if (this.filterFechaHasta) {
+      chips.push({ clave: 'fecha_hasta', etiqueta: 'Hasta', valor: fmtFechaChip(this.filterFechaHasta) });
+    }
+    if (this.filterRut) {
+      chips.push({ clave: 'rut', etiqueta: 'RUT', valor: this.filterRut });
+    }
+
+    this.chipsFiltros.set(chips);
   }
 
   goToPage(page: number): void {

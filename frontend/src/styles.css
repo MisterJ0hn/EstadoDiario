@@ -8,6 +8,41 @@
   }
 }
 
+@layer utilities {
+  /* Entrada del panel lateral de filtros (ver FiltrosPanelComponent). */
+  @keyframes deslizar-desde-derecha {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes aparecer {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .animar-panel-derecha {
+    animation: deslizar-desde-derecha 200ms ease-out;
+  }
+  .animar-fondo {
+    animation: aparecer 200ms ease-out;
+  }
+
+  /* Un panel que entra deslizándose marea a quien pidió menos movimiento en
+     el sistema operativo; aparece igual, pero sin desplazamiento. */
+  @media (prefers-reduced-motion: reduce) {
+    .animar-panel-derecha,
+    .animar-fondo {
+      animation: aparecer 1ms linear;
+    }
+  }
+}
+
 @layer components {
   /* ── Buttons ─────────────────────────── */
   .btn {

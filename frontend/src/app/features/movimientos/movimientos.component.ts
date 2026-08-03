@@ -1,10 +1,14 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MovimientoService } from './services/movimiento.service';
 import { NotificationService } from '@core/services/notification.service';
 import { ConteoMateria, Movimiento, MovimientoFiltros } from '@core/models/movimiento.model';
+import {
+  ChipFiltro,
+  FiltrosPanelComponent,
+} from '@shared/components/filtros-panel/filtros-panel.component';
 
 /**
  * Listado del módulo Movimientos: estado procesal de las causas.
@@ -25,7 +29,7 @@ import { ConteoMateria, Movimiento, MovimientoFiltros } from '@core/models/movim
 @Component({
   selector: 'app-movimientos',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, FiltrosPanelComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
@@ -86,36 +90,33 @@ import { ConteoMateria, Movimiento, MovimientoFiltros } from '@core/models/movim
         </nav>
       </div>
 
-      <!-- Filtros -->
-      <div class="card">
-        <div class="card-body">
-          <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div class="md:col-span-2">
-              <label class="form-label">Búsqueda</label>
-              <input type="text" class="form-input" [(ngModel)]="filtroBusqueda"
-                     placeholder="Carátula o rol" (keyup.enter)="onFiltrar()" />
-            </div>
-            <div>
-              <label class="form-label">Estado de la causa</label>
-              <select class="form-select" [(ngModel)]="filtroEstadoCausa" (ngModelChange)="onFiltrar()">
-                <option [ngValue]="''">Todos</option>
-                @for (e of estadosCausa(); track e) {
-                  <option [ngValue]="e">{{ e }}</option>
-                }
-              </select>
-            </div>
-            <div>
-              <label class="form-label">Tribunal</label>
-              <input type="text" class="form-input" [(ngModel)]="filtroTribunal"
-                     placeholder="Coincidencia parcial" (keyup.enter)="onFiltrar()" />
-            </div>
-            <div class="flex items-end gap-2">
-              <button (click)="onFiltrar()" class="btn-primary">Filtrar</button>
-              <button (click)="onLimpiarFiltros()" class="btn-secondary">Limpiar</button>
-            </div>
-          </div>
+      <!-- Filtros: campos en el panel lateral, badges de lo aplicado acá. -->
+      <app-filtros-panel
+        [chips]="chipsFiltros()"
+        (aplicar)="onFiltrar()"
+        (limpiar)="onLimpiarFiltros()"
+        (quitar)="quitarFiltro($event)"
+      >
+        <div>
+          <label class="form-label" for="m-busqueda">Búsqueda</label>
+          <input id="m-busqueda" type="text" class="form-input" [(ngModel)]="filtroBusqueda"
+                 placeholder="Carátula o rol" (keyup.enter)="aplicarDesdeCampo()" />
         </div>
-      </div>
+        <div>
+          <label class="form-label" for="m-estado">Estado de la causa</label>
+          <select id="m-estado" class="form-select" [(ngModel)]="filtroEstadoCausa">
+            <option [ngValue]="''">Todos</option>
+            @for (e of estadosCausa(); track e) {
+              <option [ngValue]="e">{{ e }}</option>
+            }
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="m-tribunal">Tribunal</label>
+          <input id="m-tribunal" type="text" class="form-input" [(ngModel)]="filtroTribunal"
+                 placeholder="Coincidencia parcial" (keyup.enter)="aplicarDesdeCampo()" />
+        </div>
+      </app-filtros-panel>
 
       <!-- Tabla -->
       @if (loading()) {
@@ -265,6 +266,10 @@ export class MovimientosComponent implements OnInit {
   filtroEstadoCausa = '';
   filtroTribunal = '';
   filtroRut = '';
+
+  /** Filtros ya aplicados, los que se ven como badges. */
+  readonly chipsFiltros = signal<ChipFiltro[]>([]);
+  private readonly panel = viewChild(FiltrosPanelComponent);
   /** Fijado por query param cuando se entra desde un archivo concreto; no se edita en pantalla. */
   filtroOrigenId: number | undefined;
 
@@ -387,6 +392,7 @@ export class MovimientosComponent implements OnInit {
   onFiltrar(): void {
     this.currentPage.set(1);
     this.detalleAbiertoId.set(null);
+    this.sincronizarChips();
     this.cargarDatos();
     this.cargarResumen();
   }
@@ -397,6 +403,56 @@ export class MovimientosComponent implements OnInit {
     this.filtroTribunal = '';
     this.filtroRut = '';
     this.onFiltrar();
+  }
+
+  /** Enter dentro de un campo del panel: aplica sin ir hasta el botón. */
+  aplicarDesdeCampo(): void {
+    this.panel()?.cerrar();
+    this.onFiltrar();
+  }
+
+  /** Quita un solo filtro desde su badge y vuelve a consultar. */
+  quitarFiltro(clave: string): void {
+    switch (clave) {
+      case 'busqueda':
+        this.filtroBusqueda = '';
+        break;
+      case 'estado_causa':
+        this.filtroEstadoCausa = '';
+        break;
+      case 'tribunal':
+        this.filtroTribunal = '';
+        break;
+      case 'rut':
+        this.filtroRut = '';
+        break;
+    }
+    this.onFiltrar();
+  }
+
+  /**
+   * Badges de lo APLICADO, no de lo escrito: si el usuario abre el panel,
+   * escribe y lo cierra sin aplicar, la barra no debe mentir sobre qué se está
+   * consultando.
+   *
+   * `origen_id` queda fuera a propósito: no se edita en pantalla y ya tiene su
+   * propio aviso arriba del listado.
+   */
+  private sincronizarChips(): void {
+    const chips: ChipFiltro[] = [];
+    if (this.filtroBusqueda) {
+      chips.push({ clave: 'busqueda', etiqueta: 'Búsqueda', valor: this.filtroBusqueda });
+    }
+    if (this.filtroEstadoCausa) {
+      chips.push({ clave: 'estado_causa', etiqueta: 'Estado', valor: this.filtroEstadoCausa });
+    }
+    if (this.filtroTribunal) {
+      chips.push({ clave: 'tribunal', etiqueta: 'Tribunal', valor: this.filtroTribunal });
+    }
+    if (this.filtroRut) {
+      chips.push({ clave: 'rut', etiqueta: 'RUT', valor: this.filtroRut });
+    }
+    this.chipsFiltros.set(chips);
   }
 
   quitarFiltroArchivo(): void {
