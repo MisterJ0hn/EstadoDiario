@@ -10,7 +10,7 @@ export interface JurisdiccionListResponse {
 }
 
 /** Tipo de archivo cargado: separa las pestañas de la vista Archivos. */
-export type TipoOrigen = 'estado_diario' | 'movimientos';
+export type TipoOrigen = 'estado_diario' | 'movimientos' | 'audiencias';
 
 export interface EstadoDiarioOrigen {
   id: number;

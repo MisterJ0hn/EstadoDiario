@@ -18,18 +18,24 @@ de un RUT con su estado procesal. Diferencias que condicionan este parser:
 import logging
 import os
 import re
-import unicodedata
 from datetime import datetime, timezone, date
 from typing import Optional
 
-import xlrd
 import openpyxl
+import xlrd
 from sqlalchemy.orm import Session
 
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.models.movimiento import Movimiento
 from app.repositories.movimiento_repository import MovimientoRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.utils.excel_pjud import (
+    detectar_formato,
+    mapa_columnas,
+    parse_fecha_xls,
+    parse_fecha_xlsx,
+    recortar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,93 +76,13 @@ LARGOS_MAXIMOS = {
     "ubicacion": 255,
 }
 
-# Formatos con los que llegan las fechas como texto. El archivo real usa
-# "2018/01/12" (año primero), pero se aceptan los otros para no depender de
-# una sola versión del reporte.
-FORMATOS_FECHA = ("%Y/%m/%d", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y")
-
-
-def normalizar_encabezado(valor) -> str:
-    """Minúsculas, sin tildes y sin espacios de más, para poder comparar
-    "Institución", "Institucion" e "INSTITUCION " como el mismo encabezado."""
-    if valor is None:
-        return ""
-    texto = unicodedata.normalize("NFKD", str(valor))
-    texto = "".join(c for c in texto if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", texto).strip().lower()
-
-
-def _detectar_formato(file_path: str) -> str:
-    """Devuelve 'xlsx' o 'xls' leyendo los magic bytes.
-
-    No renombra el archivo (a diferencia de ImportService._ensure_correct_
-    extension) porque ni xlrd ni openpyxl miran la extensión: alcanza con
-    elegir la librería correcta, y así la función sirve también para archivos
-    de solo lectura.
-    """
-    with open(file_path, "rb") as f:
-        cabecera = f.read(8)
-
-    if cabecera[:2] == b"PK":
-        return "xlsx"
-    if cabecera[:4] == b"\xd0\xcf\x11\xe0":
-        return "xls"
-    # Sin firma reconocible: se cae a la extensión.
-    return "xlsx" if os.path.splitext(file_path)[1].lower() in (".xlsx", ".xlsm") else "xls"
-
 
 def _recortar(valor: Optional[str], campo: str) -> Optional[str]:
-    largo = LARGOS_MAXIMOS.get(campo)
-    if valor and largo and len(valor) > largo:
-        return valor[:largo]
-    return valor
-
-
-def _parse_fecha_texto(valor) -> Optional[date]:
-    texto = str(valor).strip()
-    if not texto:
-        return None
-    # Algunas celdas traen la hora pegada ("2018/01/12 00:00:00").
-    texto = texto.split(" ")[0]
-    for formato in FORMATOS_FECHA:
-        try:
-            return datetime.strptime(texto, formato).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _parse_fecha_xls(valor, datemode) -> Optional[date]:
-    """El reporte trae las fechas como texto, pero si alguien reguarda el
-    archivo desde Excel pasan a ser celdas de fecha reales (float serial)."""
-    if valor is None or valor == "":
-        return None
-    if isinstance(valor, float) or isinstance(valor, int):
-        try:
-            return xlrd.xldate_as_datetime(valor, datemode).date()
-        except Exception:
-            return None
-    return _parse_fecha_texto(valor)
-
-
-def _parse_fecha_xlsx(valor) -> Optional[date]:
-    if valor is None or valor == "":
-        return None
-    if isinstance(valor, datetime):
-        return valor.date()
-    if isinstance(valor, date):
-        return valor
-    return _parse_fecha_texto(valor)
+    return recortar(valor, campo, LARGOS_MAXIMOS)
 
 
 def _mapa_columnas(encabezados: list) -> dict:
-    """índice de columna -> campo del modelo, para los encabezados conocidos."""
-    mapa = {}
-    for idx, bruto in enumerate(encabezados):
-        campo = HEADER_ALIASES.get(normalizar_encabezado(bruto))
-        if campo and campo not in mapa.values():
-            mapa[idx] = campo
-    return mapa
+    return mapa_columnas(encabezados, HEADER_ALIASES)
 
 
 def _armar_fila(valores_por_campo: dict, materia: str) -> Optional[dict]:
@@ -184,7 +110,7 @@ def _leer_xls(file_path: str) -> list[dict]:
             for col, campo in mapa.items():
                 bruto = hoja.cell_value(r, col)
                 if campo in CAMPOS_FECHA:
-                    valores[campo] = _parse_fecha_xls(bruto, wb.datemode)
+                    valores[campo] = parse_fecha_xls(bruto, wb.datemode)
                 else:
                     texto = str(bruto).strip() if bruto not in (None, "") else None
                     valores[campo] = _recortar(texto or None, campo)
@@ -214,7 +140,7 @@ def _leer_xlsx(file_path: str) -> list[dict]:
                 for col, campo in mapa.items():
                     bruto = hoja.cell(r, col + 1).value  # openpyxl es 1-based
                     if campo in CAMPOS_FECHA:
-                        valores[campo] = _parse_fecha_xlsx(bruto)
+                        valores[campo] = parse_fecha_xlsx(bruto)
                     else:
                         texto = str(bruto).strip() if bruto not in (None, "") else None
                         valores[campo] = _recortar(texto or None, campo)
@@ -233,7 +159,7 @@ def parse_movimientos_file(file_path: str) -> list[dict]:
     Función pura (no toca la base de datos) para poder probar el parseo del
     archivo por separado.
     """
-    if _detectar_formato(file_path) == "xlsx":
+    if detectar_formato(file_path) == "xlsx":
         return _leer_xlsx(file_path)
     return _leer_xls(file_path)
 

@@ -2,8 +2,10 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { EstadoDiarioService } from '../estado-diario/services/estado-diario.service';
+import { AudienciaService } from '../audiencias/services/audiencia.service';
 import { NotificationService } from '@core/services/notification.service';
 import { RecordatorioVigente } from '@core/models/estado-diario.model';
+import { Audiencia } from '@core/models/audiencia.model';
 
 interface DiaCalendario {
   fecha: Date;
@@ -11,6 +13,7 @@ interface DiaCalendario {
   delMes: boolean;
   esHoy: boolean;
   recordatorios: RecordatorioVigente[];
+  audiencias: Audiencia[];
 }
 
 const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -32,6 +35,18 @@ function claveDia(d: Date): string {
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Calendario</h1>
+          <!-- Leyenda: sin ella, dos chips de colores distintos no dicen qué son.
+               Los recordatorios usan el código de urgencia del sistema
+               (bajo=naranjo, medio=amarillo, alto=rojo) y las audiencias el azul
+               primario, porque no tienen nivel: las fija el tribunal. -->
+          <div class="flex items-center gap-4 mt-1 text-xs text-neutral-500">
+            <span class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-sm bg-primary-500"></span> Audiencias
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-sm bg-warning-400"></span> Recordatorios
+            </span>
+          </div>
         </div>
         <div class="flex items-center gap-2">
           <button (click)="mesAnterior()" class="btn-secondary btn-sm" title="Mes anterior">
@@ -78,6 +93,15 @@ function claveDia(d: Date): string {
                   >{{ dia.fecha.getDate() }}</span>
                 </div>
                 <div class="space-y-1">
+                  <!-- Las audiencias van primero: son compromisos con hora fija
+                       ante un tribunal, y mandan sobre un recordatorio propio. -->
+                  @for (a of dia.audiencias; track a.id) {
+                    <button
+                      (click)="verAudiencias(a)"
+                      class="w-full text-left truncate rounded px-1.5 py-0.5 text-xs font-medium bg-primary-100 text-primary-800 hover:bg-primary-200"
+                      [title]="tituloAudiencia(a)"
+                    >{{ fmtHora(a.hora) }} {{ a.caratulado || a.rol || a.ruc }}</button>
+                  }
                   @for (r of dia.recordatorios; track r.id) {
                     <button
                       (click)="abrirDetalle(r)"
@@ -159,6 +183,7 @@ function claveDia(d: Date): string {
 })
 export class CalendarioComponent implements OnInit {
   private service = inject(EstadoDiarioService);
+  private audienciaService = inject(AudienciaService);
   private notification = inject(NotificationService);
   private router = inject(Router);
 
@@ -166,6 +191,7 @@ export class CalendarioComponent implements OnInit {
 
   loading = signal(true);
   recordatorios = signal<RecordatorioVigente[]>([]);
+  audiencias = signal<Audiencia[]>([]);
   mesActual = signal(this.primerDiaDelMes(new Date()));
 
   seleccionado = signal<RecordatorioVigente | null>(null);
@@ -183,6 +209,17 @@ export class CalendarioComponent implements OnInit {
     return mapa;
   });
 
+  private audienciasPorDia = computed(() => {
+    const mapa = new Map<string, Audiencia[]>();
+    for (const a of this.audiencias()) {
+      const key = a.fecha_audiencia.slice(0, 10);
+      const lista = mapa.get(key) ?? [];
+      lista.push(a);
+      mapa.set(key, lista);
+    }
+    return mapa;
+  });
+
   nombreMes = computed(() => MESES[this.mesActual().getMonth()]);
 
   dias = computed<DiaCalendario[]>(() => {
@@ -195,6 +232,7 @@ export class CalendarioComponent implements OnInit {
 
     const hoy = claveDia(new Date());
     const mapa = this.porDia();
+    const mapaAudiencias = this.audienciasPorDia();
     const celdas: DiaCalendario[] = [];
 
     for (let i = 0; i < 42; i++) {
@@ -207,6 +245,7 @@ export class CalendarioComponent implements OnInit {
         delMes: fecha.getMonth() === mes.getMonth(),
         esHoy: key === hoy,
         recordatorios: mapa.get(key) ?? [],
+        audiencias: mapaAudiencias.get(key) ?? [],
       });
     }
     return celdas;
@@ -214,6 +253,7 @@ export class CalendarioComponent implements OnInit {
 
   ngOnInit(): void {
     this.cargar();
+    this.cargarAudiencias();
   }
 
   private primerDiaDelMes(d: Date): Date {
@@ -234,18 +274,66 @@ export class CalendarioComponent implements OnInit {
     });
   }
 
+  /**
+   * Las audiencias se cargan por ventana, a diferencia de los recordatorios
+   * vigentes que se traen enteros una sola vez: son un conjunto que crece sin
+   * techo (cada archivo semanal suma) y traerlas todas engordaría la respuesta
+   * mes a mes. La ventana es la misma grilla de 42 celdas que se está pintando.
+   */
+  cargarAudiencias(): void {
+    const mes = this.mesActual();
+    const primerDia = new Date(mes.getFullYear(), mes.getMonth(), 1);
+    const inicio = new Date(primerDia);
+    inicio.setDate(inicio.getDate() - ((primerDia.getDay() + 6) % 7));
+    const fin = new Date(inicio);
+    fin.setDate(inicio.getDate() + 41);
+
+    this.audienciaService.getCalendario(claveDia(inicio), claveDia(fin)).subscribe({
+      next: (res) => this.audiencias.set(res.audiencias),
+      // Silencioso a propósito: el calendario sigue siendo útil con los
+      // recordatorios, y ya hay un error visible si falla la carga principal.
+      error: () => this.audiencias.set([]),
+    });
+  }
+
   mesAnterior(): void {
     const m = this.mesActual();
     this.mesActual.set(new Date(m.getFullYear(), m.getMonth() - 1, 1));
+    this.cargarAudiencias();
   }
 
   mesSiguiente(): void {
     const m = this.mesActual();
     this.mesActual.set(new Date(m.getFullYear(), m.getMonth() + 1, 1));
+    this.cargarAudiencias();
   }
 
   irAHoy(): void {
     this.mesActual.set(this.primerDiaDelMes(new Date()));
+    this.cargarAudiencias();
+  }
+
+  /** "10:00:00" -> "10:00". La hoja Penal puede venir sin hora. */
+  fmtHora(valor: string | null): string {
+    return valor ? valor.slice(0, 5) : '';
+  }
+
+  tituloAudiencia(a: Audiencia): string {
+    return [
+      a.tipo_audiencia,
+      a.caratulado || a.rol || a.ruc,
+      a.tribunal,
+      a.sala,
+    ]
+      .filter((p) => !!p && String(p).trim() !== '')
+      .join(' · ');
+  }
+
+  /** El detalle de una audiencia vive en su módulo; el calendario solo la anuncia. */
+  verAudiencias(a: Audiencia): void {
+    this.router.navigate(['/audiencias'], {
+      queryParams: { busqueda: a.rol || a.ruc || a.caratulado },
+    });
   }
 
   /** Colores por nivel de urgencia: bajo = naranjo, medio = amarillo, alto = rojo. */

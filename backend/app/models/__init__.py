@@ -9,6 +9,7 @@ cargaron.
 
 from app.models import (  # noqa: F401
     api_llamado_estado_diario,
+    audiencia,
     configuracion_correo,
     configuracion_google,
     configuracion_smtp,

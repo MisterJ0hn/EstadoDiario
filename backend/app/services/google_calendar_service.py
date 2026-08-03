@@ -39,9 +39,14 @@ class GoogleCalendarService:
         self.config_repo = ConfiguracionGoogleRepository(db)
         self.cred_repo = GoogleCredencialRepository(db)
 
-    def _client(self, usuario_id: int):
+    def cliente(self, usuario_id: int):
         """Devuelve un cliente de Calendar API para el usuario, o None si no
-        tiene su cuenta conectada o falta la configuración del proyecto."""
+        tiene su cuenta conectada o falta la configuración del proyecto.
+
+        Es público porque AudienciaCalendarService monta sus propios eventos
+        sobre esta misma conexión OAuth: la autenticación con Google se resuelve
+        en un solo lugar para todo el sistema.
+        """
         config = self.config_repo.get_or_create()
         if not config.activo or not config.client_id or not config.client_secret_cifrado:
             return None
@@ -63,7 +68,7 @@ class GoogleCalendarService:
 
     def crear_o_actualizar_evento(self, agenda: EstadoDiarioAgenda, usuario: Usuario) -> None:
         try:
-            servicio = self._client(usuario.id)
+            servicio = self.cliente(usuario.id)
             if servicio is None:
                 return
 
@@ -106,7 +111,7 @@ class GoogleCalendarService:
         if not agenda.google_event_id:
             return
         try:
-            servicio = self._client(usuario.id)
+            servicio = self.cliente(usuario.id)
             if servicio is None:
                 return
 

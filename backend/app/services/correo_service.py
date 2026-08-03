@@ -330,6 +330,10 @@ class CorreoService:
         # Import local para no crear un ciclo con el módulo de endpoints
         from app.api.v1.endpoints.estado_diario import _parse_filename
         from app.models.estado_diario_origen import EstadoDiarioOrigen
+        from app.services.audiencia_import_service import (
+            AudienciaImportService,
+            parse_nombre_archivo as parse_nombre_audiencias,
+        )
         from app.services.movimiento_import_service import (
             MovimientoImportService,
             parse_nombre_archivo as parse_nombre_movimientos,
@@ -375,7 +379,7 @@ class CorreoService:
             return
 
         # RUT, fecha Y TIPO salen del nombre; por correo no hay quien los
-        # escriba. El tipo decide a qué parser va: los dos Excel del PJUD
+        # escriba. El tipo decide a qué parser va: los tres Excel del PJUD
         # tienen columnas distintas y no son intercambiables.
         rut, fecha = _parse_filename(nombre_original)
         tipo = EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
@@ -385,14 +389,20 @@ class CorreoService:
             tipo = EstadoDiarioOrigen.TIPO_MOVIMIENTOS
 
         if not rut or not fecha:
+            # El de audiencias cubre un rango; se guarda por su fecha de inicio.
+            rut, fecha, _hasta = parse_nombre_audiencias(nombre_original)
+            tipo = EstadoDiarioOrigen.TIPO_AUDIENCIAS
+
+        if not rut or not fecha:
             resumen["descartados"] += 1
             self._log(
                 RESULTADO_DESCARTADO, message_id=message_id, remitente=remitente, asunto=asunto,
                 nombre_archivo=nombre_original,
                 detalle=(
                     "No se pudo deducir RUT y fecha del nombre. Formatos esperados: "
-                    "estadoDiario_{RUT}__{DDMMYYYY}.xls o "
-                    "Movimientos_{RUT}_{DD}_{MM}_{YYYY}.xls"
+                    "estadoDiario_{RUT}__{DDMMYYYY}.xls, "
+                    "Movimientos_{RUT}_{DD}_{MM}_{YYYY}.xls o "
+                    "Audiencias_{RUT}_{DD}_{MM}_{YYYY}_{DD}_{MM}_{YYYY}.xls"
                 ),
                 disparo=disparo,
             )
@@ -407,6 +417,8 @@ class CorreoService:
         try:
             if tipo == EstadoDiarioOrigen.TIPO_MOVIMIENTOS:
                 servicio = MovimientoImportService(self.db)
+            elif tipo == EstadoDiarioOrigen.TIPO_AUDIENCIAS:
+                servicio = AudienciaImportService(self.db)
             else:
                 servicio = ImportService(self.db)
             resultado = servicio.import_file(

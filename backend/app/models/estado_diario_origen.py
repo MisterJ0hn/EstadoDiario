@@ -9,9 +9,9 @@ from app.core.database import Base
 
 class EstadoDiarioOrigen(Base):
     """Archivo Excel recibido. A pesar del nombre histórico de la tabla,
-    guarda los dos tipos que maneja el sistema (ver `tipo`): el estado diario
-    y el reporte de movimientos. La vista "Archivos" los lista juntos y separa
-    por pestañas con esa columna.
+    guarda los tres tipos que maneja el sistema (ver `tipo`): el estado diario,
+    el reporte de movimientos y el de audiencias. La vista "Archivos" los lista
+    juntos y separa por pestañas con esa columna.
     """
 
     __tablename__ = "estado_diario_origen"
@@ -20,6 +20,7 @@ class EstadoDiarioOrigen(Base):
     # que existían antes de que hubiera movimientos son de ese tipo.
     TIPO_ESTADO_DIARIO = "estado_diario"
     TIPO_MOVIMIENTOS = "movimientos"
+    TIPO_AUDIENCIAS = "audiencias"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     usuario_carga_id: Mapped[Optional[int]] = mapped_column(
@@ -30,6 +31,8 @@ class EstadoDiarioOrigen(Base):
         String(20), default=TIPO_ESTADO_DIARIO, server_default=TIPO_ESTADO_DIARIO, index=True
     )
     rut: Mapped[Optional[str]] = mapped_column(String(20))
+    # Fecha del reporte. En los archivos de audiencias, que cubren un rango, es
+    # el INICIO del rango (el fin queda en `nombre_archivo`).
     fecha: Mapped[Optional[date]] = mapped_column(Date)
     guid: Mapped[Optional[str]] = mapped_column(String(50))
     nombre_archivo: Mapped[Optional[str]] = mapped_column(String(255))
@@ -47,4 +50,12 @@ class EstadoDiarioOrigen(Base):
     )
     movimientos: Mapped[List["Movimiento"]] = relationship(
         "Movimiento", back_populates="estado_diario_origen", cascade="all, delete-orphan"
+    )
+    # Sin delete-orphan, a diferencia de los otros dos: una audiencia sobrevive
+    # a sus archivos porque se deduplica entre cargas traslapadas y
+    # `estado_diario_origen_id` apunta solo al último que la trajo. Borrar ese
+    # archivo dejaría la audiencia sin procedencia (SET NULL), no la borra:
+    # sigue siendo una audiencia agendada de verdad.
+    audiencias: Mapped[List["Audiencia"]] = relationship(
+        "Audiencia", back_populates="estado_diario_origen", passive_deletes=True
     )

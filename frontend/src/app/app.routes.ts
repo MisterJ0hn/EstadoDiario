@@ -81,6 +81,13 @@ export const routes: Routes = [
           import('./features/movimientos/movimientos.component').then((m) => m.MovimientosComponent),
       },
       {
+        // Módulo Audiencias: lo que el tribunal ya fijó, de hoy en adelante.
+        // Solo consulta, como Movimientos.
+        path: 'audiencias',
+        loadComponent: () =>
+          import('./features/audiencias/audiencias.component').then((m) => m.AudienciasComponent),
+      },
+      {
         // Informes dinámicos: el usuario arma el informe, lo guarda y lo recibe
         // por correo o lo descarga. La configuración SMTP va con el resto de la
         // administración, más abajo.

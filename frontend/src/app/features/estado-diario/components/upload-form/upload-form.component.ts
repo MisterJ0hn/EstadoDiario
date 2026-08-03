@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { MovimientoService } from '@features/movimientos/services/movimiento.service';
+import { AudienciaService } from '@features/audiencias/services/audiencia.service';
 import { NotificationService } from '@core/services/notification.service';
 import { TipoOrigen } from '@core/models/estado-diario.model';
 
@@ -15,7 +16,7 @@ import { TipoOrigen } from '@core/models/estado-diario.model';
     <div class="max-w-2xl mx-auto space-y-6">
       <div>
         <h1 class="text-2xl font-bold text-neutral-800">Cargar Archivo</h1>
-        <p class="text-neutral-500 mt-1">Suba un archivo XLS/XLSX de estado diario o de movimientos</p>
+        <p class="text-neutral-500 mt-1">Suba un archivo XLS/XLSX de estado diario, movimientos o audiencias</p>
         <p class="text-xs text-neutral-400 mt-1">
           El RUT y la fecha se extraen del nombre del archivo (Ej: {{ ejemploNombre() }})
         </p>
@@ -23,13 +24,14 @@ import { TipoOrigen } from '@core/models/estado-diario.model';
 
       <div class="card">
         <div class="card-body space-y-5">
-          <!-- Tipo: son dos Excel distintos y van a endpoints distintos. Se
+          <!-- Tipo: son tres Excel distintos y van a endpoints distintos. Se
                autodetecta por el nombre del archivo y se puede corregir a mano. -->
           <div>
             <label class="form-label">Tipo de archivo</label>
             <select class="form-select" [(ngModel)]="tipo">
               <option value="estado_diario">Estado Diario</option>
               <option value="movimientos">Movimientos</option>
+              <option value="audiencias">Audiencias</option>
             </select>
           </div>
 
@@ -106,22 +108,27 @@ import { TipoOrigen } from '@core/models/estado-diario.model';
 export class UploadFormComponent {
   private service = inject(EstadoDiarioService);
   private movimientoService = inject(MovimientoService);
+  private audienciaService = inject(AudienciaService);
   private notification = inject(NotificationService);
   private router = inject(Router);
 
   rut = '';
   fecha = '';
-  /** Los dos Excel del sistema tienen formatos y endpoints distintos. */
+  /** Los tres Excel del sistema tienen formatos y endpoints distintos. */
   tipo: TipoOrigen = 'estado_diario';
   selectedFile = signal<File | null>(null);
   parsedInfo = signal<{ rut: string; fecha: string } | null>(null);
   uploading = signal(false);
   errorMsg = signal('');
 
+  private readonly EJEMPLOS: Record<TipoOrigen, string> = {
+    estado_diario: 'estadoDiario_16952077__28072026.xls',
+    movimientos: 'Movimientos_16952077__30_07_2026.xls',
+    audiencias: 'Audiencias_16952077_03_08_2026_09_08_2026.xls',
+  };
+
   ejemploNombre(): string {
-    return this.tipo === 'movimientos'
-      ? 'Movimientos_16952077__30_07_2026.xls'
-      : 'estadoDiario_16952077__28072026.xls';
+    return this.EJEMPLOS[this.tipo];
   }
 
   onFileSelect(event: Event): void {
@@ -157,10 +164,16 @@ export class UploadFormComponent {
     );
     // Movimientos: Movimientos_{RUT}__{DD}_{MM}_{YYYY}.xls
     const matchMov = name.match(/^Movimientos_(\d+[\-kK]?\d?)_+(\d{1,2})_(\d{1,2})_(\d{4})$/i);
+    // Audiencias: Audiencias_{RUT}_{DD}_{MM}_{YYYY}_{DD}_{MM}_{YYYY}.xls
+    // Cubre un RANGO de fechas; se toma el inicio como fecha del archivo.
+    const matchAud = name.match(
+      /^Audiencias_(\d+[\-kK]?\d?)_+(\d{1,2})_(\d{1,2})_(\d{4})_+\d{1,2}_\d{1,2}_\d{4}$/i
+    );
 
     // El nombre manda sobre el selector: es el dato más confiable del tipo.
     if (matchEdNuevo || matchEdViejo) this.tipo = 'estado_diario';
     if (matchMov) this.tipo = 'movimientos';
+    if (matchAud) this.tipo = 'audiencias';
 
     // El formato nuevo parte el RUT en cuerpo y dígito verificador; los otros
     // dos lo traen entero, así que se normalizan a la misma forma.
@@ -170,8 +183,8 @@ export class UploadFormComponent {
       const [, cuerpo, dv] = matchEdNuevo;
       rutDetectado = dv ? `${cuerpo}-${dv}` : cuerpo;
       match = [matchEdNuevo[0], rutDetectado, matchEdNuevo[3], matchEdNuevo[4], matchEdNuevo[5]];
-    } else if (matchEdViejo ?? matchMov) {
-      match = matchEdViejo ?? matchMov;
+    } else if (matchEdViejo ?? matchMov ?? matchAud) {
+      match = matchEdViejo ?? matchMov ?? matchAud;
       rutDetectado = match![1];
     }
 
@@ -197,18 +210,22 @@ export class UploadFormComponent {
     if (!this.selectedFile()) { this.errorMsg.set('Seleccione un archivo'); return; }
 
     this.uploading.set(true);
+    const archivo = this.selectedFile()!;
+    const rut = this.rut || undefined;
+    const fecha = this.fecha || undefined;
+
     const carga =
       this.tipo === 'movimientos'
-        ? this.movimientoService.uploadFile(this.selectedFile()!, this.rut || undefined, this.fecha || undefined)
-        : this.service.uploadFile(this.selectedFile()!, this.rut || undefined, this.fecha || undefined);
+        ? this.movimientoService.uploadFile(archivo, rut, fecha)
+        : this.tipo === 'audiencias'
+          ? this.audienciaService.uploadFile(archivo, rut, fecha)
+          : this.service.uploadFile(archivo, rut, fecha);
 
     carga.subscribe({
       next: (res) => {
         this.uploading.set(false);
         if (res.exito) {
-          this.notification.success(
-            `Archivo cargado: ${res.movimientos_importados} registros importados`
-          );
+          this.notification.success(this.mensajeCarga(res));
           // Vuelve a Archivos, en la pestaña del tipo que se acaba de cargar.
           this.router.navigate(['/estado-diario'], { queryParams: { tab: this.tipo } });
         } else {
@@ -220,6 +237,26 @@ export class UploadFormComponent {
         this.errorMsg.set(err.error?.detail || err.error?.mensaje || 'Error al cargar el archivo');
       },
     });
+  }
+
+  /**
+   * Las audiencias se deduplican contra las ya cargadas (los archivos semanales
+   * se traslapan), así que el resumen distingue nuevas de actualizadas: si no,
+   * cargar el archivo de la semana siguiente parecería no haber hecho nada.
+   */
+  private mensajeCarga(res: {
+    movimientos_importados?: number;
+    audiencias_nuevas?: number;
+    audiencias_actualizadas?: number;
+  }): string {
+    if (this.tipo === 'audiencias') {
+      const nuevas = res.audiencias_nuevas ?? 0;
+      const actualizadas = res.audiencias_actualizadas ?? 0;
+      const partes = [`${nuevas} audiencias nuevas`];
+      if (actualizadas > 0) partes.push(`${actualizadas} ya conocidas, actualizadas`);
+      return `Archivo cargado: ${partes.join(', ')}`;
+    }
+    return `Archivo cargado: ${res.movimientos_importados} registros importados`;
   }
 
   onCancel(): void {

@@ -139,10 +139,11 @@ export class OrigenesListComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  /** Los dos tipos de Excel que maneja el sistema; el `key` es el valor que espera el backend. */
+  /** Los tres tipos de Excel que maneja el sistema; el `key` es el valor que espera el backend. */
   readonly tabs: { key: TipoOrigen; label: string }[] = [
     { key: 'estado_diario', label: 'Estado Diario' },
     { key: 'movimientos', label: 'Movimientos' },
+    { key: 'audiencias', label: 'Audiencias' },
   ];
 
   origenes = signal<EstadoDiarioOrigen[]>([]);
@@ -153,16 +154,22 @@ export class OrigenesListComponent implements OnInit {
 
   activeTab = signal<TipoOrigen>('estado_diario');
 
-  subtitulo = computed(() =>
-    this.activeTab() === 'movimientos'
-      ? 'Archivos de movimientos cargados'
-      : 'Archivos de estado diario cargados'
-  );
+  private readonly SUBTITULOS: Record<TipoOrigen, string> = {
+    estado_diario: 'Archivos de estado diario cargados',
+    movimientos: 'Archivos de movimientos cargados',
+    audiencias: 'Archivos de audiencias cargados',
+  };
 
   /** El contador de filas por archivo significa algo distinto en cada pestaña. */
-  columnaContador = computed(() =>
-    this.activeTab() === 'movimientos' ? 'Movimientos' : 'Estado Diario'
-  );
+  private readonly CONTADORES: Record<TipoOrigen, string> = {
+    estado_diario: 'Estado Diario',
+    movimientos: 'Movimientos',
+    audiencias: 'Audiencias',
+  };
+
+  subtitulo = computed(() => this.SUBTITULOS[this.activeTab()]);
+
+  columnaContador = computed(() => this.CONTADORES[this.activeTab()]);
 
   ngOnInit(): void {
     const queryTab = this.route.snapshot.queryParamMap.get('tab');
@@ -188,17 +195,17 @@ export class OrigenesListComponent implements OnInit {
 
   /**
    * "Ver" lleva a la vista que corresponde al tipo de archivo: el estado diario
-   * tiene su listado por origen, y los movimientos se filtran por `origen_id`
-   * en el módulo Movimientos.
+   * tiene su listado por origen, y los otros dos se filtran por `origen_id` en
+   * su propio módulo.
    */
   verLink(o: EstadoDiarioOrigen): (string | number)[] {
-    return o.tipo === 'movimientos'
-      ? ['/movimientos']
-      : ['/estado-diario/origen', o.id, 'movimientos'];
+    if (o.tipo === 'movimientos') return ['/movimientos'];
+    if (o.tipo === 'audiencias') return ['/audiencias'];
+    return ['/estado-diario/origen', o.id, 'movimientos'];
   }
 
   verQueryParams(o: EstadoDiarioOrigen): Record<string, number> | null {
-    return o.tipo === 'movimientos' ? { origen_id: o.id } : null;
+    return o.tipo === 'estado_diario' ? null : { origen_id: o.id };
   }
 
   loadPage(page: number): void {
