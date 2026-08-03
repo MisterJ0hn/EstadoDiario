@@ -7,7 +7,6 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
-import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component';
 import {
   ChipFiltro,
   FiltrosPanelComponent,
@@ -30,7 +29,6 @@ function fmtFechaChip(iso: string): string {
     FormsModule,
     RouterLink,
     RecordatorioModalComponent,
-    ConsultaPjudComponent,
     FiltrosPanelComponent,
   ],
   template: `
@@ -163,14 +161,6 @@ function fmtFechaChip(iso: string): string {
                     </td>
                     <td class="relative">
                       <div class="inline-flex items-center gap-1 align-middle">
-                        <!-- Lupa: consulta en el Poder Judicial, sin entrar al detalle -->
-                        <button (click)="consultaPjud.set(m)" class="btn-outline btn-sm"
-                                title="Consultar en el Poder Judicial" aria-label="Consultar en el Poder Judicial">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                          </svg>
-                        </button>
                         @if (!m.leido) {
                           <button (click)="toggleMenu(m.id, $event)" class="btn-outline btn-sm" title="Acciones">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -232,28 +222,6 @@ function fmtFechaChip(iso: string): string {
       (guardado)="onRecordatorioGuardado()"
     />
 
-    <!-- Consulta en el Poder Judicial (lupa del listado) -->
-    @if (consultaPjud(); as mov) {
-      <div class="modal-backdrop" (click)="consultaPjud.set(null)">
-        <div class="modal-content max-w-3xl" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <div class="min-w-0">
-              <h3 class="text-lg font-semibold">Consulta en el Poder Judicial</h3>
-              <p class="text-sm text-neutral-500 truncate" [title]="mov.caratulado || ''">
-                {{ mov.rol || 'Sin rol' }} — {{ mov.caratulado || 'Sin caratulado' }}
-              </p>
-            </div>
-            <button (click)="consultaPjud.set(null)" class="text-neutral-400 hover:text-neutral-600">&times;</button>
-          </div>
-          <div class="modal-body">
-            <app-consulta-pjud [movimiento]="mov" />
-          </div>
-          <div class="modal-footer">
-            <button (click)="consultaPjud.set(null)" class="btn-secondary">Cerrar</button>
-          </div>
-        </div>
-      </div>
-    }
 
     <!-- Confirmar "Resuelto" -->
     @if (confirmarResolverId() !== null) {
@@ -332,8 +300,6 @@ export class MovimientosListComponent implements OnInit {
    */
   recordatorioMovimientoId = signal<number | null>(null);
 
-  /** Movimiento cuyo modal de consulta al PJUD está abierto; null = cerrado */
-  consultaPjud = signal<Movimiento | null>(null);
   confirmarResolverId = signal<number | null>(null);
   confirmandoResolver = signal(false);
   /** Comentario opcional que acompaña al "resuelto"; se limpia en cada apertura del modal. */

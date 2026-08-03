@@ -6,6 +6,10 @@ import { NotificationService } from '@core/services/notification.service';
 import { AuthService } from '@core/services/auth.service';
 import { NivelRecordatorio } from '@core/models/estado-diario.model';
 
+/** Hora sugerida del WhatsApp: media mañana, dentro del horario de tribunales.
+ *  Se propone para que el campo no arranque vacío y haya que llenarlo siempre. */
+const HORA_WHATSAPP_POR_DEFECTO = '09:00';
+
 /**
  * Modal "Marcar como pendiente", compartido entre el detalle de un registro
  * y el listado (acción "Pendiente" del menú). Marcar pendiente y agendar son
@@ -59,12 +63,19 @@ import { NivelRecordatorio } from '@core/models/estado-diario.model';
             @if (notificarWhatsapp) {
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label class="form-label">Teléfono</label>
-                  <input type="text" class="form-input" [(ngModel)]="telefono" placeholder="+56912345678" />
+                  <label class="form-label" for="wa-telefono">Teléfono</label>
+                  <input id="wa-telefono" type="text" class="form-input" [(ngModel)]="telefono"
+                         placeholder="+56912345678" />
                 </div>
                 <div>
-                  <label class="form-label">Fecha y hora de envío</label>
-                  <input type="datetime-local" class="form-input" [(ngModel)]="fechaHoraWhatsapp" />
+                  <!-- Solo la hora: el WhatsApp se envía el mismo día del
+                       recordatorio, así que la fecha se toma de ahí y no se
+                       vuelve a pedir. -->
+                  <label class="form-label" for="wa-hora">Hora de envío</label>
+                  <input id="wa-hora" type="time" class="form-input" [(ngModel)]="horaWhatsapp" />
+                  <p class="text-xs text-neutral-400 mt-1">
+                    Se enviará el {{ fechaLegible() }}.
+                  </p>
                 </div>
               </div>
             }
@@ -108,7 +119,8 @@ export class RecordatorioModalComponent {
   fecha = '';
   notificarWhatsapp = false;
   telefono = '';
-  fechaHoraWhatsapp = '';
+  /** Solo la hora (HH:mm). La fecha de envío es siempre la del recordatorio. */
+  horaWhatsapp = HORA_WHATSAPP_POR_DEFECTO;
 
   private resetForm(): void {
     this.nivel = 'medio';
@@ -116,7 +128,14 @@ export class RecordatorioModalComponent {
     this.fecha = '';
     this.notificarWhatsapp = false;
     this.telefono = this.auth.user()?.telefono ?? '';
-    this.fechaHoraWhatsapp = '';
+    this.horaWhatsapp = HORA_WHATSAPP_POR_DEFECTO;
+  }
+
+  /** Fecha del recordatorio en formato chileno, para el texto de ayuda. */
+  fechaLegible(): string {
+    if (!this.fecha) return 'el día del recordatorio';
+    const [anio, mes, dia] = this.fecha.split('-');
+    return dia && mes && anio ? `${dia}-${mes}-${anio}` : this.fecha;
   }
 
   cerrar(): void {
@@ -129,8 +148,8 @@ export class RecordatorioModalComponent {
       this.notification.warning('Complete el detalle y la fecha del recordatorio');
       return;
     }
-    if (this.notificarWhatsapp && (!this.telefono.trim() || !this.fechaHoraWhatsapp)) {
-      this.notification.warning('Para notificar por WhatsApp indique teléfono y fecha/hora de envío');
+    if (this.notificarWhatsapp && (!this.telefono.trim() || !this.horaWhatsapp)) {
+      this.notification.warning('Para notificar por WhatsApp indique teléfono y hora de envío');
       return;
     }
 
@@ -146,8 +165,10 @@ export class RecordatorioModalComponent {
       fecha_hora: `${this.fecha} 00:00:00`,
       notificar_whatsapp: this.notificarWhatsapp,
       whatsapp_telefono: this.notificarWhatsapp ? this.telefono.trim() : undefined,
+      // El backend sigue esperando fecha y hora completas; se arma juntando la
+      // fecha del recordatorio con la hora que eligió el usuario.
       fecha_hora_whatsapp: this.notificarWhatsapp
-        ? this.fechaHoraWhatsapp.replace('T', ' ') + ':00'
+        ? `${this.fecha} ${this.horaWhatsapp}:00`
         : undefined,
     }).subscribe({
       next: () => {

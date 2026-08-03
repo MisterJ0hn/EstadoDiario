@@ -6,12 +6,11 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Agenda } from '@core/models/estado-diario.model';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
-import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component';
 
 @Component({
   selector: 'app-movimiento-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RecordatorioModalComponent, ConsultaPjudComponent],
+  imports: [CommonModule, FormsModule, RecordatorioModalComponent],
   template: `
     <div class="space-y-6">
       @if (loading()) {
@@ -143,16 +142,6 @@ import { ConsultaPjudComponent } from '../consulta-pjud/consulta-pjud.component'
                 <span class="text-sm ml-2">{{ movimiento()!.fecha_estado_diario || '-' }}</span>
               </div>
             </div>
-          </div>
-        </div>
-
-        <!-- Consulta en el Poder Judicial -->
-        <div class="card">
-          <div class="card-header">
-            <h3 class="text-lg font-semibold">Consulta en el Poder Judicial</h3>
-          </div>
-          <div class="card-body">
-            <app-consulta-pjud [movimiento]="movimiento()!" />
           </div>
         </div>
 
