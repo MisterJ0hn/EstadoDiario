@@ -185,6 +185,13 @@ def parse_nombre_archivo(filename: str) -> tuple[Optional[str], Optional[date]]:
 
 
 class MovimientoImportService:
+    # La fecha de este reporte es la de su emisión y no aparece en ninguna
+    # columna: las fechas de adentro son de ingreso de cada causa, que es otra
+    # cosa. Si el nombre no la trae, no hay de dónde deducirla.
+    deduce_fecha_del_contenido = False
+    # Igual que el estado diario: su control de duplicados es (rut, fecha).
+    requiere_rut = True
+
     def __init__(self, db: Session):
         self.db = db
         self.repo = MovimientoRepository(db)

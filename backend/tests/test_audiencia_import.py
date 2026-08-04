@@ -51,17 +51,29 @@ def test_parse_nombre_acepta_rut_con_digito_verificador_y_doble_guion():
     assert hasta == date(2026, 7, 21)
 
 
-@pytest.mark.parametrize(
-    "nombre",
-    [
-        "Movimientos_16952077__30_07_2026.xls",   # otro reporte del PJUD
-        "estadoDiario_16952077__28072026.xls",
-        "Audiencias_16952077_03_08_2026.xls",     # le falta el fin del rango
-        "cualquier_cosa.xls",
-        "",
-    ],
-)
-def test_parse_nombre_rechaza_lo_que_no_es_audiencias(nombre):
+def test_parse_nombre_ya_no_decide_el_tipo():
+    """Contrato nuevo: esta función SOLO extrae RUT y fechas.
+
+    Antes exigía el prefijo "Audiencias_" y con eso decidía de paso el tipo del
+    reporte. Eso se rompió cuando el PJUD cambió el nombre del archivo: hoy el
+    tipo lo resuelve `deteccion_archivo` con el asunto del correo, y acá
+    devolver datos para un nombre de otro reporte es el comportamiento correcto,
+    porque nadie llama a esta función sin saber ya qué archivo tiene.
+    """
+    assert parse_nombre_archivo("Movimientos_16952077__30_07_2026.xls") == (
+        "16952077", date(2026, 7, 30), None,
+    )
+
+
+def test_parse_nombre_acepta_un_rango_incompleto():
+    """Sin fin de rango se devuelve solo el inicio, no se descarta todo."""
+    assert parse_nombre_archivo("Audiencias_16952077_03_08_2026.xls") == (
+        "16952077", date(2026, 8, 3), None,
+    )
+
+
+@pytest.mark.parametrize("nombre", ["cualquier_cosa.xls", "Audiencias.xls", ""])
+def test_parse_nombre_sin_datos_devuelve_nulos(nombre):
     assert parse_nombre_archivo(nombre) == (None, None, None)
 
 

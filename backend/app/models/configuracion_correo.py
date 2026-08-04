@@ -46,8 +46,26 @@ class ConfiguracionCorreo(Base):
     # Lista blanca de remitentes separada por coma. Obligatoria: el buzón es
     # una entrada no autenticada y cualquiera puede mandar un adjunto.
     remitentes_permitidos: Mapped[Optional[str]] = mapped_column(Text)
+    # Filtro general opcional: si está, el asunto debe contenerlo para que el
+    # mensaje se procese. Es anterior a los tres asuntos por tipo de abajo y
+    # cumple otro rol: éste descarta, los otros clasifican.
     asunto_contiene: Mapped[Optional[str]] = mapped_column(String(255))
     max_tamano_mb: Mapped[int] = mapped_column(Integer, default=25)
+
+    # ── Identificación del tipo de reporte por asunto ──
+    # El PJUD cambia los nombres de archivo sin aviso, así que el nombre dejó
+    # de ser confiable para saber qué trae un adjunto. Estos tres campos son la
+    # fuente primaria: si el asunto del correo contiene el texto configurado,
+    # el adjunto se importa con ese parser. El nombre del archivo queda solo
+    # como respaldo cuando ninguno calza.
+    asunto_estado_diario: Mapped[Optional[str]] = mapped_column(String(255))
+    asunto_movimientos: Mapped[Optional[str]] = mapped_column(String(255))
+    asunto_audiencias: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # RUT del abogado dueño de la casilla. Respaldo para cuando el nombre del
+    # archivo no lo trae: los reportes son siempre de este RUT, porque es a
+    # esta casilla a la que el PJUD se los manda.
+    rut: Mapped[Optional[str]] = mapped_column(String(20))
 
     # ── Programación ──
     hora_ejecucion: Mapped[Optional[time]] = mapped_column(Time)
@@ -72,3 +90,20 @@ class ConfiguracionCorreo(Base):
         if not self.remitentes_permitidos:
             return []
         return [r.strip().lower() for r in self.remitentes_permitidos.split(",") if r.strip()]
+
+    @property
+    def asuntos_por_tipo(self) -> dict[str, str]:
+        """{tipo de archivo -> texto a buscar en el asunto}, sin los vacíos.
+
+        Las claves son los TIPO_* de EstadoDiarioOrigen. Import local para no
+        crear un ciclo: el modelo de origen no depende de éste, pero sí al revés
+        si se importara arriba.
+        """
+        from app.models.estado_diario_origen import EstadoDiarioOrigen
+
+        candidatos = {
+            EstadoDiarioOrigen.TIPO_ESTADO_DIARIO: self.asunto_estado_diario,
+            EstadoDiarioOrigen.TIPO_MOVIMIENTOS: self.asunto_movimientos,
+            EstadoDiarioOrigen.TIPO_AUDIENCIAS: self.asunto_audiencias,
+        }
+        return {tipo: texto.strip() for tipo, texto in candidatos.items() if texto and texto.strip()}

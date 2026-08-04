@@ -44,6 +44,10 @@ def _a_response(config) -> ConfiguracionCorreoResponse:
         tiene_password=bool(config.password_cifrado),
         remitentes_permitidos=config.remitentes_permitidos,
         asunto_contiene=config.asunto_contiene,
+        asunto_estado_diario=config.asunto_estado_diario,
+        asunto_movimientos=config.asunto_movimientos,
+        asunto_audiencias=config.asunto_audiencias,
+        rut=config.rut,
         max_tamano_mb=config.max_tamano_mb,
         hora_ejecucion=config.hora_ejecucion,
         marcar_como_leido=config.marcar_como_leido,
@@ -85,6 +89,10 @@ def guardar_configuracion(
     config.carpeta = datos.carpeta
     config.remitentes_permitidos = datos.remitentes_permitidos
     config.asunto_contiene = datos.asunto_contiene
+    config.asunto_estado_diario = datos.asunto_estado_diario
+    config.asunto_movimientos = datos.asunto_movimientos
+    config.asunto_audiencias = datos.asunto_audiencias
+    config.rut = datos.rut.strip() if datos.rut else None
     config.max_tamano_mb = datos.max_tamano_mb
     config.hora_ejecucion = datos.hora_ejecucion
     config.marcar_como_leido = datos.marcar_como_leido

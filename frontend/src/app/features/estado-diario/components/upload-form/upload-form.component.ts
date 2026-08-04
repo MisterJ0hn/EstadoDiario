@@ -170,10 +170,14 @@ export class UploadFormComponent {
       /^Audiencias_(\d+[\-kK]?\d?)_+(\d{1,2})_(\d{1,2})_(\d{4})_+\d{1,2}_\d{1,2}_\d{4}$/i
     );
 
-    // El nombre manda sobre el selector: es el dato más confiable del tipo.
+    // El nombre sugiere el tipo. Para audiencias basta la palabra: el PJUD ya
+    // le cambió el formato del nombre una vez, así que amarrarse al patrón
+    // completo dejaría el selector en el tipo equivocado. En audiencias el RUT
+    // y la fecha son opcionales — el servidor deduce la fecha del contenido —
+    // así que no importa que el resto del nombre no calce.
     if (matchEdNuevo || matchEdViejo) this.tipo = 'estado_diario';
     if (matchMov) this.tipo = 'movimientos';
-    if (matchAud) this.tipo = 'audiencias';
+    if (/audiencia/i.test(name)) this.tipo = 'audiencias';
 
     // El formato nuevo parte el RUT en cuerpo y dígito verificador; los otros
     // dos lo traen entero, así que se normalizan a la misma forma.
@@ -186,6 +190,17 @@ export class UploadFormComponent {
     } else if (matchEdViejo ?? matchMov ?? matchAud) {
       match = matchEdViejo ?? matchMov ?? matchAud;
       rutDetectado = match![1];
+    }
+
+    if (!match && this.tipo === 'audiencias') {
+      // Nombre de audiencias que no calza con el formato conocido: no es un
+      // problema. El RUT queda vacío o lo pone el usuario, y la fecha la deduce
+      // el servidor de la audiencia más temprana del archivo.
+      this.parsedInfo.set(null);
+      this.notification.info(
+        'Archivo de audiencias: la fecha se tomará del contenido del archivo'
+      );
+      return;
     }
 
     if (match) {

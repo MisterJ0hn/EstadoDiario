@@ -130,11 +130,63 @@ import { ConfiguracionCorreoUpdate } from '@core/models/configuracion-correo.mod
               <div>
                 <label class="form-label">El asunto debe contener</label>
                 <input type="text" class="form-input" [(ngModel)]="modelo.asunto_contiene"
-                       placeholder="Opcional. Ej: Estado Diario" />
+                       placeholder="Opcional. Ej: Poder Judicial" />
+                <p class="text-xs text-neutral-400 mt-1">
+                  Filtro general: los correos cuyo asunto no lo contenga se descartan.
+                </p>
               </div>
               <div>
                 <label class="form-label">Tamaño máximo del adjunto (MB)</label>
                 <input type="number" class="form-input" [(ngModel)]="modelo.max_tamano_mb" min="1" max="100" />
+              </div>
+            </div>
+
+            <hr class="border-neutral-200" />
+
+            <!-- Identificación del reporte. Antes se deducía del nombre del
+                 archivo; el PJUD lo cambió y por eso ahora manda el asunto. -->
+            <div>
+              <h2 class="font-semibold text-neutral-800">¿Qué reporte trae cada correo?</h2>
+              <p class="text-sm text-neutral-500 mb-3">
+                Indique el texto que aparece en el asunto de cada tipo de correo. Es así como el
+                sistema sabe con qué formato leer el adjunto, porque el Poder Judicial cambia los
+                nombres de archivo sin aviso. Basta con un trozo del asunto y no distingue
+                mayúsculas. Si deja los tres vacíos, se intenta reconocer por el nombre del archivo.
+              </p>
+
+              <div class="space-y-3">
+                <div>
+                  <label class="form-label">Asunto del Estado Diario</label>
+                  <input type="text" class="form-input" [(ngModel)]="modelo.asunto_estado_diario"
+                         placeholder="Ej: Estado Diario" />
+                </div>
+                <div>
+                  <label class="form-label">Asunto de Movimientos</label>
+                  <input type="text" class="form-input" [(ngModel)]="modelo.asunto_movimientos"
+                         placeholder="Ej: Movimientos del día" />
+                </div>
+                <div>
+                  <label class="form-label">Asunto de Audiencias</label>
+                  <input type="text" class="form-input" [(ngModel)]="modelo.asunto_audiencias"
+                         placeholder="Ej: Nómina de audiencias" />
+                </div>
+              </div>
+
+              @if (asuntosIncompletos().length > 0) {
+                <div class="alert-warning mt-3">
+                  Falta el asunto de: {{ asuntosIncompletos().join(', ') }}. Esos correos se
+                  intentarán reconocer por el nombre del archivo, que puede cambiar sin aviso.
+                </div>
+              }
+
+              <div class="mt-4">
+                <label class="form-label">Su RUT</label>
+                <input type="text" class="form-input md:w-1/2" [(ngModel)]="modelo.rut"
+                       placeholder="Ej: 16952077-5" />
+                <p class="text-xs text-neutral-400 mt-1">
+                  Se usa cuando el nombre del archivo no trae el RUT. El del archivo siempre manda
+                  sobre éste.
+                </p>
               </div>
             </div>
 
@@ -202,6 +254,10 @@ export class CorreoConfigComponent implements OnInit {
     carpeta: 'INBOX',
     remitentes_permitidos: '',
     asunto_contiene: '',
+    asunto_estado_diario: '',
+    asunto_movimientos: '',
+    asunto_audiencias: '',
+    rut: '',
     max_tamano_mb: 25,
     hora_ejecucion: '',
     marcar_como_leido: true,
@@ -231,6 +287,10 @@ export class CorreoConfigComponent implements OnInit {
           carpeta: config.carpeta,
           remitentes_permitidos: config.remitentes_permitidos ?? '',
           asunto_contiene: config.asunto_contiene ?? '',
+          asunto_estado_diario: config.asunto_estado_diario ?? '',
+          asunto_movimientos: config.asunto_movimientos ?? '',
+          asunto_audiencias: config.asunto_audiencias ?? '',
+          rut: config.rut ?? '',
           max_tamano_mb: config.max_tamano_mb,
           // El backend entrega HH:MM:SS y el input type=time espera HH:MM
           hora_ejecucion: config.hora_ejecucion ? config.hora_ejecucion.slice(0, 5) : '',
@@ -271,8 +331,25 @@ export class CorreoConfigComponent implements OnInit {
       password: this.modelo.password || null,
       remitentes_permitidos: this.modelo.remitentes_permitidos || null,
       asunto_contiene: this.modelo.asunto_contiene || null,
+      asunto_estado_diario: this.modelo.asunto_estado_diario || null,
+      asunto_movimientos: this.modelo.asunto_movimientos || null,
+      asunto_audiencias: this.modelo.asunto_audiencias || null,
+      rut: this.modelo.rut || null,
       hora_ejecucion: this.modelo.hora_ejecucion || null,
     };
+  }
+
+  /**
+   * Tipos sin asunto configurado. No bloquea el guardado: sin asuntos el
+   * sistema cae al nombre del archivo, que es como funcionaba antes y sigue
+   * sirviendo para el estado diario y los movimientos.
+   */
+  asuntosIncompletos(): string[] {
+    const faltantes: string[] = [];
+    if (!this.modelo.asunto_estado_diario) faltantes.push('Estado Diario');
+    if (!this.modelo.asunto_movimientos) faltantes.push('Movimientos');
+    if (!this.modelo.asunto_audiencias) faltantes.push('Audiencias');
+    return faltantes;
   }
 
   private validar(): string | null {

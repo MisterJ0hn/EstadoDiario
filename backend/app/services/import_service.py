@@ -45,6 +45,13 @@ HEADER_ALIASES = {
 
 
 class ImportService:
+    # El estado diario es el reporte de UN día y esa fecha no está dentro del
+    # archivo: si el nombre no la trae, no hay de dónde sacarla.
+    deduce_fecha_del_contenido = False
+    # Su control de duplicados es (rut, fecha): sin RUT dejaría entrar el mismo
+    # archivo cuantas veces llegue.
+    requiere_rut = True
+
     def __init__(self, db: Session):
         self.db = db
         self.origen_repo = EstadoDiarioOrigenRepository(db)

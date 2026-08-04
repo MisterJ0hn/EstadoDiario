@@ -93,6 +93,13 @@ _COLUMNAS_NUEVAS = [
     ("configuracion_correo", "usuario_id", "INTEGER REFERENCES usuario(id)"),
     # Dueño de la casilla revisada, para que la bitácora también quede aislada.
     ("correo_log", "usuario_id", "INTEGER REFERENCES usuario(id)"),
+    # Identificación del reporte por el ASUNTO del correo. El nombre del
+    # archivo dejó de ser confiable: el PJUD se lo cambió al de audiencias.
+    ("configuracion_correo", "asunto_estado_diario", "VARCHAR(255)"),
+    ("configuracion_correo", "asunto_movimientos", "VARCHAR(255)"),
+    ("configuracion_correo", "asunto_audiencias", "VARCHAR(255)"),
+    # RUT del dueño de la casilla: respaldo cuando el nombre no lo trae.
+    ("configuracion_correo", "rut", "VARCHAR(20)"),
 ]
 
 # create_all() tampoco crea índices en columnas agregadas a tablas

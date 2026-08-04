@@ -15,7 +15,15 @@ class ConfiguracionCorreoResponse(BaseModel):
     carpeta: str
     tiene_password: bool = False
     remitentes_permitidos: str | None
+    # Filtro general: si está, el asunto debe contenerlo para procesar el correo.
     asunto_contiene: str | None
+    # Identificación del reporte por asunto. Reemplazan al nombre del archivo,
+    # que el PJUD cambia sin aviso.
+    asunto_estado_diario: str | None = None
+    asunto_movimientos: str | None = None
+    asunto_audiencias: str | None = None
+    # RUT del dueño de la casilla, respaldo cuando el nombre no lo trae.
+    rut: str | None = None
     max_tamano_mb: int
     hora_ejecucion: time | None
     marcar_como_leido: bool
@@ -37,6 +45,10 @@ class ConfiguracionCorreoUpdate(BaseModel):
     carpeta: str = Field(default="INBOX", min_length=1, max_length=255)
     remitentes_permitidos: Optional[str] = None
     asunto_contiene: Optional[str] = Field(default=None, max_length=255)
+    asunto_estado_diario: Optional[str] = Field(default=None, max_length=255)
+    asunto_movimientos: Optional[str] = Field(default=None, max_length=255)
+    asunto_audiencias: Optional[str] = Field(default=None, max_length=255)
+    rut: Optional[str] = Field(default=None, max_length=20)
     max_tamano_mb: int = Field(default=25, ge=1, le=100)
     hora_ejecucion: Optional[time] = None
     marcar_como_leido: bool = True

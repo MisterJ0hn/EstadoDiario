@@ -39,6 +39,7 @@ from app.models.audiencia import Audiencia
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.audiencia_repository import AudienciaRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.utils.nombre_archivo import extraer_rut_y_fechas
 from app.utils.excel_pjud import (
     detectar_formato,
     mapa_columnas,
@@ -252,39 +253,21 @@ def parse_audiencias_file(file_path: str) -> tuple[list[dict], int]:
     return _leer_xls(file_path)
 
 
-_PATRON_NOMBRE = re.compile(
-    r"^Audiencias_(\d+(?:[\-]?[0-9kK])?)_+"
-    r"(\d{1,2})_(\d{1,2})_(\d{4})_+"
-    r"(\d{1,2})_(\d{1,2})_(\d{4})$",
-    re.IGNORECASE,
-)
-
-
 def parse_nombre_archivo(
     filename: str,
 ) -> tuple[Optional[str], Optional[date], Optional[date]]:
     """Extrae (RUT, fecha_desde, fecha_hasta) del nombre del archivo.
 
-    Formato real: `Audiencias_16952077_03_08_2026_09_08_2026.xls`, o sea RUT
-    seguido del rango de fechas que cubre el reporte. Se usa `_+` como
-    separador porque el PJUD dobla el guion bajo cuando el RUT viene sin
-    dígito verificador, igual que en el archivo de movimientos.
-    """
-    nombre = os.path.splitext(filename or "")[0]
-    m = _PATRON_NOMBRE.match(nombre)
-    if not m:
-        return None, None, None
+    Delega en el extractor tolerante en vez de exigir un formato fijo. El PJUD
+    ya cambió una vez el nombre de este reporte (era
+    `Audiencias_16952077_03_08_2026_09_08_2026.xls`), así que amarrarse a una
+    expresión regular por formato es justamente lo que hay que evitar: cualquier
+    nombre que traiga un RUT y una o dos fechas se lee igual.
 
-    rut = m.group(1)
-    try:
-        desde = date(int(m.group(4)), int(m.group(3)), int(m.group(2)))
-    except ValueError:
-        desde = None
-    try:
-        hasta = date(int(m.group(7)), int(m.group(6)), int(m.group(5)))
-    except ValueError:
-        hasta = None
-    return rut, desde, hasta
+    Devuelve None en lo que falte. No es un error: el RUT puede venir de la
+    configuración de la casilla y la fecha se deduce del contenido del archivo.
+    """
+    return extraer_rut_y_fechas(filename)
 
 
 class AudienciaImportService:
@@ -295,6 +278,14 @@ class AudienciaImportService:
     resultado) para que CorreoService pueda tratar los tres tipos por igual.
     """
 
+    # El PJUD cambió el nombre de este reporte y ya no se puede contar con que
+    # traiga la fecha. Este servicio sí puede deducirla: la audiencia más
+    # temprana del archivo es el inicio del rango que cubre.
+    deduce_fecha_del_contenido = True
+    # Único de los tres que puede importar sin RUT: su deduplicación real va por
+    # (usuario, clave_natural) de cada audiencia, no por el archivo.
+    requiere_rut = False
+
     def __init__(self, db: Session):
         self.db = db
         self.repo = AudienciaRepository(db)
@@ -303,8 +294,8 @@ class AudienciaImportService:
     def import_file(
         self,
         file_path: str,
-        rut: str,
-        fecha: date,
+        rut: Optional[str] = None,
+        fecha: Optional[date] = None,
         usuario_id: Optional[int] = None,
         nombre_archivo: Optional[str] = None,
     ) -> dict:
@@ -315,16 +306,9 @@ class AudienciaImportService:
                 "No se puede importar audiencias sin un usuario dueño del archivo"
             )
 
-        # Duplicado a nivel de ARCHIVO, medido dentro del tipo: el mismo RUT
-        # puede tener el mismo día un estado diario, un archivo de movimientos y
-        # uno de audiencias sin que ninguno sea duplicado del otro.
-        existente = self.repo.find_origen_audiencias(rut, fecha)
-        if existente:
-            raise ValueError(
-                f"Ya existe un archivo de audiencias para el RUT {rut} del {fecha} "
-                f"(origen {existente.id}). Elimínelo antes de volver a cargarlo."
-            )
-
+        # Se parsea ANTES que nada porque la fecha del archivo puede salir del
+        # contenido, y porque un archivo ilegible no debe dejar una fila
+        # huérfana en el listado de archivos.
         try:
             filas, sin_fecha = parse_audiencias_file(file_path)
         except Exception as e:
@@ -336,6 +320,25 @@ class AudienciaImportService:
                 "hojas tengan los encabezados esperados (Rit/Ruc, Fecha Audiencia, "
                 "Tribunal, Sala, Tipo Audiencia, Hora, Caratulado, Juez)."
             )
+
+        if fecha is None:
+            # La audiencia más temprana es el inicio del rango que cubre el
+            # reporte. Es un dato del propio archivo, así que no depende del
+            # nombre ni de cuándo se haya procesado el correo.
+            fecha = min(f["fecha_audiencia"] for f in filas)
+
+        # Duplicado a nivel de ARCHIVO, medido dentro del tipo: el mismo RUT
+        # puede tener el mismo día un estado diario, un archivo de movimientos y
+        # uno de audiencias sin que ninguno sea duplicado del otro.
+        # Sin RUT no se puede identificar el archivo, así que el chequeo se
+        # omite: la deduplicación por audiencia (clave_natural) igual protege.
+        if rut:
+            existente = self.repo.find_origen_audiencias(rut, fecha)
+            if existente:
+                raise ValueError(
+                    f"Ya existe un archivo de audiencias para el RUT {rut} del {fecha} "
+                    f"(origen {existente.id}). Elimínelo antes de volver a cargarlo."
+                )
 
         origen = EstadoDiarioOrigen(
             usuario_carga_id=usuario_id,
@@ -367,6 +370,9 @@ class AudienciaImportService:
 
         return {
             "origen_id": origen.id,
+            # La fecha efectiva, que pudo deducirse del contenido: quien llamó
+            # necesita saber con cuál quedó el archivo para poder informarla.
+            "fecha": fecha,
             # Nombre heredado del contrato común de importación; acá son las
             # audiencias que el archivo aportó realmente.
             "movimientos_importados": nuevas + actualizadas,

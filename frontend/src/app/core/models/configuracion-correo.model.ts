@@ -8,7 +8,17 @@ export interface ConfiguracionCorreo {
   /** El backend nunca devuelve la contraseña, solo si hay una guardada */
   tiene_password: boolean;
   remitentes_permitidos: string | null;
+  /** Filtro general: si está, el asunto debe contenerlo para procesar el correo. */
   asunto_contiene: string | null;
+  /**
+   * Identificación del reporte por el asunto del correo. Reemplazan al nombre
+   * del archivo, que el PJUD cambia sin aviso.
+   */
+  asunto_estado_diario: string | null;
+  asunto_movimientos: string | null;
+  asunto_audiencias: string | null;
+  /** RUT del dueño de la casilla; respaldo cuando el nombre del archivo no lo trae. */
+  rut: string | null;
   max_tamano_mb: number;
   hora_ejecucion: string | null;
   marcar_como_leido: boolean;
@@ -27,6 +37,10 @@ export interface ConfiguracionCorreoUpdate {
   carpeta: string;
   remitentes_permitidos: string | null;
   asunto_contiene: string | null;
+  asunto_estado_diario: string | null;
+  asunto_movimientos: string | null;
+  asunto_audiencias: string | null;
+  rut: string | null;
   max_tamano_mb: number;
   hora_ejecucion: string | null;
   marcar_como_leido: boolean;

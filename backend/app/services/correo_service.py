@@ -31,6 +31,7 @@ from app.models.correo_log import (
 )
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.correo_log_repository import CorreoLogRepository
+from app.services import deteccion_archivo
 from app.services.import_service import ImportService
 
 logger = logging.getLogger(__name__)
@@ -327,18 +328,6 @@ class CorreoService:
         self, parte, nombre_original, config, message_id, remitente, asunto,
         disparo, usuario_id, resumen,
     ) -> None:
-        # Import local para no crear un ciclo con el módulo de endpoints
-        from app.api.v1.endpoints.estado_diario import _parse_filename
-        from app.models.estado_diario_origen import EstadoDiarioOrigen
-        from app.services.audiencia_import_service import (
-            AudienciaImportService,
-            parse_nombre_archivo as parse_nombre_audiencias,
-        )
-        from app.services.movimiento_import_service import (
-            MovimientoImportService,
-            parse_nombre_archivo as parse_nombre_movimientos,
-        )
-
         ext = os.path.splitext(nombre_original)[1].lower()
         if ext not in EXTENSIONES_VALIDAS:
             resumen["descartados"] += 1
@@ -378,32 +367,47 @@ class CorreoService:
             )
             return
 
-        # RUT, fecha Y TIPO salen del nombre; por correo no hay quien los
-        # escriba. El tipo decide a qué parser va: los tres Excel del PJUD
+        # Qué reporte es, de qué RUT y de qué fecha. Por correo no hay quien lo
+        # escriba: sale del asunto configurado y, en segundo lugar, del nombre
+        # del archivo. El tipo decide a qué parser va, y los tres Excel del PJUD
         # tienen columnas distintas y no son intercambiables.
-        rut, fecha = _parse_filename(nombre_original)
-        tipo = EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
+        detectado = deteccion_archivo.detectar(nombre_original, asunto, config)
 
-        if not rut or not fecha:
-            rut, fecha = parse_nombre_movimientos(nombre_original)
-            tipo = EstadoDiarioOrigen.TIPO_MOVIMIENTOS
-
-        if not rut or not fecha:
-            # El de audiencias cubre un rango; se guarda por su fecha de inicio.
-            rut, fecha, _hasta = parse_nombre_audiencias(nombre_original)
-            tipo = EstadoDiarioOrigen.TIPO_AUDIENCIAS
-
-        if not rut or not fecha:
+        if not detectado.reconocido:
             resumen["descartados"] += 1
             self._log(
                 RESULTADO_DESCARTADO, message_id=message_id, remitente=remitente, asunto=asunto,
                 nombre_archivo=nombre_original,
-                detalle=(
-                    "No se pudo deducir RUT y fecha del nombre. Formatos esperados: "
-                    "estadoDiario_{RUT}__{DDMMYYYY}.xls, "
-                    "Movimientos_{RUT}_{DD}_{MM}_{YYYY}.xls o "
-                    "Audiencias_{RUT}_{DD}_{MM}_{YYYY}_{DD}_{MM}_{YYYY}.xls"
-                ),
+                detalle=deteccion_archivo.explicar_no_reconocido(config),
+                disparo=disparo,
+            )
+            return
+
+        servicio = self._servicio_para(detectado.tipo)
+
+        # Qué le falta al archivo para poder importarse. Cada servicio declara
+        # lo que necesita (ver `deduce_fecha_del_contenido` / `requiere_rut`) en
+        # vez de que este método sepa qué exige cada tipo.
+        if detectado.fecha is None and not servicio.deduce_fecha_del_contenido:
+            falta = (
+                "no se pudo determinar la fecha del reporte. No aparece ni en el "
+                "nombre del archivo ni en el asunto del correo."
+            )
+        elif detectado.rut is None and servicio.requiere_rut:
+            falta = (
+                "no se pudo determinar el RUT. No aparece ni en el nombre del "
+                "archivo ni en el asunto; puede indicarlo en su casilla, en el "
+                "campo 'Su RUT'."
+            )
+        else:
+            falta = None
+
+        if falta:
+            resumen["descartados"] += 1
+            self._log(
+                RESULTADO_DESCARTADO, message_id=message_id, remitente=remitente, asunto=asunto,
+                nombre_archivo=nombre_original,
+                detalle=f"Se identificó como {detectado.etiqueta}, pero {falta}",
                 disparo=disparo,
             )
             return
@@ -415,14 +419,8 @@ class CorreoService:
             f.write(contenido)
 
         try:
-            if tipo == EstadoDiarioOrigen.TIPO_MOVIMIENTOS:
-                servicio = MovimientoImportService(self.db)
-            elif tipo == EstadoDiarioOrigen.TIPO_AUDIENCIAS:
-                servicio = AudienciaImportService(self.db)
-            else:
-                servicio = ImportService(self.db)
             resultado = servicio.import_file(
-                destino, rut, fecha, usuario_id, nombre_original
+                destino, detectado.rut, detectado.fecha, usuario_id, nombre_original
             )
         except Exception as e:
             self.db.rollback()
@@ -438,11 +436,30 @@ class CorreoService:
         self._log(
             RESULTADO_IMPORTADO, message_id=message_id, remitente=remitente, asunto=asunto,
             nombre_archivo=nombre_original,
-            detalle=f"RUT {rut}, fecha {fecha}",
+            detalle=(
+                f"{detectado.etiqueta.capitalize()} (por {detectado.origen_tipo}), "
+                f"RUT {detectado.rut or 'sin RUT'}, fecha {resultado.get('fecha') or detectado.fecha}"
+            ),
             origen_id=resultado.get("origen_id"),
             movimientos=resultado.get("movimientos_importados"),
             disparo=disparo,
         )
+
+    def _servicio_para(self, tipo: str):
+        """Servicio de importación ya instanciado para el tipo detectado.
+
+        Import local para no crear un ciclo: los servicios de importación no
+        dependen de éste, pero sí al revés.
+        """
+        from app.models.estado_diario_origen import EstadoDiarioOrigen
+        from app.services.audiencia_import_service import AudienciaImportService
+        from app.services.movimiento_import_service import MovimientoImportService
+
+        if tipo == EstadoDiarioOrigen.TIPO_MOVIMIENTOS:
+            return MovimientoImportService(self.db)
+        if tipo == EstadoDiarioOrigen.TIPO_AUDIENCIAS:
+            return AudienciaImportService(self.db)
+        return ImportService(self.db)
 
     # ── Bitácora ──────────────────────────────────────────
 

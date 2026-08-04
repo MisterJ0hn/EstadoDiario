@@ -26,6 +26,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.usuario import Usuario
 from app.repositories.audiencia_repository import AudienciaRepository
+from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.schemas.audiencia import (
     AudienciaListResponse,
     AudienciaOrigenListResponse,
@@ -244,25 +245,17 @@ def upload_audiencias(
         except ValueError:
             fecha_date = None
 
-    # Lo que no venga en el formulario se saca del nombre del archivo
-    # (Audiencias_16952077_03_08_2026_09_08_2026.xls). De ahí se usa el INICIO
-    # del rango como fecha del archivo.
+    # Lo que no venga en el formulario se saca del nombre del archivo, que se
+    # lee de forma tolerante (el PJUD ya le cambió el formato una vez). Ni el
+    # RUT ni la fecha son obligatorios acá: el RUT puede quedar vacío y la fecha
+    # la deduce el servicio del contenido del archivo (la audiencia más
+    # temprana). Se prefiere el respaldo de la casilla del usuario antes que
+    # dejar el RUT nulo.
     rut_archivo, desde_archivo, _hasta = parse_nombre_archivo(file.filename or "")
-    rut_final = rut or rut_archivo
-    fecha_final = fecha_date or desde_archivo
+    config = ConfiguracionCorreoRepository(db).get_or_create(current_user.id)
 
-    if not rut_final:
-        return AudienciaUploadResponse(
-            exito=False,
-            mensaje="No se pudo determinar el RUT. Proporciónelo manualmente o use "
-                    "el formato: Audiencias_RUT_DD_MM_YYYY_DD_MM_YYYY.xls",
-        )
-    if not fecha_final:
-        return AudienciaUploadResponse(
-            exito=False,
-            mensaje="No se pudo determinar la fecha. Proporciónela manualmente o use "
-                    "el formato: Audiencias_RUT_DD_MM_YYYY_DD_MM_YYYY.xls",
-        )
+    rut_final = rut or rut_archivo or (config.rut.strip() if config.rut else None)
+    fecha_final = fecha_date or desde_archivo
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     filepath = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
@@ -274,8 +267,14 @@ def upload_audiencias(
         resultado = service.import_file(
             filepath, rut_final, fecha_final, current_user.id, file.filename
         )
+        # La fecha efectiva la devuelve el servicio: puede haberla deducido del
+        # contenido si no venía ni en el formulario ni en el nombre.
+        fecha_efectiva = resultado.pop("fecha", None) or fecha_final
         return AudienciaUploadResponse(
-            exito=True, rut=rut_final, fecha=str(fecha_final), **resultado
+            exito=True,
+            rut=rut_final,
+            fecha=str(fecha_efectiva) if fecha_efectiva else None,
+            **resultado,
         )
     except Exception as e:
         # Sin traceback en el log, el mensaje que ve el usuario no alcanza para
