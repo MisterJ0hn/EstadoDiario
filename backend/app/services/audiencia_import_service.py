@@ -39,6 +39,7 @@ from app.models.audiencia import Audiencia
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.audiencia_repository import AudienciaRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.services.deteccion_archivo import verificar_contenido
 from app.utils.nombre_archivo import extraer_rut_y_fechas
 from app.utils.excel_pjud import (
     detectar_formato,
@@ -305,6 +306,12 @@ class AudienciaImportService:
             raise ValueError(
                 "No se puede importar audiencias sin un usuario dueño del archivo"
             )
+
+        # Que el archivo sea de verdad de audiencias y no otro reporte mal
+        # ruteado (ver `deteccion_archivo`).
+        error = verificar_contenido(file_path, EstadoDiarioOrigen.TIPO_AUDIENCIAS)
+        if error:
+            raise ValueError(error)
 
         # Se parsea ANTES que nada porque la fecha del archivo puede salir del
         # contenido, y porque un archivo ilegible no debe dejar una fila

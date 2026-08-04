@@ -26,6 +26,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.audiencia import Audiencia
 from app.models.estado_diario import EstadoDiario
 from app.models.estado_diario_agenda import EstadoDiarioAgenda
 from app.models.estado_diario_origen import EstadoDiarioOrigen
@@ -379,6 +380,59 @@ class MetricasRepository:
             .one()
         )
         return {"a_tiempo": int(fila[0] or 0), "atrasados": int(fila[1] or 0)}
+
+    # ── Audiencias ───────────────────────────────────────────────────────
+    # Único bloque del dashboard que mira hacia ADELANTE: una audiencia es un
+    # compromiso futuro, no trabajo ya ocurrido. Por eso su ventana es
+    # [hoy, hoy+dias] y no el período que usan los demás gráficos.
+    #
+    # El dueño se lee de `audiencia.usuario_id` y no del origen: la audiencia
+    # sobrevive al borrado de su archivo (ON DELETE SET NULL), así que el
+    # origen no sirve como fuente de propiedad.
+    def _q_audiencias(self, usuario_id: Optional[int]):
+        query = self.db.query(Audiencia)
+        if usuario_id is not None:
+            query = query.filter(Audiencia.usuario_id == usuario_id)
+        return query
+
+    def audiencias_por_dia_materia(
+        self, usuario_id: Optional[int], desde: date, hasta: date
+    ) -> list[tuple[date, Optional[str], int]]:
+        """(día, materia, total) de las audiencias de la ventana.
+
+        Una sola consulta agrupada: de acá salen el apilado por día, los
+        totales por materia y el total general. Traer tres consultas para lo
+        mismo sería pagar tres veces el mismo escaneo.
+        """
+        filas = (
+            self._q_audiencias(usuario_id)
+            .filter(
+                Audiencia.fecha_audiencia >= desde,
+                Audiencia.fecha_audiencia <= hasta,
+            )
+            .with_entities(
+                Audiencia.fecha_audiencia,
+                Audiencia.materia,
+                func.count(Audiencia.id),
+            )
+            .group_by(Audiencia.fecha_audiencia, Audiencia.materia)
+            .all()
+        )
+        return [(self._a_fecha(f), m, int(n or 0)) for f, m, n in filas]
+
+    def ultima_fecha_audiencia(self, usuario_id: Optional[int]) -> Optional[date]:
+        """Hasta qué día alcanzan las audiencias cargadas.
+
+        El reporte del PJUD cubre una semana, así que en una ventana de 30 días
+        los días de más aparecen vacíos. Sin este dato el gráfico miente igual
+        que el de recibidos sin el aviso de carga: "no tengo audiencias" y "no
+        tengo el archivo que las trae" se ven idénticos.
+        """
+        return (
+            self._q_audiencias(usuario_id)
+            .with_entities(func.max(Audiencia.fecha_audiencia))
+            .scalar()
+        )
 
     # ── Sesgo de carga ───────────────────────────────────────────────────
     def ultima_fecha_archivo(self, usuario_id: Optional[int]) -> Optional[date]:

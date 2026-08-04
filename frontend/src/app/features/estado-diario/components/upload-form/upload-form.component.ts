@@ -170,14 +170,20 @@ export class UploadFormComponent {
       /^Audiencias_(\d+[\-kK]?\d?)_+(\d{1,2})_(\d{1,2})_(\d{4})_+\d{1,2}_\d{1,2}_\d{4}$/i
     );
 
-    // El nombre sugiere el tipo. Para audiencias basta la palabra: el PJUD ya
-    // le cambió el formato del nombre una vez, así que amarrarse al patrón
-    // completo dejaría el selector en el tipo equivocado. En audiencias el RUT
-    // y la fecha son opcionales — el servidor deduce la fecha del contenido —
-    // así que no importa que el resto del nombre no calce.
-    if (matchEdNuevo || matchEdViejo) this.tipo = 'estado_diario';
-    if (matchMov) this.tipo = 'movimientos';
+    // El tipo se decide por la PALABRA del nombre, nunca por el patrón
+    // completo: el PJUD renombra sus reportes sin aviso, y con el patrón
+    // completo un nombre nuevo no calzaba con nada y el selector se quedaba en
+    // "Estado Diario" —el valor por omisión— sin que nadie lo notara. Así se
+    // grabaron movimientos como estado diario. El servidor igual verifica las
+    // columnas antes de grabar, esto es solo para no hacerle elegir al usuario.
     if (/audiencia/i.test(name)) this.tipo = 'audiencias';
+    else if (/movimiento/i.test(name)) this.tipo = 'movimientos';
+    else if (/estado\s*_?diario/i.test(name)) this.tipo = 'estado_diario';
+    else {
+      this.notification.info(
+        'No se pudo deducir el tipo por el nombre del archivo: revise el selector'
+      );
+    }
 
     // El formato nuevo parte el RUT en cuerpo y dígito verificador; los otros
     // dos lo traen entero, así que se normalizan a la misma forma.

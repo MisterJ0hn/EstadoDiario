@@ -1,13 +1,16 @@
 """Tests de la identificación de adjuntos del PJUD.
 
-Cubren las dos piezas que reemplazaron a la detección por nombre de archivo:
-el extractor tolerante (`utils.nombre_archivo`) y la cascada de resolución
-(`services.deteccion_archivo`), que ahora parte por el asunto del correo.
+Cubren las tres piezas de la cascada: el contenido del archivo (que es la
+fuente primaria), el asunto del correo y el extractor tolerante de nombres
+(`utils.nombre_archivo`).
 
-No tocan la base de datos: `ConfiguracionCorreo` se instancia suelta.
+No tocan la base de datos: `ConfiguracionCorreo` se instancia suelta. Los
+tests de contenido sí leen los Excel de ejemplo del repositorio, que son
+archivos reales del PJUD.
 """
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -35,6 +38,18 @@ CONFIG_COMPLETA = dict(
     asunto_estado_diario="Estado Diario",
     asunto_movimientos="Movimientos del día",
     asunto_audiencias="Nómina de audiencias",
+)
+
+RAIZ = Path(__file__).resolve().parents[2]
+ARCHIVO = {
+    ED: RAIZ / "datos" / "EstadoDiario17314741-4_15_07_2026.xls",
+    MOV: RAIZ / "ejemplos" / "Movimientos_16952077__30_07_2026.xls",
+    AUD: RAIZ / "ejemplos" / "Audiencias_16952077_03_08_2026_09_08_2026.xls",
+}
+
+falta_ejemplo = pytest.mark.skipif(
+    not all(p.exists() for p in ARCHIVO.values()),
+    reason="faltan los Excel de ejemplo del PJUD",
 )
 
 
@@ -131,6 +146,80 @@ def test_el_asunto_no_pierde_texto_por_un_punto():
 
 def test_rut_en_texto_acepta_dv_k():
     assert rut_en_texto("Reporte de 12345678-K") == "12345678-K"
+
+
+# ── Detección del tipo: por contenido ─────────────────────
+
+@falta_ejemplo
+@pytest.mark.parametrize("tipo", [ED, MOV, AUD])
+def test_reconoce_cada_reporte_por_sus_columnas(tipo):
+    assert deteccion_archivo.detectar_tipo_por_contenido(str(ARCHIVO[tipo])) == tipo
+
+
+@falta_ejemplo
+def test_el_contenido_manda_sobre_un_asunto_mal_configurado():
+    """La regresión que motivó todo esto: un correo cuyo asunto calza con el
+    configurado para el estado diario trae adjunto el archivo de movimientos, y
+    se importaba como estado diario. No fallaba, porque el parser del estado
+    diario acepta sus columnas: quedaba la data mal grabada y en silencio."""
+    detectado = deteccion_archivo.detectar(
+        "reporte.xls",
+        "Estado Diario del 30-07-2026",
+        config(**CONFIG_COMPLETA),
+        str(ARCHIVO[MOV]),
+    )
+    assert detectado.tipo == MOV
+    assert detectado.origen_tipo == "contenido"
+    # Y la discrepancia queda registrada para poder arreglar la casilla.
+    assert detectado.tipo_descartado == ED
+
+
+@falta_ejemplo
+def test_el_contenido_clasifica_aunque_no_haya_asunto_ni_nombre_util():
+    detectado = deteccion_archivo.detectar("adjunto.xls", "", config(), str(ARCHIVO[AUD]))
+    assert detectado.tipo == AUD
+    assert detectado.origen_tipo == "contenido"
+
+
+@falta_ejemplo
+def test_cuando_contenido_y_asunto_coinciden_no_hay_discrepancia():
+    detectado = deteccion_archivo.detectar(
+        "Movimientos_16952077__30_07_2026.xls",
+        "Movimientos del día",
+        config(**CONFIG_COMPLETA),
+        str(ARCHIVO[MOV]),
+    )
+    assert detectado.tipo == MOV
+    assert detectado.tipo_descartado is None
+
+
+def test_un_archivo_ilegible_no_revienta_la_deteccion(tmp_path):
+    """Clasificar es lo primero que pasa; reportar que el archivo no se puede
+    leer es trabajo del parser, después."""
+    basura = tmp_path / "roto.xls"
+    basura.write_bytes(b"no soy un excel")
+    assert deteccion_archivo.detectar_tipo_por_contenido(str(basura)) is None
+
+
+# ── Verificación en la carga manual ───────────────────────
+
+@falta_ejemplo
+@pytest.mark.parametrize("tipo", [ED, MOV, AUD])
+def test_verificar_acepta_el_archivo_del_tipo_declarado(tipo):
+    assert deteccion_archivo.verificar_contenido(str(ARCHIVO[tipo]), tipo) is None
+
+
+@falta_ejemplo
+@pytest.mark.parametrize(
+    "tipo_real, tipo_declarado",
+    [(MOV, ED), (ED, MOV), (AUD, ED), (AUD, MOV), (MOV, AUD), (ED, AUD)],
+)
+def test_verificar_rechaza_el_archivo_de_otro_reporte(tipo_real, tipo_declarado):
+    """La red de seguridad de la carga manual: el tipo lo elige una persona en
+    un `select` y puede equivocarse."""
+    mensaje = deteccion_archivo.verificar_contenido(str(ARCHIVO[tipo_real]), tipo_declarado)
+    assert mensaje is not None
+    assert deteccion_archivo.ETIQUETAS[tipo_real] in mensaje
 
 
 # ── Detección del tipo: por asunto ────────────────────────

@@ -64,6 +64,43 @@ class Cumplimiento(BaseModel):
     atrasados: int = 0
 
 
+class AudienciaDia(BaseModel):
+    """Un día del gráfico de audiencias, con su desglose por materia.
+
+    El desglose va como diccionario y no como lista de pares porque el gráfico
+    lo consume por nombre de materia: las series están declaradas aparte, en
+    `Audiencias.materias`, y cada día solo aporta los valores que tenga.
+    """
+
+    dia: date
+    total: int = 0
+    materias: dict[str, int] = {}
+
+
+class Audiencias(BaseModel):
+    """Audiencias programadas: la única sección que mira hacia adelante.
+
+    La ventana es [hoy, hoy + dias) — el resto del dashboard mira hacia atrás.
+    Una audiencia ya ocurrida no es gestión pendiente; lo que importa es lo que
+    viene.
+    """
+
+    desde: date
+    hasta: date
+    total: int = 0
+    # Materias presentes en la ventana, en orden fijo (alfabético). Definen las
+    # series del gráfico: el orden no depende del volumen, para que un día
+    # flojo no reordene la leyenda ni repinte las materias.
+    materias: list[str] = []
+    # Totales por materia, para el resumen bajo el gráfico.
+    totales_por_materia: list[ConteoEtiqueta] = []
+    por_dia: list[AudienciaDia] = []
+    # Hasta qué día alcanzan las audiencias cargadas. `None` = no hay ninguna.
+    # Si queda antes de `hasta`, los días finales están vacíos por falta de
+    # archivo y no por falta de audiencias.
+    cubierto_hasta: date | None = None
+
+
 class AvisoCarga(BaseModel):
     """Aviso de sesgo de carga.
 
@@ -91,4 +128,5 @@ class DashboardResponse(BaseModel):
     por_tribunal: list[ConteoEtiqueta] = []
     por_jurisdiccion: list[ConteoEtiqueta] = []
     cumplimiento: Cumplimiento
+    audiencias: Audiencias
     aviso_carga: AvisoCarga

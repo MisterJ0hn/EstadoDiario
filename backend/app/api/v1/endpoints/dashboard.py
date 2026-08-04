@@ -28,6 +28,8 @@ from app.repositories.metricas_repository import (
     dias_habiles_hacia_atras,
 )
 from app.schemas.dashboard import (
+    AudienciaDia,
+    Audiencias,
     AvisoCarga,
     Composicion,
     ConteoEtiqueta,
@@ -93,6 +95,63 @@ def _armar_aviso(ultima: date | None, hoy: date) -> AvisoCarga:
     )
 
 
+# Materia de las audiencias que llegaron sin hoja identificable. Se agrupan en
+# una etiqueta visible en vez de quedar como una serie sin nombre.
+MATERIA_SIN_CLASIFICAR = "Sin materia"
+
+
+def _armar_audiencias(
+    filas: list[tuple[date, str | None, int]],
+    desde: date,
+    hasta: date,
+    cubierto_hasta: date | None,
+) -> Audiencias:
+    """Arma el bloque de audiencias a partir de la consulta agrupada.
+
+    El eje de días se rellena con ceros acá y no en SQL: un día sin audiencias
+    es un día real de la agenda y tiene que aparecer, si no el gráfico
+    comprimiría la semana y daría la impresión de que todos los días tienen
+    carga. Es armar el eje, no contar filas en Python.
+    """
+    por_dia: dict[date, dict[str, int]] = {}
+    totales: dict[str, int] = {}
+    for dia, materia, total in filas:
+        etiqueta = (materia or "").strip() or MATERIA_SIN_CLASIFICAR
+        del_dia = por_dia.setdefault(dia, {})
+        # La misma materia puede venir en dos filas si dos hojas distintas la
+        # nombran igual salvo por espacios: se suman, no se pisan.
+        del_dia[etiqueta] = del_dia.get(etiqueta, 0) + total
+        totales[etiqueta] = totales.get(etiqueta, 0) + total
+
+    dias: list[AudienciaDia] = []
+    cursor = desde
+    while cursor <= hasta:
+        materias_dia = por_dia.get(cursor, {})
+        dias.append(
+            AudienciaDia(
+                dia=cursor,
+                total=sum(materias_dia.values()),
+                materias=materias_dia,
+            )
+        )
+        cursor += timedelta(days=1)
+
+    return Audiencias(
+        desde=desde,
+        hasta=hasta,
+        total=sum(totales.values()),
+        # Alfabético: el orden de las series no puede depender del volumen, o
+        # cambiar de período reordenaría la leyenda y repintaría las materias.
+        materias=sorted(totales),
+        totales_por_materia=[
+            ConteoEtiqueta(etiqueta=m, total=t)
+            for m, t in sorted(totales.items(), key=lambda par: (-par[1], par[0]))
+        ],
+        por_dia=dias,
+        cubierto_hasta=cubierto_hasta,
+    )
+
+
 @router.get(
     "",
     response_model=DashboardResponse,
@@ -111,6 +170,11 @@ def obtener_dashboard(
     ahora = datetime.now(zona)
     hasta = ahora.date()
     desde = hasta - timedelta(days=dias - 1)
+    # Las audiencias usan el mismo largo de período pero hacia adelante: son
+    # compromisos que vienen, no trabajo que pasó. Hoy queda incluido en ambas
+    # ventanas, que es lo correcto: hoy tiene movimientos recibidos y también
+    # audiencias que todavía no ocurren.
+    hasta_audiencias = hasta + timedelta(days=dias - 1)
 
     repo = MetricasRepository(db)
 
@@ -172,5 +236,11 @@ def obtener_dashboard(
             for j, n in repo.por_jurisdiccion(alcance, desde, hasta)
         ],
         cumplimiento=Cumplimiento(**cumpl),
+        audiencias=_armar_audiencias(
+            repo.audiencias_por_dia_materia(alcance, hasta, hasta_audiencias),
+            hasta,
+            hasta_audiencias,
+            repo.ultima_fecha_audiencia(alcance),
+        ),
         aviso_carga=_armar_aviso(repo.ultima_fecha_archivo(alcance), hasta),
     )

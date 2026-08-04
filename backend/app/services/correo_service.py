@@ -368,12 +368,23 @@ class CorreoService:
             return
 
         # Qué reporte es, de qué RUT y de qué fecha. Por correo no hay quien lo
-        # escriba: sale del asunto configurado y, en segundo lugar, del nombre
-        # del archivo. El tipo decide a qué parser va, y los tres Excel del PJUD
-        # tienen columnas distintas y no son intercambiables.
-        detectado = deteccion_archivo.detectar(nombre_original, asunto, config)
+        # escriba: sale del contenido del archivo y, si éste no es concluyente,
+        # del asunto configurado o del nombre. El tipo decide a qué parser va, y
+        # los tres Excel del PJUD no son intercambiables.
+        #
+        # Para poder mirar el contenido hay que escribir el adjunto en disco
+        # antes de clasificarlo. Si termina descartado se borra: los archivos
+        # que no se importaron no tienen por qué quedar ocupando el volumen.
+        # Nunca usar el nombre del correo para construir la ruta en disco.
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        destino = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
+        with open(destino, "wb") as f:
+            f.write(contenido)
+
+        detectado = deteccion_archivo.detectar(nombre_original, asunto, config, destino)
 
         if not detectado.reconocido:
+            self._borrar(destino)
             resumen["descartados"] += 1
             self._log(
                 RESULTADO_DESCARTADO, message_id=message_id, remitente=remitente, asunto=asunto,
@@ -403,6 +414,7 @@ class CorreoService:
             falta = None
 
         if falta:
+            self._borrar(destino)
             resumen["descartados"] += 1
             self._log(
                 RESULTADO_DESCARTADO, message_id=message_id, remitente=remitente, asunto=asunto,
@@ -411,12 +423,6 @@ class CorreoService:
                 disparo=disparo,
             )
             return
-
-        # Nunca usar el nombre del correo para construir la ruta en disco.
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        destino = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex}{ext}")
-        with open(destino, "wb") as f:
-            f.write(contenido)
 
         try:
             resultado = servicio.import_file(
@@ -432,18 +438,42 @@ class CorreoService:
             )
             return
 
+        # La discrepancia se anota aunque la importación haya salido bien: es el
+        # síntoma de una casilla con el asunto mal configurado, y si no queda
+        # escrito nadie se entera hasta que el contenido deje de ser concluyente
+        # y el archivo se vaya al parser equivocado.
+        aviso = ""
+        if detectado.tipo_descartado:
+            etiqueta_descartada = deteccion_archivo.ETIQUETAS.get(
+                detectado.tipo_descartado, detectado.tipo_descartado
+            )
+            aviso = (
+                f". OJO: por el asunto o el nombre parecía {etiqueta_descartada}; "
+                f"mandó el contenido del archivo. Revise los asuntos configurados."
+            )
+
         resumen["importados"] += 1
         self._log(
             RESULTADO_IMPORTADO, message_id=message_id, remitente=remitente, asunto=asunto,
             nombre_archivo=nombre_original,
             detalle=(
                 f"{detectado.etiqueta.capitalize()} (por {detectado.origen_tipo}), "
-                f"RUT {detectado.rut or 'sin RUT'}, fecha {resultado.get('fecha') or detectado.fecha}"
+                f"RUT {detectado.rut or 'sin RUT'}, "
+                f"fecha {resultado.get('fecha') or detectado.fecha}{aviso}"
             ),
             origen_id=resultado.get("origen_id"),
             movimientos=resultado.get("movimientos_importados"),
             disparo=disparo,
         )
+
+    @staticmethod
+    def _borrar(ruta: str) -> None:
+        """Borra un adjunto que no se va a importar. Que falle no es motivo
+        para perder el mensaje de descarte, que es lo que el usuario necesita."""
+        try:
+            os.remove(ruta)
+        except OSError:
+            logger.warning("No se pudo borrar el adjunto descartado %s", ruta)
 
     def _servicio_para(self, tipo: str):
         """Servicio de importación ya instanciado para el tipo detectado.

@@ -29,6 +29,7 @@ from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.models.movimiento import Movimiento
 from app.repositories.movimiento_repository import MovimientoRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.services.deteccion_archivo import verificar_contenido
 from app.utils.excel_pjud import (
     detectar_formato,
     mapa_columnas,
@@ -211,6 +212,12 @@ class MovimientoImportService:
         parsea ANTES de crear el origen, para que un archivo ilegible no deje
         una fila huérfana sin movimientos en el listado de archivos.
         """
+        # Que el archivo sea de verdad de movimientos y no otro reporte mal
+        # ruteado (ver `deteccion_archivo`).
+        error = verificar_contenido(file_path, EstadoDiarioOrigen.TIPO_MOVIMIENTOS)
+        if error:
+            raise ValueError(error)
+
         # El duplicado se mide dentro del tipo: un RUT puede tener el mismo día
         # un estado diario y un archivo de movimientos, pero no dos de estos.
         existente = self.repo.find_origen_movimientos(rut, fecha)

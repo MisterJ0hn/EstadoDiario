@@ -5,15 +5,25 @@ nombre del archivo: se probaba el patrón del estado diario, luego el de
 movimientos, y el que calzara definía el tipo. Ese acoplamiento se rompió
 cuando el PJUD cambió el nombre del reporte de audiencias.
 
-Ahora la fuente primaria es **el asunto del correo**, que cada usuario
-configura en su casilla (`asunto_estado_diario`, `asunto_movimientos`,
-`asunto_audiencias`). El nombre del archivo pasa a ser respaldo, y para leerlo
-se usa un extractor tolerante (`utils.nombre_archivo`) en vez de una expresión
-regular por formato.
+Después se apoyó en **el asunto del correo**, que cada usuario configura en su
+casilla (`asunto_estado_diario`, `asunto_movimientos`, `asunto_audiencias`).
+Eso también se rompió: un asunto configurado de más (dos textos que calzan con
+el mismo correo, o uno tan genérico que calza con los tres) manda el archivo al
+parser equivocado. Y como los encabezados de movimientos son un subconjunto de
+los que acepta el parser del estado diario, el archivo entra **sin error**: se
+graba como estado diario y nadie se entera.
+
+Por eso la fuente primaria hoy es **el contenido del archivo**. Los tres
+reportes tienen columnas propias ("Estado Causa" e "Institución" solo en
+movimientos, "Tipo Recurso" y "Rol Único" solo en el estado diario, cualquier
+cosa con "audiencia" solo en audiencias), y esas columnas no cambian cuando el
+PJUD renombra un archivo ni cuando el usuario configura mal un asunto.
 
 Cascada de resolución, en orden:
 
-1. **Tipo**: asunto configurado → prefijo del nombre del archivo → indeterminado.
+1. **Tipo**: contenido del archivo → asunto configurado → prefijo del nombre →
+   indeterminado. Contenido y asunto/nombre casi siempre coinciden; cuando no,
+   manda el contenido y la discrepancia queda en la bitácora.
 2. **RUT**: nombre del archivo → RUT configurado en la casilla → nulo.
 3. **Fecha**: nombre del archivo → contenido del archivo (lo resuelve el
    servicio de importación, que es el único que sabe leerlo) → nulo.
@@ -27,6 +37,7 @@ from typing import Optional
 
 from app.models.configuracion_correo import ConfiguracionCorreo
 from app.models.estado_diario_origen import EstadoDiarioOrigen
+from app.utils.excel_pjud import encabezados_por_hoja
 from app.utils.nombre_archivo import extraer_rut_y_fechas
 
 # Respaldo cuando el asunto no alcanza para clasificar: cómo empieza el nombre
@@ -36,6 +47,20 @@ _PREFIJOS = (
     (EstadoDiarioOrigen.TIPO_AUDIENCIAS, re.compile(r"audiencia", re.IGNORECASE)),
     (EstadoDiarioOrigen.TIPO_MOVIMIENTOS, re.compile(r"movimiento", re.IGNORECASE)),
     (EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, re.compile(r"estado\s*_?diario", re.IGNORECASE)),
+)
+
+# Encabezados que aparecen en UN solo reporte. Se comparan como subcadena del
+# encabezado normalizado (sin tildes, en minúsculas), para que "Tipo/Audiencia"
+# y "Fecha Audiencia" cuenten igual.
+#
+# Deliberadamente cortos: acá solo van columnas exclusivas. Las que comparten
+# dos reportes ("Rol", "Tribunal", "Caratulado", "Fecha Ingreso", "Estado") no
+# sirven para distinguir y quedan fuera; también quedó fuera "Ubicación", que
+# el parser de movimientos acepta aunque los archivos de hoy no la traigan.
+_MARCAS_CONTENIDO = (
+    (EstadoDiarioOrigen.TIPO_AUDIENCIAS, ("audiencia",)),
+    (EstadoDiarioOrigen.TIPO_MOVIMIENTOS, ("estado causa", "estado de causa", "institucion")),
+    (EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, ("tipo recurso", "rol unico", "rol interno", "tipo causa")),
 )
 
 # Cómo se llama cada tipo en los mensajes que ve el usuario.
@@ -55,8 +80,11 @@ class ArchivoDetectado:
     fecha: Optional[date]
     # Solo la traen los reportes de rango (audiencias); hoy es informativa.
     fecha_hasta: Optional[date] = None
-    # De dónde salió el tipo ("asunto" o "nombre"), para la bitácora.
+    # De dónde salió el tipo ("contenido", "asunto" o "nombre"), para la bitácora.
     origen_tipo: Optional[str] = None
+    # Qué decían el asunto y el nombre cuando el contenido dijo otra cosa. Es
+    # el síntoma de una casilla mal configurada, y hay que poder verlo.
+    tipo_descartado: Optional[str] = None
 
     @property
     def reconocido(self) -> bool:
@@ -103,18 +131,69 @@ def detectar_tipo_por_nombre(filename: str) -> Optional[str]:
     return None
 
 
+def detectar_tipo_por_contenido(file_path: str) -> Optional[str]:
+    """Tipo según las columnas del archivo, o None si no es concluyente.
+
+    Se cuentan las columnas exclusivas de cada reporte en todas las hojas y
+    gana el que tenga más. Se exige ganador único: un empate significa que el
+    archivo no se parece más a uno que a otro, y ahí es preferible devolver
+    None y dejar que decidan el asunto o el nombre.
+
+    Un archivo puede no tener ninguna columna exclusiva (el estado diario de un
+    RUT con causas solo civiles es un ejemplo real) y eso tampoco es un error:
+    también devuelve None.
+    """
+    if not file_path:
+        return None
+
+    puntajes: dict[str, int] = {}
+    for encabezados in encabezados_por_hoja(file_path):
+        for tipo, marcas in _MARCAS_CONTENIDO:
+            aciertos = sum(
+                1 for cabecera in encabezados for marca in marcas if marca in cabecera
+            )
+            if aciertos:
+                puntajes[tipo] = puntajes.get(tipo, 0) + aciertos
+
+    if not puntajes:
+        return None
+
+    ordenados = sorted(puntajes.items(), key=lambda par: par[1], reverse=True)
+    if len(ordenados) > 1 and ordenados[0][1] == ordenados[1][1]:
+        return None
+    return ordenados[0][0]
+
+
 def detectar(
     filename: str,
     asunto: str,
     config: ConfiguracionCorreo,
+    file_path: Optional[str] = None,
 ) -> ArchivoDetectado:
-    """Identifica el adjunto combinando asunto, nombre y configuración."""
-    tipo = detectar_tipo_por_asunto(asunto, config)
-    origen_tipo = "asunto" if tipo else None
+    """Identifica el adjunto combinando contenido, asunto, nombre y configuración.
 
-    if tipo is None:
-        tipo = detectar_tipo_por_nombre(filename)
-        origen_tipo = "nombre" if tipo else None
+    `file_path` es opcional para poder clasificar sin tener el archivo en
+    disco (los tests de asunto y nombre lo hacen así), pero en la ingesta real
+    siempre se pasa: es la fuente que no miente.
+    """
+    tipo_declarado = detectar_tipo_por_asunto(asunto, config)
+    origen_declarado = "asunto" if tipo_declarado else None
+
+    if tipo_declarado is None:
+        tipo_declarado = detectar_tipo_por_nombre(filename)
+        origen_declarado = "nombre" if tipo_declarado else None
+
+    # El contenido manda sobre lo que digan el asunto y el nombre. Al revés, un
+    # asunto mal configurado alcanza para grabar movimientos como estado
+    # diario: los encabezados de aquél son un subconjunto de los que acepta el
+    # parser de éste, así que la importación no falla, queda mal.
+    tipo_contenido = detectar_tipo_por_contenido(file_path) if file_path else None
+
+    if tipo_contenido:
+        tipo, origen_tipo = tipo_contenido, "contenido"
+        tipo_descartado = tipo_declarado if tipo_declarado != tipo_contenido else None
+    else:
+        tipo, origen_tipo, tipo_descartado = tipo_declarado, origen_declarado, None
 
     # El asunto es la segunda fuente para el RUT y la fecha: los correos del
     # PJUD suelen llevarlos ahí ("Estado Diario del 28-07-2026"), así que un
@@ -131,6 +210,26 @@ def detectar(
         fecha=fecha,
         fecha_hasta=fecha_hasta,
         origen_tipo=origen_tipo,
+        tipo_descartado=tipo_descartado,
+    )
+
+
+def verificar_contenido(file_path: str, tipo_esperado: str) -> Optional[str]:
+    """Mensaje de error si el archivo es de OTRO reporte, o None si está bien.
+
+    Es la red de seguridad de la carga manual, donde el tipo lo elige una
+    persona en un `<select>` y puede equivocarse. No exige que el contenido
+    confirme el tipo (hay archivos sin columnas exclusivas): solo rechaza los
+    que dicen ser de otro.
+    """
+    tipo_real = detectar_tipo_por_contenido(file_path)
+    if tipo_real is None or tipo_real == tipo_esperado:
+        return None
+
+    return (
+        f"El archivo no es un reporte de {ETIQUETAS.get(tipo_esperado, tipo_esperado)}: "
+        f"sus columnas corresponden a {ETIQUETAS.get(tipo_real, tipo_real)}. "
+        f"Cárguelo como {ETIQUETAS.get(tipo_real, tipo_real)}."
     )
 
 
@@ -143,10 +242,10 @@ def explicar_no_reconocido(config: ConfiguracionCorreo) -> str:
     """
     if not config.asuntos_por_tipo:
         return (
-            "No se pudo determinar el tipo de reporte. Configure en su casilla el "
-            "asunto que identifica a cada uno (estado diario, movimientos y "
-            "audiencias); el nombre del archivo ya no alcanza porque el PJUD lo "
-            "cambia sin aviso."
+            "No se pudo determinar el tipo de reporte: el archivo no trae ninguna "
+            "columna que lo identifique y el nombre tampoco. Configure en su "
+            "casilla el asunto que identifica a cada uno (estado diario, "
+            "movimientos y audiencias)."
         )
 
     faltantes = [
@@ -162,6 +261,7 @@ def explicar_no_reconocido(config: ConfiguracionCorreo) -> str:
         f" Le falta configurar el asunto de: {', '.join(faltantes)}." if faltantes else ""
     )
     return (
-        "El asunto del correo no coincide con ninguno de los configurados y el "
-        f"nombre del archivo tampoco identifica el reporte.{detalle}"
+        "Las columnas del archivo no identifican el reporte, el asunto del correo "
+        "no coincide con ninguno de los configurados y el nombre del archivo "
+        f"tampoco.{detalle}"
     )

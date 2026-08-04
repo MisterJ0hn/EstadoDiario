@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import type { EChartsCoreOption } from 'echarts/core';
 
-import { DashboardResponse } from '@core/models/dashboard.model';
+import { AudienciaDia, DashboardResponse } from '@core/models/dashboard.model';
 import { GraficoComponent } from './components/grafico/grafico.component';
 import { DashboardService } from './services/dashboard.service';
 
@@ -26,6 +26,37 @@ const COLOR = {
   texto: '#525252', // neutral-600
   textoTenue: '#737373', // neutral-500
 } as const;
+
+/** Paleta categórica de las materias (gráfico de audiencias).
+ *
+ * El color va pegado a la MATERIA, nunca a su posición en el ranking: si un
+ * período no trae audiencias de Familia, Laboral no hereda su naranjo. Por eso
+ * es un mapa por nombre y no un arreglo que se recorre.
+ *
+ * Los tonos están validados para daltonismo sobre fondo blanco (ΔE CVD ≥ 8
+ * entre adyacentes en el apilado). Tres de ellos quedan bajo 3:1 de contraste
+ * contra la tarjeta: por eso la tarjeta ofrece "Ver tabla", para que la
+ * identidad nunca dependa solo del color.
+ */
+const COLOR_MATERIA: Record<string, string> = {
+  civil: '#2a78d6',
+  familia: '#eb6834',
+  laboral: '#1baf7a',
+  penal: '#eda100',
+  cobranza: '#e87ba4',
+};
+
+/** Slots para materias que no estén en el mapa de arriba (el PJUD puede
+ * agregar hojas). Se reparten en orden y sin repetir; agotados, la serie cae a
+ * un gris neutro: inventar un tono nuevo produce colores indistinguibles. */
+const PALETA_MATERIA = [
+  '#2a78d6',
+  '#eb6834',
+  '#1baf7a',
+  '#eda100',
+  '#e87ba4',
+  '#008300',
+] as const;
 
 const FUENTE = 'Inter, system-ui, -apple-system, sans-serif';
 
@@ -214,6 +245,95 @@ const SPLIT_LINE = { lineStyle: { color: COLOR.eje, width: 1, type: 'solid' } };
                 </div>
               </div>
 
+              <!-- ── Audiencias programadas ──────────────────────────
+                   Ancho completo y con eje de días como la evolución: es la
+                   otra serie temporal larga. Va inmediatamente después porque
+                   es la única que mira HACIA ADELANTE, y esa diferencia se
+                   entiende mejor pegada a la que mira hacia atrás. -->
+              <div class="card lg:col-span-2">
+                <div class="card-header flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 class="font-semibold text-neutral-800">Audiencias programadas</h2>
+                    <p class="text-sm text-neutral-500">
+                      Próximos {{ d.dias }} días, por materia. Es el único gráfico que mira hacia
+                      adelante: del {{ fechaLarga(d.audiencias.desde) }} al
+                      {{ fechaLarga(d.audiencias.hasta) }}
+                    </p>
+                  </div>
+                  @if (d.audiencias.total > 0) {
+                    <div class="flex items-center gap-3">
+                      <p class="text-2xl font-semibold text-neutral-800 tabular-nums">
+                        {{ miles(d.audiencias.total) }}
+                        <span class="text-sm font-normal text-neutral-500">audiencias</span>
+                      </p>
+                      <button
+                        type="button"
+                        class="btn-secondary btn-sm"
+                        (click)="verTablaAudiencias.set(!verTablaAudiencias())"
+                      >
+                        {{ verTablaAudiencias() ? 'Ver gráfico' : 'Ver tabla' }}
+                      </button>
+                    </div>
+                  }
+                </div>
+                <div class="card-body">
+                  @if (d.audiencias.cubierto_hasta === null) {
+                    <div class="py-12 text-center">
+                      <p class="text-neutral-600 font-medium">No hay audiencias cargadas</p>
+                      <p class="text-neutral-500 text-sm mt-1">
+                        Cargue el archivo de Audiencias del PJUD y aparecerá acá la agenda de las
+                        próximas semanas.
+                      </p>
+                      <a routerLink="/estado-diario/upload" class="btn-primary mt-4">
+                        Cargar archivo
+                      </a>
+                    </div>
+                  } @else if (d.audiencias.total === 0) {
+                    <p class="text-neutral-500 text-center py-12">
+                      No hay audiencias programadas en los próximos {{ d.dias }} días.
+                    </p>
+                  } @else if (verTablaAudiencias()) {
+                    <div class="table-wrapper max-h-80 overflow-y-auto">
+                      <table class="data-table">
+                        <thead>
+                          <tr>
+                            <th>Día</th>
+                            @for (m of d.audiencias.materias; track m) {
+                              <th>{{ m }}</th>
+                            }
+                            <th>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <!-- Solo los días con audiencias: el relleno de ceros
+                               existe para no comprimir el eje del gráfico, en
+                               una tabla son 25 filas vacías. -->
+                          @for (p of diasConAudiencias(); track p.dia) {
+                            <tr>
+                              <td>{{ fechaCorta(p.dia) }}</td>
+                              @for (m of d.audiencias.materias; track m) {
+                                <td class="tabular-nums">{{ miles(cantidadMateria(p, m)) }}</td>
+                              }
+                              <td class="tabular-nums font-medium">{{ miles(p.total) }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <app-grafico [opciones]="opcionesAudiencias()" [alto]="300" />
+                  }
+
+                  @if (audienciasIncompletas()) {
+                    <p class="text-xs text-neutral-500 mt-2">
+                      El último archivo de audiencias cubre hasta el
+                      {{ fechaLarga(d.audiencias.cubierto_hasta!) }}. Los días posteriores
+                      aparecen vacíos por falta de archivo, no porque no haya audiencias.
+                    </p>
+                  }
+                </div>
+              </div>
+
               <!-- Recordatorios atrasados por nivel -->
               <div class="card">
                 <div class="card-header">
@@ -362,6 +482,7 @@ export class DashboardComponent implements OnInit {
   cargando = signal(false);
   error = signal<string | null>(null);
   verTabla = signal(false);
+  verTablaAudiencias = signal(false);
 
   ngOnInit(): void {
     this.cargar();
@@ -436,8 +557,63 @@ export class DashboardComponent implements OnInit {
       d.kpis.recibidos_periodo === 0 &&
       d.kpis.resueltos_periodo === 0 &&
       d.kpis.recordatorios_vigentes === 0 &&
-      this.totalCumplimiento() === 0
+      this.totalCumplimiento() === 0 &&
+      // Las audiencias entran en la cuenta: un usuario que solo carga ese
+      // archivo tiene datos que mostrar aunque no tenga ningún estado diario.
+      d.audiencias.total === 0
     );
+  });
+
+  /** Días con al menos una audiencia. El gráfico necesita el eje completo
+   * (incluidos los ceros); la tabla, no. */
+  diasConAudiencias = computed(() =>
+    (this.datos()?.audiencias.por_dia ?? []).filter((p) => p.total > 0)
+  );
+
+  /** Audiencias de una materia en un día.
+   *
+   * El desglose es disperso —cada día trae solo las materias con valor—, así
+   * que el acceso puede no existir aunque el tipo del Record diga que sí.
+   */
+  cantidadMateria(dia: AudienciaDia, materia: string): number {
+    return dia.materias[materia] ?? 0;
+  }
+
+  /** El archivo cargado no alcanza a cubrir toda la ventana del gráfico. */
+  audienciasIncompletas = computed(() => {
+    const a = this.datos()?.audiencias;
+    return !!a && a.cubierto_hasta !== null && a.cubierto_hasta < a.hasta;
+  });
+
+  /** Materia -> color, resuelto una vez por respuesta.
+   *
+   * Las materias conocidas toman su color fijo; las nuevas se reparten los
+   * slots que queden libres, en orden y sin repetir. Agotada la paleta la
+   * serie cae a gris: la novena categoría nunca es un tono inventado.
+   */
+  coloresMateria = computed<Record<string, string>>(() => {
+    const materias = this.datos()?.audiencias.materias ?? [];
+    const asignado: Record<string, string> = {};
+    const usados = new Set<string>();
+
+    for (const materia of materias) {
+      const fijo = COLOR_MATERIA[materia.trim().toLowerCase()];
+      if (fijo) {
+        asignado[materia] = fijo;
+        usados.add(fijo);
+      }
+    }
+
+    let libre = 0;
+    for (const materia of materias) {
+      if (asignado[materia]) continue;
+      while (libre < PALETA_MATERIA.length && usados.has(PALETA_MATERIA[libre])) libre++;
+      const color = PALETA_MATERIA[libre] ?? COLOR.textoTenue;
+      asignado[materia] = color;
+      usados.add(color);
+    }
+
+    return asignado;
   });
 
   altoTribunales = computed(() =>
@@ -706,6 +882,69 @@ export class DashboardComponent implements OnInit {
           lineStyle: { width: 2, color: COLOR.primario, cap: 'round', join: 'round' },
         },
       ],
+    };
+  });
+
+  opcionesAudiencias = computed<EChartsCoreOption>(() => {
+    const a = this.datos()?.audiencias;
+    const dias = a?.por_dia ?? [];
+    const materias = a?.materias ?? [];
+    const colores = this.coloresMateria();
+
+    return {
+      // El tooltip por eje muestra el día completo: cada materia con su color
+      // y el total abajo. Es lo que reemplaza a poner un número sobre cada
+      // segmento, que con barras apiladas siempre queda apretado.
+      tooltip: {
+        ...this.tooltipBase('axis'),
+        axisPointer: { type: 'shadow' },
+        formatter: (params: { name: string; seriesName: string; value: number; marker: string }[]) => {
+          const conValor = params.filter((p) => p.value > 0);
+          if (conValor.length === 0) return `${params[0]?.name ?? ''}<br/>Sin audiencias`;
+          const total = conValor.reduce((s, p) => s + p.value, 0);
+          const lineas = conValor
+            .map((p) => `${p.marker}${p.seriesName}: <b>${this.miles(p.value)}</b>`)
+            .join('<br/>');
+          return `${conValor[0].name}<br/>${lineas}<br/>Total: <b>${this.miles(total)}</b>`;
+        },
+      },
+      legend: {
+        data: materias,
+        bottom: 0,
+        icon: 'roundRect',
+        itemWidth: 10,
+        itemHeight: 10,
+        textStyle: { color: COLOR.texto, fontSize: 12, fontFamily: FUENTE },
+      },
+      grid: { left: 8, right: 16, top: 16, bottom: 34, containLabel: true },
+      xAxis: {
+        type: 'category',
+        // Con los ceros incluidos: un día sin audiencias es un día real de la
+        // agenda y tiene que ocupar su lugar en el eje.
+        data: dias.map((p) => this.fechaCorta(p.dia)),
+        ...EJE_BASE,
+      },
+      yAxis: {
+        type: 'value',
+        minInterval: 1,
+        ...EJE_BASE,
+        axisLine: { show: false },
+        splitLine: SPLIT_LINE,
+      },
+      series: materias.map((materia) => ({
+        name: materia,
+        type: 'bar',
+        stack: 'audiencias',
+        barMaxWidth: 28,
+        itemStyle: {
+          color: colores[materia] ?? COLOR.textoTenue,
+          // 2px del color de la tarjeta entre segmentos: es el hueco el que
+          // separa una materia de la siguiente, no una línea dibujada.
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        },
+        data: dias.map((p) => p.materias[materia] ?? 0),
+      })),
     };
   });
 

@@ -50,6 +50,25 @@ export interface Cumplimiento {
   atrasados: number;
 }
 
+export interface AudienciaDia {
+  dia: string;
+  total: number;
+  /** Desglose del día: materia -> cantidad. Solo trae las que tienen valor. */
+  materias: Record<string, number>;
+}
+
+export interface Audiencias {
+  desde: string;
+  hasta: string;
+  total: number;
+  /** Series del gráfico, en orden fijo alfabético (no por volumen). */
+  materias: string[];
+  totales_por_materia: ConteoEtiqueta[];
+  por_dia: AudienciaDia[];
+  /** Hasta dónde alcanzan las audiencias cargadas; `null` = no hay ninguna. */
+  cubierto_hasta: string | null;
+}
+
 export interface AvisoCarga {
   sin_carga_reciente: boolean;
   ultima_fecha_archivo: string | null;
@@ -70,5 +89,7 @@ export interface DashboardResponse {
   por_tribunal: ConteoEtiqueta[];
   por_jurisdiccion: ConteoEtiqueta[];
   cumplimiento: Cumplimiento;
+  /** Único bloque que mira hacia adelante: audiencias por venir. */
+  audiencias: Audiencias;
   aviso_carga: AvisoCarga;
 }

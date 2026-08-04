@@ -22,6 +22,7 @@ import unicodedata
 from datetime import date, datetime, time
 from typing import Optional
 
+import openpyxl
 import xlrd
 
 # Formatos con los que llega una fecha como texto. Los archivos reales usan
@@ -59,6 +60,42 @@ def detectar_formato(file_path: str) -> str:
         return "xls"
     # Sin firma reconocible: se cae a la extensión.
     return "xlsx" if os.path.splitext(file_path)[1].lower() in (".xlsx", ".xlsm") else "xls"
+
+
+def encabezados_por_hoja(file_path: str) -> list[list[str]]:
+    """Encabezados normalizados de la primera fila de cada hoja del libro.
+
+    Es la huella del archivo: cada reporte del PJUD tiene columnas propias, y
+    mirarlas es la única forma de saber qué trae un archivo sin creerle al
+    nombre ni al asunto del correo. Se lee solo la primera fila, así que sirve
+    para clasificar antes de decidir con qué parser abrirlo.
+
+    Un libro ilegible devuelve una lista vacía en vez de reventar: quien
+    clasifica no es quien reporta el error de lectura.
+    """
+    try:
+        if detectar_formato(file_path) == "xlsx":
+            with open(file_path, "rb") as handle:
+                wb = openpyxl.load_workbook(handle, data_only=True)
+                try:
+                    return [
+                        [
+                            normalizar_encabezado(hoja.cell(1, c).value)
+                            for c in range(1, (hoja.max_column or 0) + 1)
+                        ]
+                        for hoja in (wb[n] for n in wb.sheetnames)
+                    ]
+                finally:
+                    wb.close()
+
+        wb_xls = xlrd.open_workbook(file_path)
+        return [
+            [normalizar_encabezado(hoja.cell_value(0, c)) for c in range(hoja.ncols)]
+            for hoja in wb_xls.sheets()
+            if hoja.nrows
+        ]
+    except Exception:
+        return []
 
 
 def recortar(valor: Optional[str], campo: str, largos: dict[str, int]) -> Optional[str]:

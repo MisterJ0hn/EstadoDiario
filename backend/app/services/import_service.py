@@ -14,6 +14,7 @@ from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
 from app.models.jurisdiccion import Jurisdiccion
+from app.services.deteccion_archivo import verificar_contenido
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,15 @@ class ImportService:
         usuario_id: Optional[int] = None,
         nombre_archivo: Optional[str] = None,
     ) -> dict:
+        # Este parser acepta las columnas del reporte de movimientos casi
+        # enteras (Rit, Tribunal, Caratulado, Fecha Ingreso), así que un archivo
+        # de movimientos mal ruteado entraría sin dar error y quedaría grabado
+        # como estado diario. Por eso el contenido se verifica antes de tocar
+        # nada: es lo único que distingue los dos reportes con certeza.
+        error = verificar_contenido(file_path, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO)
+        if error:
+            raise ValueError(error)
+
         # Un mismo RUT solo puede tener un estado diario por fecha. Sin esta
         # validación, reimportar el archivo duplica todos los movimientos, y
         # con la ingesta automática por correo eso ocurriría sin que nadie lo
