@@ -28,10 +28,11 @@ Qué hace, en orden:
 `_legacy_`, para poder comparar y para que un error no cueste los datos. Una
 vez verificada la migración, esas tablas se eliminan a mano.
 
-Se puede volver a correr si falla a la mitad: cada paso comprueba si ya se hizo
-(una tabla ya renombrada se salta, una tabla de destino que ya tiene filas no
-se vuelve a copiar). Lo que NO se puede es correrlo dos veces para crear dos
-clientes: si ya hay uno, aborta.
+**Se puede volver a correr si falla a la mitad**, con los mismos argumentos:
+cada paso comprueba si ya se hizo (una tabla ya renombrada se salta, una tabla
+de destino que ya tiene filas no se vuelve a copiar) y retoma donde quedó. Lo
+que NO se puede es correrlo con OTRO RUT sobre una base ya migrada: eso sería
+un segundo cliente con los mismos datos, y aborta.
 
 `--ensayo` recorre todo sin escribir: dice cuántas filas movería y qué tablas
 apartaría. Conviene correrlo primero.
@@ -58,6 +59,7 @@ from app.core.esquema import aplicar_esquema_maestra, columna_existe
 from app.core.hash_busqueda import hash_busqueda, normalizar_rut
 from app.core.logging_config import setup_logging
 from app.models.maestra.cliente import Cliente
+from app.models.maestra.configuracion_correo import ConfiguracionCorreo
 from app.repositories.cliente_repository import ClienteRepository
 from app.services import aprovisionamiento_service
 
@@ -146,13 +148,34 @@ def _ajustar_secuencia(conn, tabla: str) -> None:
 # ── Pasos ─────────────────────────────────────────────────
 
 
-def _verificar_origen(ensayo: bool) -> None:
-    """Comprueba que esta base sea efectivamente una instalación vieja."""
+def _verificar_origen(rut: str, ensayo: bool) -> None:
+    """Comprueba que esta base sea efectivamente una instalación vieja.
+
+    Recibe el RUT porque de él depende si una corrida es un **reintento** o un
+    alta duplicada: si ya hay un cliente con ese mismo RUT, es la migración
+    anterior que quedó a medias y hay que dejarla continuar. Todos los pasos
+    son idempotentes, así que retomar es seguro.
+    """
     with engine_maestro.connect() as conn:
         if _tabla_existe(conn, "cliente") and _contar(conn, "cliente") > 0:
-            raise MigracionAbortada(
-                "La base principal ya tiene clientes: esta instalación ya se migró. "
-                "Migrar de nuevo crearía un cliente duplicado con los mismos datos."
+            db = SesionMaestra()
+            try:
+                ya_migrado = ClienteRepository(db).find_by_rut(rut)
+            finally:
+                db.close()
+
+            if ya_migrado is None:
+                raise MigracionAbortada(
+                    "La base principal ya tiene clientes y ninguno es el RUT indicado: "
+                    "esta instalación ya se migró. Migrar de nuevo crearía un cliente "
+                    "duplicado con los mismos datos."
+                )
+
+            logger.warning(
+                "El cliente %s ya existe (guid %s): se retoma la migración donde quedó. "
+                "Los pasos ya completados se saltan.",
+                rut,
+                ya_migrado.guid,
             )
 
         # La marca de que esto es el esquema viejo: `usuario.username`. En el
@@ -415,28 +438,42 @@ def _migrar_casilla(cliente_id: int, ensayo: bool) -> None:
         "asunto_estado_diario", "asunto_movimientos", "asunto_audiencias", "rut",
         "hora_ejecucion", "marcar_como_leido", "ultima_ejecucion", "ultimo_resultado",
     ]
-    campos = [c for c in campos if c in columnas_origen]
 
-    lista = ", ".join(campos)
-    marcadores = ", ".join(f":{c}" for c in campos)
-    valores = {c: fila[c] for c in campos}
-    # El dueño de lo importado era `usuario_id` y sigue siendo el mismo usuario,
-    # que ahora vive en la base del cliente: por eso la columna dejó de tener
-    # ForeignKey y se llama `usuario_destino_id`.
-    valores["cliente_id"] = cliente_id
-    valores["usuario_destino_id"] = fila.get("usuario_id")
-
-    with engine_maestro.begin() as conn:
-        if _contar(conn, "configuracion_correo") > 0:
+    # Se inserta por el ORM y no con un INSERT escrito a mano: varias columnas
+    # son NOT NULL con default de Python (`fecha_modificacion`), y esos
+    # defaults NO se aplican en SQL crudo — el INSERT fallaba con
+    # NotNullViolation. Con el modelo, cualquier columna que se agregue después
+    # queda cubierta sola.
+    db = SesionMaestra()
+    try:
+        if db.query(ConfiguracionCorreo).count() > 0:
             logger.info("La casilla del cliente ya estaba configurada; se salta")
             return
-        conn.execute(
-            text(
-                f"INSERT INTO configuracion_correo (cliente_id, usuario_destino_id, {lista}) "
-                f"VALUES (:cliente_id, :usuario_destino_id, {marcadores})"
-            ),
-            valores,
-        )
+
+        config = ConfiguracionCorreo(cliente_id=cliente_id)
+        # El dueño de lo importado era `usuario_id` y sigue siendo el mismo
+        # usuario, que ahora vive en la base del cliente: por eso la columna
+        # dejó de tener ForeignKey y se llama `usuario_destino_id`.
+        config.usuario_destino_id = fila.get("usuario_id")
+
+        for campo in campos:
+            if campo not in columnas_origen:
+                continue
+            valor = fila[campo]
+            # Un NULL en el origen se deja pasar para que mande el default del
+            # modelo: copiarlo tal cual metería NULL en una columna NOT NULL
+            # (`carpeta`, `host`, ...) que antes no lo era.
+            if valor is not None:
+                setattr(config, campo, valor)
+
+        db.add(config)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
     logger.info("Casilla '%s' migrada como casilla del cliente", fila["usuario"])
 
 
@@ -444,7 +481,7 @@ def _migrar_casilla(cliente_id: int, ensayo: bool) -> None:
 
 
 def migrar(nombre: str, rut: str, correo: str | None, ensayo: bool) -> int:
-    _verificar_origen(ensayo)
+    _verificar_origen(rut, ensayo)
 
     # 1. Apartar lo que choca, ANTES de crear el esquema nuevo.
     with engine_maestro.begin() as conn:
