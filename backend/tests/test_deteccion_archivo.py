@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models.configuracion_correo import ConfiguracionCorreo
+from app.models.maestra.configuracion_correo import ConfiguracionCorreo
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.services import deteccion_archivo
 from app.utils.nombre_archivo import (

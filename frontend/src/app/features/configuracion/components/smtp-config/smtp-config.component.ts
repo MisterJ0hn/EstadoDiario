@@ -1,7 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { ConfiguracionSmtpService } from '../../services/configuracion-smtp.service';
 import { NotificationService } from '@core/services/notification.service';
 import { ConfiguracionSmtpUpdate } from '@core/models/configuracion-smtp.model';
@@ -9,23 +8,21 @@ import { ConfiguracionSmtpUpdate } from '@core/models/configuracion-smtp.model';
 @Component({
   selector: 'app-smtp-config',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="max-w-3xl mx-auto space-y-6">
-      <div class="flex items-start justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Correo de salida (SMTP)</h1>
-          <p class="text-neutral-500 mt-1">
-            Cuenta desde la que el sistema despacha los informes en Excel
-          </p>
-        </div>
-        <a routerLink="/informes" class="btn-secondary shrink-0">Ir a Informes</a>
+      <div>
+        <h1 class="text-2xl font-bold text-neutral-800">Correo de salida (SMTP)</h1>
+        <p class="text-neutral-500 mt-1">
+          Cuenta desde la que el sistema despacha los informes en Excel
+        </p>
       </div>
 
       <!-- Se confunde con la casilla IMAP de cada usuario: conviene dejarlo claro arriba. -->
       <div class="alert-info">
-        Esta es la cuenta <strong>de salida del sistema</strong>, una sola para todos. No tiene
-        relación con la casilla de correo desde la que cada usuario importa sus estados diarios.
+        Esta es la cuenta <strong>de salida del sistema</strong>, una sola para todos los
+        clientes. No tiene relación con la casilla de correo desde la que cada estudio importa
+        sus estados diarios.
         <span class="block mt-1">
           Cada informe se envía siempre al correo del usuario que lo genera; nunca a una dirección
           escrita a mano.

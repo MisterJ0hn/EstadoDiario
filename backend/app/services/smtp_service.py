@@ -1,9 +1,12 @@
 """Envío de correo saliente.
 
 Es la contraparte de `correo_service` (IMAP de entrada, una casilla por
-usuario): acá hay UNA cuenta remitente del sistema, global, que despacha los
-informes. Un usuario nunca envía desde su propia casilla — el informe le llega
-*desde* el sistema *a* su `usuario.email`.
+cliente): acá hay UNA cuenta remitente del sistema, global, que despacha los
+informes de todos. Un usuario nunca envía desde su propia casilla — el informe
+le llega *desde* el sistema *a* su correo.
+
+La configuración vive en la base PRINCIPAL, así que la sesión que recibe este
+servicio es la maestra, no la del cliente.
 """
 
 import logging
@@ -16,7 +19,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.core.crypto import descifrar
-from app.models.configuracion_smtp import ConfiguracionSmtp
+from app.models.maestra.configuracion_smtp import ConfiguracionSmtp
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +36,20 @@ class SmtpService:
         self.db = db
 
     def get_config(self) -> ConfiguracionSmtp:
-        """Configuración única (fila id=1). Se crea vacía la primera vez para
-        que la pantalla de administración tenga algo que editar."""
-        config = self.db.query(ConfiguracionSmtp).order_by(ConfiguracionSmtp.id).first()
+        """Fila GLOBAL del sistema: la que tiene `cliente_id` nulo.
+
+        El modelo admite además una fila por cliente, pero la cuenta de salida
+        es del SaaS: hoy nadie envía desde la suya. Se crea vacía la primera
+        vez para que la pantalla de administración tenga algo que editar.
+        """
+        config = (
+            self.db.query(ConfiguracionSmtp)
+            .filter(ConfiguracionSmtp.cliente_id.is_(None))
+            .order_by(ConfiguracionSmtp.id)
+            .first()
+        )
         if config is None:
-            config = ConfiguracionSmtp()
+            config = ConfiguracionSmtp(cliente_id=None)
             self.db.add(config)
             self.db.commit()
             self.db.refresh(config)

@@ -4,6 +4,94 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
 import { NotificationService } from '@core/services/notification.service';
 
+/** Entrada del menú lateral. `icono` es el atributo `d` de un único path SVG:
+ *  todos los íconos del sistema son de un solo trazo. */
+interface ItemMenu {
+  ruta: string;
+  etiqueta: string;
+  icono: string;
+  /** Solo marcar activo en coincidencia exacta (rutas que son prefijo de otras). */
+  exacto?: boolean;
+}
+
+/** Bloque del menú. `titulo` null = sin encabezado ni separador. */
+interface GrupoMenu {
+  titulo: string | null;
+  items: ItemMenu[];
+}
+
+/** Íconos compartidos entre los dos menús. */
+const ICONO = {
+  grafico: 'M3 12h4l3 8 4-16 3 8h4',
+  carpeta: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z',
+  subir: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12',
+  sobre: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
+  portapapeles:
+    'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+  reloj: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  calendario: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  barras: 'M9 17v-6m3 6V7m3 10v-4M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z',
+  bitacora:
+    'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
+  usuarios:
+    'M17 20h5v-1a3 3 0 00-5.356-1.857M17 20H7m10 0v-1c0-.656-.126-1.283-.356-1.857M7 20H2v-1a3 3 0 015.356-1.857M7 20v-1c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
+  edificio:
+    'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
+  engranaje:
+    'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
+} as const;
+
+/** Menú del usuario de un estudio: su trabajo diario. */
+const MENU_CLIENTE: GrupoMenu[] = [
+  {
+    titulo: null,
+    items: [
+      { ruta: '/dashboard', etiqueta: 'Dashboard', icono: ICONO.grafico },
+      { ruta: '/estado-diario', etiqueta: 'Archivos', icono: ICONO.carpeta, exacto: true },
+      { ruta: '/estado-diario/upload', etiqueta: 'Cargar Archivo', icono: ICONO.subir },
+      { ruta: '/estado-diario/movimientos', etiqueta: 'Estado Diario', icono: ICONO.sobre },
+      { ruta: '/movimientos', etiqueta: 'Movimientos', icono: ICONO.portapapeles },
+      { ruta: '/audiencias', etiqueta: 'Audiencias', icono: ICONO.reloj },
+      { ruta: '/estado-diario/calendario', etiqueta: 'Calendario', icono: ICONO.calendario },
+      { ruta: '/informes', etiqueta: 'Informes', icono: ICONO.barras },
+    ],
+  },
+  {
+    // Cada usuario configura su propia casilla IMAP: de ahí salen los estados
+    // diarios que se le importan. No es una opción de admin.
+    titulo: 'Mi casilla de correo',
+    items: [
+      { ruta: '/configuracion/correo', etiqueta: 'Importar por Correo', icono: ICONO.sobre, exacto: true },
+      { ruta: '/configuracion/correo/log', etiqueta: 'Bitácora de Correo', icono: ICONO.bitacora },
+    ],
+  },
+];
+
+/** Grupo que solo ve el administrador del estudio. */
+const MENU_ADMIN_CLIENTE: GrupoMenu = {
+  titulo: 'Administración',
+  items: [{ ruta: '/configuracion/usuarios', etiqueta: 'Usuarios', icono: ICONO.usuarios }],
+};
+
+/**
+ * Menú del administrador de la plataforma. Es corto a propósito: no tiene
+ * causas, ni archivos, ni calendario. Vive en el mismo armazón para que la
+ * consola se vea y se opere igual que el resto del sistema.
+ */
+const MENU_PLATAFORMA: GrupoMenu[] = [
+  {
+    titulo: null,
+    items: [
+      { ruta: '/admin', etiqueta: 'Clientes activos', icono: ICONO.grafico, exacto: true },
+      { ruta: '/admin/clientes', etiqueta: 'Clientes', icono: ICONO.edificio },
+    ],
+  },
+  {
+    titulo: 'Plataforma',
+    items: [{ ruta: '/admin/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje }],
+  },
+];
+
 @Component({
   selector: 'app-layout',
   standalone: true,
@@ -42,11 +130,12 @@ import { NotificationService } from '@core/services/notification.service';
       >
         <div class="h-16 flex items-center justify-between px-4 border-b border-neutral-700 shrink-0">
           @if (showLabels()) {
-            <span class="text-lg font-bold tracking-tight">Estado Diario</span>
+            <span class="text-lg font-bold tracking-tight">{{ marca().largo }}</span>
           } @else {
-            <span class="text-lg font-bold mx-auto">ED</span>
+            <span class="text-lg font-bold mx-auto">{{ marca().corto }}</span>
           }
-          <button (click)="mobileOpen.set(false)" class="text-neutral-400 hover:text-white md:hidden" title="Cerrar menú">
+          <button (click)="mobileOpen.set(false)" class="text-neutral-400 hover:text-white md:hidden"
+                  aria-label="Cerrar menú">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -54,143 +143,30 @@ import { NotificationService } from '@core/services/notification.service';
         </div>
 
         <nav class="flex-1 py-4 space-y-1 overflow-y-auto">
-          <a routerLink="/dashboard" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12h4l3 8 4-16 3 8h4" />
-            </svg>
-            @if (showLabels()) { <span>Dashboard</span> }
-          </a>
-
-          <a routerLink="/estado-diario" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             [routerLinkActiveOptions]="{exact: true}" (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            @if (showLabels()) { <span>Archivos</span> }
-          </a>
-
-          <a routerLink="/estado-diario/upload" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            @if (showLabels()) { <span>Cargar Archivo</span> }
-          </a>
-
-          <a routerLink="/estado-diario/movimientos" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-            @if (showLabels()) { <span>Estado Diario</span> }
-          </a>
-
-          <a routerLink="/movimientos" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-            @if (showLabels()) { <span>Movimientos</span> }
-          </a>
-
-          <a routerLink="/audiencias" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            @if (showLabels()) { <span>Audiencias</span> }
-          </a>
-
-          <a routerLink="/estado-diario/calendario" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            @if (showLabels()) { <span>Calendario</span> }
-          </a>
-
-          <a routerLink="/informes" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-             (click)="mobileOpen.set(false)"
-             class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6m3 6V7m3 10v-4M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
-            @if (showLabels()) { <span>Informes</span> }
-          </a>
-
-          <!-- Cada usuario configura su propia casilla IMAP: de ahí salen los
-               estados diarios que se le importan. No es una opción de admin. -->
-          <div class="pt-4 mt-2 border-t border-neutral-700">
-            @if (showLabels()) {
-              <p class="px-4 pb-1 text-xs uppercase tracking-wide text-neutral-500">Mi casilla de correo</p>
-            }
-            <a routerLink="/configuracion/correo" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-               [routerLinkActiveOptions]="{exact: true}" (click)="mobileOpen.set(false)"
-               class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-              <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              @if (showLabels()) { <span>Importar por Correo</span> }
-            </a>
-
-            <a routerLink="/configuracion/correo/log" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-               (click)="mobileOpen.set(false)"
-               class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-              <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-              </svg>
-              @if (showLabels()) { <span>Bitácora de Correo</span> }
-            </a>
-          </div>
-
-          @if (auth.isAdmin()) {
-            <div class="pt-4 mt-2 border-t border-neutral-700">
-              @if (showLabels()) {
-                <p class="px-4 pb-1 text-xs uppercase tracking-wide text-neutral-500">Administración</p>
+          @for (grupo of menu(); track grupo.titulo; let primero = $first) {
+            <div [class]="primero ? '' : 'pt-4 mt-2 border-t border-neutral-700'">
+              @if (grupo.titulo && showLabels()) {
+                <p class="px-4 pb-1 text-xs uppercase tracking-wide text-neutral-500">
+                  {{ grupo.titulo }}
+                </p>
               }
-              <a routerLink="/configuracion/usuarios" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-                 (click)="mobileOpen.set(false)"
-                 class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-1a3 3 0 00-5.356-1.857M17 20H7m10 0v-1c0-.656-.126-1.283-.356-1.857M7 20H2v-1a3 3 0 015.356-1.857M7 20v-1c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                @if (showLabels()) { <span>Usuarios</span> }
-              </a>
-
-              <a routerLink="/configuracion/google-calendar" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-                 (click)="mobileOpen.set(false)"
-                 class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                @if (showLabels()) { <span>Google Calendar</span> }
-              </a>
-
-              <a routerLink="/configuracion/smtp" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-                 (click)="mobileOpen.set(false)"
-                 class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                @if (showLabels()) { <span>Correo de Salida</span> }
-              </a>
-
-              <a routerLink="/configuracion/whatsapp" routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-                 (click)="mobileOpen.set(false)"
-                 class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors">
-                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                @if (showLabels()) { <span>WhatsApp</span> }
-              </a>
+              @for (item of grupo.items; track item.ruta) {
+                <a
+                  [routerLink]="item.ruta"
+                  routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
+                  [routerLinkActiveOptions]="{ exact: !!item.exacto }"
+                  (click)="mobileOpen.set(false)"
+                  [attr.title]="showLabels() ? null : item.etiqueta"
+                  class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+                >
+                  <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" [attr.d]="item.icono" />
+                  </svg>
+                  @if (showLabels()) {
+                    <span>{{ item.etiqueta }}</span>
+                  }
+                </a>
+              }
             </div>
           }
         </nav>
@@ -203,14 +179,14 @@ import { NotificationService } from '@core/services/notification.service';
             @if (showLabels()) {
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium truncate group-hover:underline">{{ auth.user()?.nombre }} {{ auth.user()?.apellido }}</p>
-                <p class="text-xs text-neutral-400 truncate">{{ auth.user()?.rol }}</p>
+                <p class="text-xs text-neutral-400 truncate">{{ etiquetaRol() }}</p>
               </div>
             }
           </a>
           <div class="flex items-center gap-3 mt-1">
             @if (showLabels()) {
               <div class="flex-1"></div>
-              <button (click)="auth.logout()" class="text-neutral-400 hover:text-white" title="Cerrar sesión">
+              <button (click)="auth.logout()" class="text-neutral-400 hover:text-white" aria-label="Cerrar sesión">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
@@ -222,23 +198,35 @@ import { NotificationService } from '@core/services/notification.service';
 
       <!-- Main Content -->
       <main class="flex-1 flex flex-col overflow-hidden min-h-0">
-        <header class="h-16 bg-white border-b border-neutral-200 flex items-center px-4 md:px-6 shrink-0">
+        <header class="h-16 bg-white border-b border-neutral-200 flex items-center gap-3 px-4 md:px-6 shrink-0">
           <!-- Toggle móvil -->
-          <button (click)="mobileOpen.set(!mobileOpen())" class="text-neutral-500 hover:text-neutral-700 mr-4 md:hidden"
-                  title="Abrir menú">
+          <button (click)="mobileOpen.set(!mobileOpen())" class="text-neutral-500 hover:text-neutral-700 md:hidden"
+                  aria-label="Abrir menú">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
           <!-- Toggle escritorio -->
-          <button (click)="collapsed.set(!collapsed())" class="text-neutral-500 hover:text-neutral-700 mr-4 hidden md:block"
-                  title="Contraer menú">
+          <button (click)="collapsed.set(!collapsed())" class="text-neutral-500 hover:text-neutral-700 hidden md:block"
+                  aria-label="Contraer menú">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h2 class="text-base md:text-lg font-semibold text-neutral-800">Estado Diario CRM</h2>
-          <button (click)="auth.logout()" class="ml-auto text-neutral-500 hover:text-neutral-700 md:hidden" title="Cerrar sesión">
+          <h2 class="text-base md:text-lg font-semibold text-neutral-800 truncate">Estado Diario CRM</h2>
+
+          <!-- Con varios estudios en la misma plataforma, saber en cuál se está
+               parado deja de ser un adorno: va fijo en la barra superior. -->
+          @if (auth.esAdminPlataforma()) {
+            <span class="badge-info shrink-0">Administración</span>
+          } @else if (nombreCliente()) {
+            <span class="badge-neutral shrink-0 max-w-[12rem] truncate" [title]="nombreCliente()">
+              {{ nombreCliente() }}
+            </span>
+          }
+
+          <button (click)="auth.logout()" class="ml-auto text-neutral-500 hover:text-neutral-700 md:hidden"
+                  aria-label="Cerrar sesión">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
@@ -260,4 +248,30 @@ export class LayoutComponent {
 
   /** En móvil el menú siempre muestra los textos; en escritorio depende de si está contraído. */
   showLabels = computed(() => !this.collapsed() || this.mobileOpen());
+
+  /**
+   * El armazón es el mismo para las dos sesiones; lo que cambia es el menú.
+   * Duplicar el layout habría duplicado también el riesgo de que la consola
+   * se fuera separando visualmente del resto del sistema.
+   */
+  menu = computed<GrupoMenu[]>(() => {
+    if (this.auth.esAdminPlataforma()) return MENU_PLATAFORMA;
+    return this.auth.isAdmin() ? [...MENU_CLIENTE, MENU_ADMIN_CLIENTE] : MENU_CLIENTE;
+  });
+
+  /** Nombre del estudio de la sesión actual, para la barra superior. */
+  nombreCliente = computed(() => this.auth.user()?.cliente_nombre ?? '');
+
+  marca = computed(() =>
+    this.auth.esAdminPlataforma()
+      ? { largo: 'Administración', corto: 'AD' }
+      : { largo: 'Estado Diario', corto: 'ED' }
+  );
+
+  etiquetaRol = computed(() => {
+    const rol = this.auth.user()?.rol;
+    if (rol === 'superadmin') return 'Administrador de la plataforma';
+    if (rol === 'admin') return 'Administrador';
+    return 'Usuario';
+  });
 }

@@ -4,10 +4,10 @@ from typing import Optional
 from sqlalchemy import String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import BaseTenant
 
 
-class GoogleCredencial(Base):
+class GoogleCredencial(BaseTenant):
     """Conexión OAuth de un usuario a su Google Calendar personal.
 
     No se cachea el access token: se pide uno nuevo con el refresh token en

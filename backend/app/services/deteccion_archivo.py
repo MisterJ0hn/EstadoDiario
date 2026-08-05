@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
-from app.models.configuracion_correo import ConfiguracionCorreo
+from app.models.maestra.configuracion_correo import ConfiguracionCorreo
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.utils.excel_pjud import encabezados_por_hoja
 from app.utils.nombre_archivo import extraer_rut_y_fechas

@@ -17,6 +17,7 @@ from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
 from app.core.crypto import descifrar
+from app.core.database import SesionMaestra
 from app.models.estado_diario_agenda import EstadoDiarioAgenda
 from app.models.usuario import Usuario
 from app.repositories.configuracion_google_repository import ConfiguracionGoogleRepository
@@ -33,10 +34,29 @@ _COLOR_POR_NIVEL = {
 _COLOR_FINALIZADO = "8"  # Graphite (gris)
 
 
+def _configuracion_google():
+    """Credenciales OAuth del proyecto, leídas de la base PRINCIPAL.
+
+    Abre su propia sesión corta en vez de recibirla: este servicio se
+    construye desde media docena de puntos que solo tienen la sesión del
+    cliente, y arrastrar una segunda sesión por todos ellos sería mucho ruido
+    para leer una fila de configuración. Se devuelven los valores sueltos,
+    no la entidad, para no dejar un objeto colgando de una sesión ya cerrada.
+    """
+    db_maestra = SesionMaestra()
+    try:
+        config = ConfiguracionGoogleRepository(db_maestra).get_or_create(None)
+        return config.activo, config.client_id, config.client_secret_cifrado
+    finally:
+        db_maestra.close()
+
+
 class GoogleCalendarService:
     def __init__(self, db: Session):
+        # Sesión de la base del CLIENTE: acá viven las credenciales OAuth de
+        # cada usuario (google_credencial). La configuración del proyecto se
+        # lee aparte, de la base principal.
         self.db = db
-        self.config_repo = ConfiguracionGoogleRepository(db)
         self.cred_repo = GoogleCredencialRepository(db)
 
     def cliente(self, usuario_id: int):
@@ -47,8 +67,8 @@ class GoogleCalendarService:
         sobre esta misma conexión OAuth: la autenticación con Google se resuelve
         en un solo lugar para todo el sistema.
         """
-        config = self.config_repo.get_or_create()
-        if not config.activo or not config.client_id or not config.client_secret_cifrado:
+        activo, client_id, client_secret_cifrado = _configuracion_google()
+        if not activo or not client_id or not client_secret_cifrado:
             return None
 
         cred = self.cred_repo.find_by_usuario(usuario_id)
@@ -59,8 +79,8 @@ class GoogleCalendarService:
             token=None,
             refresh_token=descifrar(cred.refresh_token_cifrado),
             token_uri="https://oauth2.googleapis.com/token",
-            client_id=config.client_id,
-            client_secret=descifrar(config.client_secret_cifrado),
+            client_id=client_id,
+            client_secret=descifrar(client_secret_cifrado),
             scopes=["https://www.googleapis.com/auth/calendar.events"],
         )
         credentials.refresh(Request())

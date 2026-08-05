@@ -4,10 +4,10 @@ from typing import Optional, List
 from sqlalchemy import String, Date, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import BaseTenant
 
 
-class EstadoDiarioOrigen(Base):
+class EstadoDiarioOrigen(BaseTenant):
     """Archivo Excel recibido. A pesar del nombre histórico de la tabla,
     guarda los tres tipos que maneja el sistema (ver `tipo`): el estado diario,
     el reporte de movimientos y el de audiencias. La vista "Archivos" los lista

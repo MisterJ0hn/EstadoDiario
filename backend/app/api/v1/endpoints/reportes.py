@@ -1,9 +1,10 @@
-"""Informes dinámicos: el usuario arma su informe eligiendo campos, lo guarda
-para reutilizarlo y lo recibe por correo en Excel.
+"""Módulo **Reportes**: el usuario arma su reporte eligiendo campos, lo guarda
+para reutilizarlo y lo recibe por correo en Excel. La tabla que los guarda
+sigue llamándose `reporte_plantilla`.
 
-La configuración SMTP va en este mismo módulo pero bajo `require_admin`: es una
-cuenta única del sistema, no algo que cada usuario configure (a diferencia de
-la casilla IMAP de entrada, que sí es por usuario).
+La configuración SMTP va en este mismo módulo pero bajo rol admin y contra la
+base PRINCIPAL: es una cuenta única del sistema, no algo que cada usuario
+configure (a diferencia de la casilla IMAP de entrada, que es por cliente).
 """
 
 import json
@@ -14,8 +15,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.crypto import cifrar
-from app.core.database import get_db
-from app.core.deps import get_current_user, require_admin
+from app.core.database import get_db_maestra
+from app.core.deps import get_db_tenant, get_usuario_actual, require_admin_cliente
 from app.core.exceptions import NotFoundException
 from app.models.reporte_plantilla import ReportePlantilla
 from app.models.usuario import Usuario
@@ -35,7 +36,7 @@ from app.services.smtp_service import XLSX_MIME, SmtpService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/reportes", tags=["Informes"])
+router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
 
 def _alcance(current_user: Usuario):
@@ -50,7 +51,7 @@ def _alcance(current_user: Usuario):
     response_model=CamposDisponiblesResponse,
     summary="Campos disponibles para armar un informe",
 )
-def campos_disponibles(_: Usuario = Depends(get_current_user)):
+def campos_disponibles(_: Usuario = Depends(get_usuario_actual)):
     return CamposDisponiblesResponse(fuentes=ReporteService.campos_disponibles())
 
 
@@ -62,8 +63,8 @@ def campos_disponibles(_: Usuario = Depends(get_current_user)):
     summary="Listar los informes guardados del usuario",
 )
 def listar(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     plantillas = ReporteRepository(db).find_by_usuario(_alcance(current_user))
     return ReportePlantillaListResponse(
@@ -79,8 +80,8 @@ def listar(
 )
 def crear(
     datos: ReportePlantillaRequest,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     campos = ReporteService.validar(datos.fuente, datos.campos)
     plantilla = ReportePlantilla(
@@ -101,8 +102,8 @@ def crear(
 )
 def obtener(
     plantilla_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Va declarado DESPUÉS de /campos a propósito: FastAPI resuelve por orden
     de declaración y `/{plantilla_id}` capturaría esa ruta literal si fuera
@@ -121,8 +122,8 @@ def obtener(
 def actualizar(
     plantilla_id: int,
     datos: ReportePlantillaRequest,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = ReporteRepository(db)
     plantilla = repo.find_by_id(plantilla_id, _alcance(current_user))
@@ -141,8 +142,8 @@ def actualizar(
 @router.delete("/{plantilla_id}", summary="Eliminar un informe guardado")
 def eliminar(
     plantilla_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = ReporteRepository(db)
     plantilla = repo.find_by_id(plantilla_id, _alcance(current_user))
@@ -161,8 +162,8 @@ def eliminar(
 )
 def enviar(
     plantilla_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Genera el Excel y lo despacha al correo del usuario autenticado.
 
@@ -181,8 +182,8 @@ def enviar(
 )
 def descargar(
     plantilla_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Alternativa al envío por correo, útil para revisar el informe antes de
     mandarlo y como salida cuando el SMTP no está configurado."""
@@ -209,9 +210,9 @@ def descargar(
     "/configuracion/smtp",
     response_model=ConfiguracionSmtpResponse,
     summary="Obtener la configuración de la cuenta de envío",
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_cliente)],
 )
-def obtener_smtp(db: Session = Depends(get_db)):
+def obtener_smtp(db: Session = Depends(get_db_maestra)):
     c = SmtpService(db).get_config()
     return ConfiguracionSmtpResponse(
         activo=c.activo, host=c.host, puerto=c.puerto,
@@ -226,12 +227,12 @@ def obtener_smtp(db: Session = Depends(get_db)):
     "/configuracion/smtp",
     response_model=ConfiguracionSmtpResponse,
     summary="Guardar la configuración de la cuenta de envío",
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_cliente)],
 )
 def guardar_smtp(
     datos: ConfiguracionSmtpUpdate,
-    db: Session = Depends(get_db),
-    admin: Usuario = Depends(require_admin),
+    db: Session = Depends(get_db_maestra),
+    admin: Usuario = Depends(require_admin_cliente),
 ):
     servicio = SmtpService(db)
     c = servicio.get_config()
@@ -247,7 +248,7 @@ def guardar_smtp(
         c.password_cifrado = cifrar(datos.password)
     db.commit()
     db.refresh(c)
-    logger.info("Configuración SMTP actualizada por %s", admin.username)
+    logger.info("Configuración SMTP actualizada por %s", admin.usuario)
     return obtener_smtp(db)
 
 
@@ -255,11 +256,11 @@ def guardar_smtp(
     "/configuracion/smtp/probar",
     response_model=OperacionResponse,
     summary="Probar la conexión SMTP sin enviar nada",
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_cliente)],
 )
 def probar_smtp(
     datos: ConfiguracionSmtpUpdate | None = None,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_maestra),
 ):
     resultado = SmtpService(db).probar_conexion(
         password_override=datos.password if datos else None

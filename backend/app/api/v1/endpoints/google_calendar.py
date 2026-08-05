@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.crypto import cifrar
-from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.database import crear_sesion_tenant, get_db_maestra
+from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.core.security import create_state_token, decode_token
 from app.models.usuario import Usuario
 from app.repositories.configuracion_google_repository import ConfiguracionGoogleRepository
@@ -60,8 +60,8 @@ def _build_flow(client_id: str, client_secret: str) -> Flow:
     summary="Estado de conexión del usuario actual con Google Calendar",
 )
 def estado(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     cred = GoogleCredencialRepository(db).find_by_usuario(current_user.id)
     if cred is None:
@@ -75,10 +75,12 @@ def estado(
     summary="Arma la URL de consentimiento de Google para conectar la cuenta",
 )
 def conectar(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db_maestra: Session = Depends(get_db_maestra),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
-    config = ConfiguracionGoogleRepository(db).get_or_create()
+    # El Client ID/Secret del proyecto de Google vive en la base PRINCIPAL.
+    config = ConfiguracionGoogleRepository(db_maestra).get_or_create(None)
     if not config.activo or not config.client_id or not config.client_secret_cifrado:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -88,7 +90,13 @@ def conectar(
     from app.core.crypto import descifrar
 
     flow = _build_flow(config.client_id, descifrar(config.client_secret_cifrado))
-    state = create_state_token({"sub": str(current_user.id)}, timedelta(minutes=10))
+    # El guid va en el `state` porque el callback lo trae Google como una
+    # redirección del navegador, SIN el token de sesión: sin esto no habría
+    # forma de saber en qué base guardar la credencial. El state va firmado,
+    # así que el guid no se puede alterar en el camino.
+    state = create_state_token(
+        {"sub": str(current_user.id), "guid": tenant.guid}, timedelta(minutes=10)
+    )
     url, _ = flow.authorization_url(
         access_type="offline",
         prompt="consent",  # garantiza refresh_token también en reconexiones
@@ -107,23 +115,33 @@ def callback(
     code: str | None = Query(None),
     state: str | None = Query(None),
     error: str | None = Query(None),
-    db: Session = Depends(get_db),
+    db_maestra: Session = Depends(get_db_maestra),
 ):
+    """Lo llama el navegador del usuario cuando Google lo redirige de vuelta.
+
+    No lleva token de sesión (es una redirección, no una llamada del frontend),
+    así que no puede depender de `get_db_tenant`: la base sale del `state`, que
+    es un token firmado por nosotros y lleva el guid del cliente.
+    """
     destino_perfil = f"{settings.PUBLIC_BASE_URL}/perfil"
 
     if error or not code or not state:
         return RedirectResponse(f"{destino_perfil}?google=error")
 
     payload = decode_token(state)
-    if not payload or payload.get("type") != "oauth_state":
+    if not payload or payload.get("type") != "oauth_state" or not payload.get("guid"):
         return RedirectResponse(f"{destino_perfil}?google=error")
+
+    db = crear_sesion_tenant(payload["guid"])
 
     usuario = UsuarioRepository(db).find_by_id(int(payload["sub"]))
     if not usuario:
+        db.close()
         return RedirectResponse(f"{destino_perfil}?google=error")
 
-    config = ConfiguracionGoogleRepository(db).get_or_create()
+    config = ConfiguracionGoogleRepository(db_maestra).get_or_create(None)
     if not config.client_id or not config.client_secret_cifrado:
+        db.close()
         return RedirectResponse(f"{destino_perfil}?google=error")
 
     from app.core.crypto import descifrar
@@ -151,11 +169,15 @@ def callback(
                 usuario.id, google_email, cifrar(credentials.refresh_token)
             )
 
-        logger.info("Google Calendar conectado para el usuario %s (%s)", usuario.username, google_email)
+        logger.info("Google Calendar conectado para el usuario %s (%s)", usuario.usuario, google_email)
         return RedirectResponse(f"{destino_perfil}?google=ok")
-    except Exception as e:
+    except Exception:
         logger.exception("Fallo al completar la conexión con Google Calendar")
         return RedirectResponse(f"{destino_perfil}?google=error")
+    finally:
+        # La sesión de tenant se abrió a mano (no vino de una dependencia),
+        # así que se cierra a mano en todas las salidas.
+        db.close()
 
 
 @router.post(
@@ -163,8 +185,8 @@ def callback(
     summary="Desconecta la cuenta de Google Calendar del usuario actual",
 )
 def desconectar(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     cred_repo = GoogleCredencialRepository(db)
     cred = cred_repo.find_by_usuario(current_user.id)
@@ -182,7 +204,7 @@ def desconectar(
             )
         except Exception:
             # Best-effort: si Google no responde, igual se borra la conexión local.
-            logger.warning("No se pudo revocar el token en Google para %s", current_user.username)
+            logger.warning("No se pudo revocar el token en Google para %s", current_user.usuario)
         cred_repo.delete(current_user.id)
 
     return {"exito": True}

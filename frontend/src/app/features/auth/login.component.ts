@@ -1,15 +1,16 @@
-import { Component, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
+import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
 
 @Component({
   selector: 'app-login',
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-900 px-4">
+    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-900 px-4 py-8">
       <div class="card w-full max-w-md">
         <div class="card-body p-8">
           <div class="text-center mb-8">
@@ -20,27 +21,59 @@ import { AuthService } from '@core/services/auth.service';
               </svg>
             </div>
             <h1 class="text-2xl font-bold text-neutral-800">Estado Diario CRM</h1>
-            <p class="text-neutral-500 mt-1">Ingrese sus credenciales</p>
+            <p class="text-neutral-500 mt-1">
+              {{ modoAdmin() ? 'Acceso de administrador de la plataforma' : 'Ingrese las credenciales de su estudio' }}
+            </p>
           </div>
 
           @if (errorMsg()) {
-            <div class="alert-danger mb-4">{{ errorMsg() }}</div>
+            <div class="alert-danger mb-4" role="alert">{{ errorMsg() }}</div>
           }
 
-          <form (ngSubmit)="onLogin()" class="space-y-5">
+          <form (ngSubmit)="onLogin()" class="space-y-5" novalidate>
+            <!-- El RUT del estudio es lo primero: define en qué base de datos
+                 se busca el usuario. Sin él, el mismo nombre de usuario puede
+                 existir en varios estudios. -->
+            @if (!modoAdmin()) {
+              <div>
+                <label class="form-label" for="rut">RUT del estudio</label>
+                <input
+                  id="rut"
+                  type="text"
+                  class="form-input"
+                  [ngModel]="rut()"
+                  (ngModelChange)="alEscribirRut($event)"
+                  name="rut"
+                  inputmode="text"
+                  placeholder="12.345.678-9"
+                  autocomplete="organization"
+                  [attr.aria-invalid]="rutMalFormado() ? 'true' : null"
+                  aria-describedby="ayuda-rut"
+                />
+                <p id="ayuda-rut" class="text-xs mt-1"
+                   [class]="rutMalFormado() ? 'text-danger-600' : 'text-neutral-500'">
+                  {{ rutMalFormado()
+                      ? 'Revise el RUT: el dígito verificador no corresponde.'
+                      : 'El RUT con el que su estudio está registrado, con dígito verificador.' }}
+                </p>
+              </div>
+            }
+
             <div>
-              <label class="form-label">Usuario</label>
-              <input type="text" class="form-input" [(ngModel)]="username" name="username"
-                     placeholder="Ingrese su usuario" required autocomplete="username" />
+              <label class="form-label" for="username">Usuario</label>
+              <input id="username" type="text" class="form-input" [(ngModel)]="username" name="username"
+                     placeholder="Ingrese su usuario" autocomplete="username" />
             </div>
+
             <div>
-              <label class="form-label">Contraseña</label>
-              <input type="password" class="form-input" [(ngModel)]="password" name="password"
-                     placeholder="Ingrese su contraseña" required autocomplete="current-password" />
+              <label class="form-label" for="password">Contraseña</label>
+              <input id="password" type="password" class="form-input" [(ngModel)]="password" name="password"
+                     placeholder="Ingrese su contraseña" autocomplete="current-password" />
             </div>
+
             <button type="submit" class="btn-primary w-full" [disabled]="loading()">
               @if (loading()) {
-                <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
@@ -49,23 +82,58 @@ import { AuthService } from '@core/services/auth.service';
             </button>
           </form>
 
-          <p class="text-xs text-neutral-400 text-center mt-6">
-            Usuario demo: admin / admin123
-          </p>
+          <!-- El acceso de administrador es de uso interno y poco frecuente:
+               va discreto al pie, no como una alternativa de igual peso. -->
+          <div class="border-t border-neutral-200 mt-6 pt-4 text-center">
+            <button type="button" (click)="cambiarModo()" [disabled]="loading()"
+                    class="text-sm text-neutral-500 hover:text-primary-700 hover:underline
+                           focus:outline-none focus:ring-2 focus:ring-primary-200 rounded px-2 py-1">
+              {{ modoAdmin() ? 'Volver al ingreso de estudios' : 'Ingresar como administrador de la plataforma' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   `,
 })
 export class LoginComponent {
+  private auth = inject(AuthService);
+  private router = inject(Router);
+
+  rut = signal('');
   username = '';
   password = '';
+  modoAdmin = signal(false);
   loading = signal(false);
   errorMsg = signal('');
 
-  constructor(private auth: AuthService, private router: Router) {}
+  /** Solo se marca en rojo cuando ya escribió un RUT completo y no cuadra. */
+  rutMalFormado = computed(() => {
+    const valor = this.rut().replace(/[^0-9kK]/g, '');
+    return valor.length >= 8 && !rutValido(valor);
+  });
+
+  /** Se formatea mientras escribe: el abogado dicta el RUT con puntos. */
+  alEscribirRut(valor: string): void {
+    this.rut.set(formatearRut(valor));
+  }
+
+  cambiarModo(): void {
+    this.modoAdmin.update((v) => !v);
+    this.errorMsg.set('');
+  }
 
   onLogin(): void {
+    if (!this.modoAdmin()) {
+      if (!this.rut().trim()) {
+        this.errorMsg.set('Indique el RUT de su estudio');
+        return;
+      }
+      if (!rutValido(this.rut())) {
+        this.errorMsg.set('El RUT no es válido. Revise el dígito verificador.');
+        return;
+      }
+    }
     if (!this.username || !this.password) {
       this.errorMsg.set('Ingrese usuario y contraseña');
       return;
@@ -74,14 +142,41 @@ export class LoginComponent {
     this.loading.set(true);
     this.errorMsg.set('');
 
-    this.auth.login({ username: this.username, password: this.password }).subscribe({
-      next: () => {
-        this.router.navigate(['/']);
+    const peticion = this.modoAdmin()
+      ? this.auth.loginAdmin({ username: this.username, password: this.password })
+      : this.auth.login({
+          rut: rutPlano(this.rut()),
+          username: this.username,
+          password: this.password,
+        });
+
+    peticion.subscribe({
+      next: (usuario) => {
+        // Clave provisoria: no entra al sistema, entra a cambiarla.
+        if (usuario.debe_cambiar_password) {
+          this.router.navigate(['/cambiar-clave']);
+          return;
+        }
+        this.router.navigate([this.modoAdmin() ? '/admin' : '/']);
       },
       error: (err) => {
         this.loading.set(false);
-        this.errorMsg.set(err.error?.detail || 'Credenciales inválidas');
+        this.errorMsg.set(this.mensajeError(err));
       },
     });
+  }
+
+  /** Decir qué falló sin regalar cuál de los tres campos está mal. */
+  private mensajeError(err: unknown): string {
+    const e = err as { status?: number; error?: { detail?: unknown } };
+    const detail = e?.error?.detail;
+    if (typeof detail === 'string') return detail;
+    if (e?.status === 403) {
+      return 'Su cuenta está desactivada. Comuníquese con el administrador del sistema.';
+    }
+    if (e?.status === 404) {
+      return 'No encontramos un estudio con ese RUT. Verifíquelo con el administrador del sistema.';
+    }
+    return 'No pudimos validar sus credenciales. Revise los datos e intente de nuevo.';
   }
 }

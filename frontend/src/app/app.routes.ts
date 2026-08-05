@@ -2,6 +2,8 @@ import { inject } from '@angular/core';
 import { Router, Routes, UrlTree } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
+import { adminPlataformaGuard } from './core/guards/admin-plataforma.guard';
+import { cambioClaveGuard, claveVigenteGuard } from './core/guards/clave-vigente.guard';
 
 const redirectToTab = (tab: string): UrlTree =>
   inject(Router).createUrlTree(['/estado-diario/movimientos'], { queryParams: { tab } });
@@ -13,10 +15,18 @@ export const routes: Routes = [
       import('./features/auth/login.component').then((m) => m.LoginComponent),
   },
   {
+    // Cambio de contraseña obligatorio: fuera del layout a propósito, no hay
+    // menú ni navegación posible hasta que la clave provisoria se reemplace.
+    path: 'cambiar-clave',
+    canActivate: [cambioClaveGuard],
+    loadComponent: () =>
+      import('./features/auth/cambiar-clave.component').then((m) => m.CambiarClaveComponent),
+  },
+  {
     path: '',
     loadComponent: () =>
       import('./features/layout/layout.component').then((m) => m.LayoutComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, claveVigenteGuard],
     children: [
       {
         path: 'dashboard',
@@ -151,36 +161,89 @@ export const routes: Routes = [
                 (m) => m.UsuariosComponent
               ),
           },
+          // SMTP, Google Calendar y WhatsApp dejaron de ser del estudio: son
+          // servicios del sistema y viven en /admin/configuracion.
+          { path: '', redirectTo: 'correo', pathMatch: 'full' },
+        ],
+      },
+      // El dashboard es la página de inicio.
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+    ],
+  },
+  {
+    // Consola de la plataforma. Mismo armazón que el resto del sistema
+    // (LayoutComponent), otro menú: el administrador no tiene causas.
+    path: 'admin',
+    loadComponent: () =>
+      import('./features/layout/layout.component').then((m) => m.LayoutComponent),
+    canActivate: [adminPlataformaGuard, claveVigenteGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/admin/dashboard/admin-dashboard.component').then(
+            (m) => m.AdminDashboardComponent
+          ),
+      },
+      {
+        path: 'clientes',
+        children: [
           {
-            path: 'google-calendar',
-            canActivate: [adminGuard],
+            path: '',
             loadComponent: () =>
-              import('./features/configuracion/components/google-config/google-config.component').then(
-                (m) => m.GoogleConfigComponent
+              import('./features/admin/clientes/clientes-list.component').then(
+                (m) => m.ClientesListComponent
               ),
           },
           {
-            // Cuenta de salida del sistema: una sola para todos, solo admin.
+            path: ':id',
+            loadComponent: () =>
+              import('./features/admin/clientes/cliente-detalle.component').then(
+                (m) => m.ClienteDetalleComponent
+              ),
+          },
+        ],
+      },
+      {
+        // Un solo módulo con paneles: se configuran juntos al montar el
+        // sistema y casi nunca después.
+        path: 'configuracion',
+        loadComponent: () =>
+          import('./features/admin/configuracion/configuracion-shell.component').then(
+            (m) => m.ConfiguracionShellComponent
+          ),
+        children: [
+          {
             path: 'smtp',
-            canActivate: [adminGuard],
             loadComponent: () =>
               import('./features/configuracion/components/smtp-config/smtp-config.component').then(
                 (m) => m.SmtpConfigComponent
               ),
           },
           {
+            path: 'google-calendar',
+            loadComponent: () =>
+              import('./features/configuracion/components/google-config/google-config.component').then(
+                (m) => m.GoogleConfigComponent
+              ),
+          },
+          {
             path: 'whatsapp',
-            canActivate: [adminGuard],
             loadComponent: () =>
               import('./features/configuracion/components/whatsapp-config/whatsapp-config.component').then(
                 (m) => m.WhatsappConfigComponent
               ),
           },
-          { path: '', redirectTo: 'correo', pathMatch: 'full' },
+          {
+            path: 'sistema',
+            loadComponent: () =>
+              import('./features/admin/configuracion/sistema-config.component').then(
+                (m) => m.SistemaConfigComponent
+              ),
+          },
+          { path: '', redirectTo: 'smtp', pathMatch: 'full' },
         ],
       },
-      // El dashboard es la página de inicio.
-      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
     ],
   },
   { path: '**', redirectTo: '' },

@@ -19,8 +19,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.metricas_repository import (
     NIVELES,
@@ -159,8 +158,8 @@ def _armar_audiencias(
 )
 def obtener_dashboard(
     dias: int = Query(30, ge=1, le=365, description="Largo del período en días"),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     # Un solo alcance para todas las consultas: None = admin (ve todo),
     # id del usuario en cualquier otro caso.

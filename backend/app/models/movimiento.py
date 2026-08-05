@@ -4,10 +4,10 @@ from typing import Optional
 from sqlalchemy import String, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import BaseTenant
 
 
-class Movimiento(Base):
+class Movimiento(BaseTenant):
     """Fila del Excel "Movimientos", que es un reporte distinto al estado
     diario: lista el universo de causas vigentes de un RUT con su estado
     procesal, no las actuaciones del día. Por eso es solo consulta y no tiene

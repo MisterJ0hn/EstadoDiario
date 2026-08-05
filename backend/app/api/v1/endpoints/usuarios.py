@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
-from app.core.deps import require_admin
+from app.core.deps import get_db_tenant, require_admin_cliente
 from app.models.usuario import Usuario
 from app.schemas.usuario import (
     UsuarioCreate,
@@ -16,12 +15,12 @@ from app.services.usuario_service import UsuarioService
 router = APIRouter(
     prefix="/usuarios",
     tags=["Usuarios"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_cliente)],
 )
 
 
 @router.get("", response_model=UsuarioListResponse, summary="Listar usuarios")
-def listar_usuarios(db: Session = Depends(get_db)):
+def listar_usuarios(db: Session = Depends(get_db_tenant)):
     usuarios = UsuarioService(db).listar()
     return UsuarioListResponse(total=len(usuarios), usuarios=usuarios)
 
@@ -31,12 +30,12 @@ def listar_usuarios(db: Session = Depends(get_db)):
     response_model=UsuarioResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crear usuario",
-    responses={409: {"description": "Username o correo ya existe"}},
+    responses={409: {"description": "El nombre de usuario o el correo ya existe"}},
 )
 def crear_usuario(
     datos: UsuarioCreate,
-    db: Session = Depends(get_db),
-    admin: Usuario = Depends(require_admin),
+    db: Session = Depends(get_db_tenant),
+    admin: Usuario = Depends(require_admin_cliente),
 ):
     return UsuarioService(db).crear(datos, admin)
 
@@ -47,7 +46,7 @@ def crear_usuario(
     summary="Obtener un usuario",
     responses={404: {"description": "Usuario no encontrado"}},
 )
-def obtener_usuario(usuario_id: int, db: Session = Depends(get_db)):
+def obtener_usuario(usuario_id: int, db: Session = Depends(get_db_tenant)):
     return UsuarioService(db).obtener(usuario_id)
 
 
@@ -63,7 +62,7 @@ def obtener_usuario(usuario_id: int, db: Session = Depends(get_db)):
 def actualizar_usuario(
     usuario_id: int,
     datos: UsuarioUpdate,
-    db: Session = Depends(get_db),
-    admin: Usuario = Depends(require_admin),
+    db: Session = Depends(get_db_tenant),
+    admin: Usuario = Depends(require_admin_cliente),
 ):
     return UsuarioService(db).actualizar(usuario_id, datos, admin)

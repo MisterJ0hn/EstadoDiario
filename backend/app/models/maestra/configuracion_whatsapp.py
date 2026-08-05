@@ -1,19 +1,30 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import String, Boolean, DateTime, Text
+from sqlalchemy import String, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import BaseMaestra
 
 
-class ConfiguracionWhatsapp(Base):
+class ConfiguracionWhatsapp(BaseMaestra):
     """Credenciales de Twilio para el envío de recordatorios por WhatsApp.
-    Configuración única (global), se espera una sola fila, id=1."""
+    Vive en la base principal: una fila global del sistema y, si hace falta,
+    una por cliente (ver `cliente_id`)."""
 
     __tablename__ = "configuracion_whatsapp"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    # Configuración POR CLIENTE. NULL = fila global del sistema, que es la que
+    # se usa cuando el cliente no tiene la suya: las credenciales del proveedor
+    # (Twilio, la cuenta SMTP de salida, el proyecto de Google Cloud) suelen
+    # ser del SaaS y no del estudio, pero un cliente grande puede querer las
+    # propias. OJO: en PostgreSQL el UNIQUE no agrupa los NULL, así que no
+    # impide dos filas globales; el repositorio toma la de menor id.
+    cliente_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("cliente.cliente_id"), unique=True, index=True
+    )
 
     activo: Mapped[bool] = mapped_column(Boolean, default=False)
     twilio_account_sid: Mapped[Optional[str]] = mapped_column(String(64))

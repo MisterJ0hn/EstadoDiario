@@ -4,15 +4,18 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 from app.core.config import settings
-from app.core.database import Base
+from app.core.database import BaseMaestra
 
-# Import all models
-from app.models.usuario import Usuario  # noqa
-from app.models.jurisdiccion import Jurisdiccion  # noqa
-from app.models.estado_diario_origen import EstadoDiarioOrigen  # noqa
-from app.models.estado_diario import EstadoDiario  # noqa
-from app.models.estado_diario_agenda import EstadoDiarioAgenda  # noqa
-from app.models.api_llamado_estado_diario import ApiLlamadoEstadoDiario  # noqa
+# OJO: Alembic NO está en uso en este repositorio (versions/ está vacío) y este
+# archivo está acá solo como andamio. El esquema se mantiene desde el código:
+# app/core/esquema.py lo aplica sobre la base principal al arrancar y sobre la
+# base de cada cliente al aprovisionarla.
+#
+# Adoptar Alembic acá no es "generar una revisión": habría que resolver antes
+# cómo se versiona un esquema que está replicado en N bases de datos, una por
+# cliente, que se crean en cualquier momento. Por eso este env solo apunta a la
+# base PRINCIPAL; las de tenant no las puede tocar.
+from app.models import maestra  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
@@ -20,7 +23,7 @@ config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = BaseMaestra.metadata
 
 
 def run_migrations_offline():

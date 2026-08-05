@@ -22,8 +22,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR
-from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.audiencia_repository import AudienciaRepository
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
@@ -70,8 +69,8 @@ def listar_audiencias(
     ),
     page: int | None = Query(None, ge=1),
     limit: int | None = Query(None, ge=1, le=500),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     # "Próximas" es el default del módulo; `incluir_pasadas` es la vía explícita
     # para ver el histórico sin tener que inventar una fecha de inicio.
@@ -114,8 +113,8 @@ def resumen(
     desde: date | None = Query(None),
     hasta: date | None = Query(None),
     incluir_pasadas: bool = Query(False),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Alimenta las pestañas por materia y el combo de tipo de audiencia.
 
@@ -152,8 +151,8 @@ def resumen(
 def calendario(
     desde: date = Query(..., description="Inicio de la ventana (YYYY-MM-DD)"),
     hasta: date = Query(..., description="Fin de la ventana (YYYY-MM-DD)"),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Rango obligatorio, a diferencia de /estado-diario/calendario.
 
@@ -181,8 +180,8 @@ def calendario(
 def listar_archivos(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = AudienciaRepository(db)
     alcance = EstadoDiarioService.alcance(current_user)
@@ -207,7 +206,7 @@ def listar_archivos(
                 fecha=o.fecha,
                 nombre_archivo=o.nombre_archivo,
                 fecha_carga=o.fecha_carga,
-                usuario_carga=o.usuario_carga.username if o.usuario_carga else None,
+                usuario_carga=o.usuario_carga.usuario if o.usuario_carga else None,
                 total_audiencias=conteos.get(o.id, 0),
             )
             for o in items
@@ -224,8 +223,8 @@ def upload_audiencias(
     file: UploadFile = File(...),
     rut: str | None = Form(default=None),
     fecha: str | None = Form(default=None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """El archivo queda a nombre del usuario que lo sube: él es su dueño y nadie
     más (salvo el admin) verá esas audiencias."""
@@ -292,8 +291,8 @@ def upload_audiencias(
     summary="Publicar en Google Calendar las audiencias futuras pendientes",
 )
 def sincronizar_google(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Reintento manual de la sincronización que ya corre sola al importar.
 

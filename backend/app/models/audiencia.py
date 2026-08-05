@@ -13,10 +13,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import BaseTenant
 
 
-class Audiencia(Base):
+class Audiencia(BaseTenant):
     """Fila del Excel "Audiencias": una audiencia agendada por el tribunal.
 
     Es el tercer reporte del PJUD que maneja el sistema y el único que mira

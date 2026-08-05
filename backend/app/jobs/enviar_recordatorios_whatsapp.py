@@ -16,8 +16,10 @@ import argparse
 import logging
 import sys
 
-from app.core.database import SessionLocal
+from app.core.database import SesionMaestra, sesion_tenant
 from app.core.logging_config import setup_logging
+from app.models.maestra.cliente import Cliente
+from app.repositories.cliente_repository import ClienteRepository
 from app.services.whatsapp_service import WhatsappService
 
 logger = logging.getLogger(__name__)
@@ -29,16 +31,33 @@ def main() -> int:
     parser.parse_args()
 
     setup_logging()
-    db = SessionLocal()
+    # Los recordatorios viven en la base de cada cliente: hay que recorrerlos
+    # todos. Un cliente con la base caída no puede dejar sin enviar a los demás.
+    # find_activos() deja fuera a los suspendidos: sus recordatorios quedan
+    # guardados y sin enviar hasta que se reactive el cliente.
+    db_maestra = SesionMaestra()
+    con_error = 0
     try:
-        resultado = WhatsappService(db).enviar_pendientes()
-        logger.info("Envío de WhatsApp: %s", resultado.get("mensaje"))
-        return 0 if resultado.get("exito") else 1
+        for cliente in ClienteRepository(db_maestra).find_activos():
+            if cliente.estado_aprovisionamiento != Cliente.APROV_LISTO:
+                # Su base puede ni existir: intentar abrirla sería un error de
+                # conexión por cada corrida del cron, cada cinco minutos.
+                continue
+            try:
+                with sesion_tenant(cliente.guid) as db_tenant:
+                    resultado = WhatsappService(db_tenant, db_maestra).enviar_pendientes()
+                logger.info("WhatsApp del cliente %s: %s", cliente.guid, resultado.get("mensaje"))
+                if not resultado.get("exito"):
+                    con_error += 1
+            except Exception:
+                con_error += 1
+                logger.exception("Falló el envío de WhatsApp del cliente %s", cliente.guid)
+        return 1 if con_error else 0
     except Exception:
         logger.exception("El envío de recordatorios por WhatsApp falló")
         return 1
     finally:
-        db.close()
+        db_maestra.close()
 
 
 if __name__ == "__main__":

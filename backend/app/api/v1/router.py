@@ -1,8 +1,11 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    admin_sistema,
     audiencias,
     auth,
+    auth_admin,
+    clientes,
     configuracion_correo,
     configuracion_google,
     configuracion_whatsapp,
@@ -18,6 +21,9 @@ from app.api.v1.endpoints import (
 api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(auth.router)
+api_router.include_router(auth_admin.router)
+api_router.include_router(admin_sistema.router)
+api_router.include_router(clientes.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(jurisdicciones.router)
 api_router.include_router(estado_diario.router)

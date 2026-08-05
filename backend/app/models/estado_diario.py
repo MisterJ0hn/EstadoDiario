@@ -4,10 +4,10 @@ from typing import Optional, List
 from sqlalchemy import String, Date, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import BaseTenant
 
 
-class EstadoDiario(Base):
+class EstadoDiario(BaseTenant):
     __tablename__ = "estado_diario"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

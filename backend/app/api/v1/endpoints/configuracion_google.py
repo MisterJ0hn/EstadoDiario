@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.crypto import cifrar
-from app.core.database import get_db
+from app.core.database import get_db_maestra
 from app.core.deps import require_admin
-from app.models.usuario import Usuario
+from app.models.maestra.usuario_admin import UsuarioAdmin
 from app.repositories.configuracion_google_repository import ConfiguracionGoogleRepository
 from app.schemas.configuracion_google import (
     ConfiguracionGoogleResponse,
@@ -38,8 +38,8 @@ def _a_response(config) -> ConfiguracionGoogleResponse:
     response_model=ConfiguracionGoogleResponse,
     summary="Obtener la configuración OAuth de Google Calendar",
 )
-def obtener_configuracion(db: Session = Depends(get_db)):
-    return _a_response(ConfiguracionGoogleRepository(db).get_or_create())
+def obtener_configuracion(db: Session = Depends(get_db_maestra)):
+    return _a_response(ConfiguracionGoogleRepository(db).get_or_create(None))
 
 
 @router.put(
@@ -49,11 +49,11 @@ def obtener_configuracion(db: Session = Depends(get_db)):
 )
 def guardar_configuracion(
     datos: ConfiguracionGoogleUpdate,
-    db: Session = Depends(get_db),
-    admin: Usuario = Depends(require_admin),
+    db: Session = Depends(get_db_maestra),
+    admin: UsuarioAdmin = Depends(require_admin),
 ):
     repo = ConfiguracionGoogleRepository(db)
-    config = repo.get_or_create()
+    config = repo.get_or_create(None)
 
     config.activo = datos.activo
     config.client_id = datos.client_id
@@ -63,5 +63,5 @@ def guardar_configuracion(
         config.client_secret_cifrado = cifrar(datos.client_secret)
 
     repo.save(config)
-    logger.info("Configuración de Google Calendar actualizada por %s", admin.username)
+    logger.info("Configuración de Google Calendar actualizada por %s", admin.usuario)
     return _a_response(config)

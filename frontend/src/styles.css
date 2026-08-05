@@ -122,6 +122,30 @@
     @apply border-b border-neutral-100 hover:bg-primary-50/40 transition-colors;
   }
 
+  /* ── Pestañas ────────────────────────── */
+  /* Navegación entre vistas hermanas de una misma pantalla: estados del estado
+     diario, secciones de la ficha de cliente, bloques de configuración. El
+     contenedor lleva `border-b border-neutral-200` y la nav se monta encima. */
+  .tabs-nav {
+    @apply -mb-px flex gap-1 overflow-x-auto;
+  }
+  .tab-link {
+    @apply flex items-center gap-2 whitespace-nowrap rounded-t border-b-2 border-transparent
+           px-4 py-3 text-sm font-medium text-neutral-500 transition-colors cursor-pointer
+           hover:border-neutral-300 hover:text-neutral-700
+           focus:outline-none focus:ring-2 focus:ring-primary-200;
+  }
+  .tab-link-activo {
+    @apply border-primary-600 text-primary-700 hover:border-primary-600 hover:text-primary-700;
+  }
+  /* Contador dentro de la pestaña. */
+  .tab-contador {
+    @apply rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-600;
+  }
+  .tab-link-activo .tab-contador {
+    @apply bg-primary-100 text-primary-700;
+  }
+
   /* ── Badges ──────────────────────────── */
   .badge {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;

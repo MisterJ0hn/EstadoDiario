@@ -44,24 +44,19 @@ function fmtFechaChip(iso: string): string {
       @if (!isOrigen()) {
         <!-- Tabs de estado -->
         <div class="border-b border-neutral-200">
-          <nav class="-mb-px flex gap-1 overflow-x-auto" role="tablist">
+          <nav class="tabs-nav" role="tablist">
             @for (t of tabs; track t.key) {
               <button
                 type="button"
                 role="tab"
                 [attr.aria-selected]="activeTab() === t.key"
                 (click)="selectTab(t.key)"
-                class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors"
-                [class]="activeTab() === t.key
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'"
+                class="tab-link"
+                [class.tab-link-activo]="activeTab() === t.key"
               >
                 {{ t.label }}
                 @if (counts()[t.key] !== null) {
-                  <span class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                        [class]="activeTab() === t.key ? 'bg-primary-100 text-primary-700' : 'bg-neutral-100 text-neutral-600'">
-                    {{ counts()[t.key] }}
-                  </span>
+                  <span class="tab-contador">{{ counts()[t.key] }}</span>
                 }
               </button>
             }

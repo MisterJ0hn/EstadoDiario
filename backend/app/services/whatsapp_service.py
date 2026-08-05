@@ -24,13 +24,15 @@ class ErrorConfiguracion(Exception):
 
 
 class WhatsappService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, db_maestra: Session):
+        # Base del cliente: los recordatorios y su estado de envío.
         self.db = db
-        self.config_repo = ConfiguracionWhatsappRepository(db)
+        # Base principal: las credenciales de Twilio.
+        self.config_repo = ConfiguracionWhatsappRepository(db_maestra)
         self.agenda_repo = EstadoDiarioAgendaRepository(db)
 
     def enviar_pendientes(self) -> dict:
-        config = self.config_repo.get_or_create()
+        config = self.config_repo.get_or_create(None)
 
         if not config.activo:
             return {"exito": False, "mensaje": "El envío de WhatsApp está desactivado", "procesados": 0}
@@ -104,7 +106,7 @@ class WhatsappService:
         candidatas (ver el endpoint): detrás del proxy el backend ve http y un
         host interno, no la URL pública que Twilio usó para firmar.
         """
-        config = self.config_repo.get_or_create()
+        config = self.config_repo.get_or_create(None)
 
         if not config.validar_firma_webhook:
             return None

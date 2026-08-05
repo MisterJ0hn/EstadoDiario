@@ -8,8 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
-from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.schemas.estado_diario import (
     MovimientoListResponse,
@@ -46,8 +45,8 @@ def listar_origenes(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     tipo: str | None = Query(None, description="estado_diario | movimientos"),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = EstadoDiarioOrigenRepository(db)
     items, total, total_pages = repo.find_all_paginated(
@@ -63,7 +62,7 @@ def listar_origenes(
             nombre_archivo=o.nombre_archivo,
             url=o.url,
             fecha_carga=o.fecha_carga,
-            usuario_carga=o.usuario_carga.username if o.usuario_carga else None,
+            usuario_carga=o.usuario_carga.usuario if o.usuario_carga else None,
             total_movimientos=repo.count_registros(o),
         ))
     return EstadoDiarioOrigenListResponse(
@@ -77,8 +76,8 @@ def listar_origenes(
 )
 def movimientos_por_origen(
     origen_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     from app.repositories.estado_diario_repository import EstadoDiarioRepository
     repo = EstadoDiarioRepository(db)
@@ -146,8 +145,8 @@ def upload_file(
     file: UploadFile = File(...),
     rut: str | None = Form(default=None),
     fecha: str | None = Form(default=None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     ext = os.path.splitext(file.filename)[1].lower()
@@ -201,8 +200,8 @@ def upload_file(
 )
 def eliminar_origen(
     origen_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = EstadoDiarioOrigenRepository(db)
     origen = repo.find_by_id(origen_id, EstadoDiarioService.alcance(current_user))
@@ -226,8 +225,8 @@ def no_leidos(
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_no_leidos(
@@ -247,8 +246,8 @@ def leidos(
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_leidos(
@@ -268,8 +267,8 @@ def pendientes(
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_pendientes(
@@ -283,8 +282,8 @@ def pendientes(
     summary="Recordatorios vigentes (no finalizados) para el calendario",
 )
 def calendario(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Admin ve los recordatorios de todos; cada usuario ve solo los suyos."""
     service = EstadoDiarioService(db)
@@ -299,8 +298,8 @@ def calendario(
 )
 def detalle_movimiento(
     estado_diario_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_movimiento_detalle(estado_diario_id, service.alcance(current_user))
@@ -316,8 +315,8 @@ def detalle_movimiento(
 def marcar_leido(
     estado_diario_id: int,
     body: MarcarLeidoRequest | None = None,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """La observación es opcional: el body completo puede venir vacío, que es
     como lo llaman los clientes que solo marcan resuelto sin comentario."""
@@ -337,8 +336,8 @@ def marcar_leido(
 def marcar_pendiente(
     estado_diario_id: int,
     body: MarcarPendienteRequest,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.marcar_pendiente(
@@ -357,8 +356,8 @@ def marcar_pendiente(
 )
 def listar_agendas(
     estado_diario_id: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_agendas(estado_diario_id, service.alcance(current_user))
@@ -371,8 +370,8 @@ def listar_agendas(
 def crear_agenda(
     estado_diario_id: int,
     body: AgendaCreateRequest,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.crear_agenda(
@@ -388,8 +387,8 @@ def crear_agenda(
 def finalizar_agenda(
     agenda_id: int,
     body: FinalizarAgendaRequest,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.finalizar_agenda(agenda_id, body.marcar_resuelto, current_user)
@@ -449,7 +448,7 @@ def _urls_candidatas(request: Request) -> list[str]:
 )
 async def webhook_twilio(
     request: Request,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_tenant),
 ):
     """Endpoint público para recibir callbacks de Twilio.
 

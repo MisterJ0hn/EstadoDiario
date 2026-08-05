@@ -223,7 +223,7 @@ class EstadoDiarioService:
                 self._save_log(log, False, error="Username requerido para agendar")
                 raise BadRequestException("El campo username es obligatorio para agendar")
 
-            usuario = self.user_repo.find_by_username(username)
+            usuario = self.user_repo.find_by_usuario(username)
             if not usuario:
                 self._save_log(log, False, error="Username no existe")
                 raise BadRequestException("username no existe")
@@ -304,7 +304,7 @@ class EstadoDiarioService:
                 "detalle": a.detalle,
                 "fecha_hora": a.fecha_hora.isoformat(),
                 "nivel": a.nivel,
-                "usuario_registro": a.usuario_registro.username if a.usuario_registro else None,
+                "usuario_registro": a.usuario_registro.usuario if a.usuario_registro else None,
                 "movimiento_caratulado": a.estado_diario.caratulado if a.estado_diario else None,
                 "movimiento_rol": a.estado_diario.rol if a.estado_diario else None,
                 "movimiento_tribunal": a.estado_diario.tribunal if a.estado_diario else None,
@@ -333,7 +333,7 @@ class EstadoDiarioService:
 
         usuario = None
         if username:
-            usuario = self.user_repo.find_by_username(username)
+            usuario = self.user_repo.find_by_usuario(username)
             if not usuario:
                 self._save_log(log, False, error="Username no existe")
                 raise BadRequestException("username no existe")
@@ -373,7 +373,7 @@ class EstadoDiarioService:
                 "fecha_envio": a.fecha_envio.isoformat() if a.fecha_envio else None,
                 "google_event_id": a.google_event_id,
                 "google_sync_error": a.google_sync_error,
-                "usuario_registro": a.usuario_registro.username if a.usuario_registro else None,
+                "usuario_registro": a.usuario_registro.usuario if a.usuario_registro else None,
             }
             for a in agendas
         ]
@@ -553,5 +553,5 @@ class EstadoDiarioService:
         if include_pendiente:
             data["nivel_pendiente"] = m.nivel_pendiente
             data["fecha_pendiente"] = m.fecha_pendiente.isoformat() if m.fecha_pendiente else None
-            data["usuario_pendiente"] = m.usuario_pendiente.username if m.usuario_pendiente else None
+            data["usuario_pendiente"] = m.usuario_pendiente.usuario if m.usuario_pendiente else None
         return data

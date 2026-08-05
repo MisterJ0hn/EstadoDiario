@@ -15,8 +15,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR
-from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.movimiento_repository import MovimientoRepository
 from app.schemas.movimiento import (
@@ -55,8 +54,8 @@ def listar_movimientos(
     fecha_hasta: str | None = Query(None),
     page: int | None = Query(None, ge=1),
     limit: int | None = Query(None, ge=1, le=500),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = MovimientoRepository(db)
     items, total, current_page, total_pages = repo.find_filtered(
@@ -93,8 +92,8 @@ def resumen(
     origen_id: int | None = Query(None),
     fecha_desde: str | None = Query(None),
     fecha_hasta: str | None = Query(None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Alimenta las pestañas por materia y el combo de estado de causa. La
     agregación la hace la base de datos (GROUP BY / DISTINCT)."""
@@ -125,8 +124,8 @@ def resumen(
 def listar_archivos(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = MovimientoRepository(db)
     alcance = EstadoDiarioService.alcance(current_user)
@@ -144,7 +143,7 @@ def listar_archivos(
                 fecha=o.fecha,
                 nombre_archivo=o.nombre_archivo,
                 fecha_carga=o.fecha_carga,
-                usuario_carga=o.usuario_carga.username if o.usuario_carga else None,
+                usuario_carga=o.usuario_carga.usuario if o.usuario_carga else None,
                 total_movimientos=repo.count_filtered(
                     usuario_id=alcance, origen_id=o.id
                 ),
@@ -163,8 +162,8 @@ def upload_movimientos(
     file: UploadFile = File(...),
     rut: str | None = Form(default=None),
     fecha: str | None = Form(default=None),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
 ):
     """El archivo queda a nombre del usuario que lo sube: él es su dueño y
     nadie más (salvo el admin) verá esos movimientos."""

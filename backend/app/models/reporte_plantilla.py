@@ -5,10 +5,10 @@ from typing import Optional
 from sqlalchemy import String, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import BaseTenant
 
 
-class ReportePlantilla(Base):
+class ReportePlantilla(BaseTenant):
     """Informe dinámico guardado: qué campos eligió el usuario y con qué
     filtros, para poder regenerarlo cuando quiera sin rearmarlo.
 

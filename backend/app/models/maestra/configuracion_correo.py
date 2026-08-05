@@ -4,31 +4,36 @@ from typing import Optional
 from sqlalchemy import String, Boolean, Integer, DateTime, Time, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.database import Base
+from app.core.database import BaseMaestra
 
 
-class ConfiguracionCorreo(Base):
-    """Casilla IMAP desde la que se importan los adjuntos, **una por usuario**.
+class ConfiguracionCorreo(BaseMaestra):
+    """Casilla IMAP desde la que se importan los adjuntos, **una por cliente**.
 
-    No confundir con `usuario.email`, que es el correo personal del usuario y
-    solo se usa como destino de los informes. Ésta es una casilla aparte,
-    dedicada a recibir los Excel del PJUD, y es la que define el dueño de todo
-    lo que se descargue: lo importado queda a nombre de `usuario_id` y ningún
-    otro usuario lo ve.
+    Vive en la base principal, no en la del cliente: el job de ingesta necesita
+    recorrer las casillas de todos los clientes de una pasada, y para eso tiene
+    que poder leerlas sin abrir una conexión por base.
 
-    Antes existía una sola fila global (id=1). Esa fila sobrevive con
-    `usuario_id` nulo y ya no la usa el job de importación; se conserva para no
-    perder credenciales configuradas.
+    La casilla por defecto de un cliente es `<guid>@temposoft.cl` (ver
+    `Cliente.inbox`). Todo lo que llegue ahí se importa en la base de ESE
+    cliente: la casilla es lo que amarra un correo entrante a una base.
     """
 
     __tablename__ = "configuracion_correo"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
-    # Dueño de la casilla. Nulo solo en la fila global heredada (ver docstring).
-    usuario_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("usuario.id"), unique=True, index=True
+    # Dueño de la casilla. NOT NULL + UNIQUE: una casilla por cliente, y una
+    # casilla sin cliente no se sabría en qué base importar.
+    cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("cliente.cliente_id"), nullable=False, unique=True, index=True
     )
+
+    # Usuario de la base del cliente a nombre de quien queda lo importado.
+    # Sin ForeignKey a propósito: apunta a `usuario.id` de OTRA base de datos y
+    # PostgreSQL no puede validar esa referencia. Nulo = el primer usuario
+    # administrador del cliente.
+    usuario_destino_id: Mapped[Optional[int]] = mapped_column(Integer)
 
     activo: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -81,9 +86,9 @@ class ConfiguracionCorreo(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    # Se llama `dueno` y no `usuario` a propósito: `usuario` ya es la columna
-    # con el nombre de la cuenta IMAP, y una relación con ese nombre la taparía.
-    dueno = relationship("Usuario", foreign_keys=[usuario_id])
+    # Se llama `dueno` y no `cliente` para no chocar con nada, y sobre todo no
+    # `usuario`: esa columna ya es el nombre de la cuenta IMAP.
+    dueno = relationship("Cliente", foreign_keys=[cliente_id])
 
     @property
     def lista_remitentes(self) -> list[str]:

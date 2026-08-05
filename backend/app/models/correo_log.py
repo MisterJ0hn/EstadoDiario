@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import String, DateTime, Text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import BaseTenant
 
 
 # Resultados posibles de procesar un mensaje/adjunto
@@ -15,7 +15,7 @@ RESULTADO_ERROR = "error"             # falló la lectura o la importación
 RESULTADO_CONEXION = "conexion"       # falló la conexión IMAP (sin mensaje asociado)
 
 
-class CorreoLog(Base):
+class CorreoLog(BaseTenant):
     """Bitácora de la ingesta por correo, visible para el administrador.
 
     Se registra una fila por mensaje/adjunto evaluado, incluidos los que se

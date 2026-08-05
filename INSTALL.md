@@ -14,9 +14,12 @@ se conectan al PostgreSQL instalado en la máquina Linux anfitriona a través de
 `host.docker.internal` (resuelto con `extra_hosts: host-gateway`).
 
 ```bash
-# 1. Crear usuario y base de datos
+# 1. Crear usuario y base de datos PRINCIPAL
+#    CREATEDB no es opcional: el sistema crea una base de datos por cada
+#    cliente que se da de alta (estado_diario_<guid>). Sin ese permiso el
+#    alta falla y el cliente queda en estado "error".
 sudo -u postgres psql <<'SQL'
-CREATE USER estado_diario WITH PASSWORD 'Estado123';
+CREATE USER estado_diario WITH PASSWORD 'Estado123' CREATEDB;
 CREATE DATABASE estado_diario OWNER estado_diario;
 SQL
 
@@ -70,22 +73,58 @@ docker exec ed_backend python -c "import socket; socket.create_connection(('host
 > Solo hay dos contenedores: `ed_backend` y `ed_frontend`. PostgreSQL y pgAdmin
 > son responsabilidad del host.
 
-## Credenciales por Defecto
+## Primer Ingreso
 
-### Aplicación
-- **Admin**: usuario `admin`, password `admin123`
-- **Usuario**: usuario `usuario`, password `usuario123`
+Hay **dos inicios de sesión distintos**:
 
-Estas cuentas se crean solas en el primer arranque. Cambie la contraseña de
-`admin` apenas ingrese: desde **Administración → Usuarios** el administrador crea
-las cuentas del resto del equipo y edita las existentes.
+| Quién                          | Campos                    | Qué administra                    |
+|--------------------------------|---------------------------|-----------------------------------|
+| Administrador de la plataforma | usuario + contraseña      | Los clientes (estudios) y el sistema |
+| Usuario de un estudio          | RUT + usuario + contraseña| Las causas de su estudio          |
+
+En el primer arranque se siembra un solo administrador de plataforma, con la
+clave de `ADMIN_INICIAL_USUARIO` / `ADMIN_INICIAL_PASSWORD` del `.env` (por
+defecto `admin` / `admin123`). Nace con la clave marcada como provisoria: entra,
+pero **ningún otro endpoint de administración responde** hasta cambiarla.
+
+Después:
+
+1. Cambiar esa contraseña.
+2. **Clientes → Nuevo**: nombre y RUT del estudio. El backend crea su base de
+   datos; toma unos segundos y el estado se ve en la ficha.
+3. Con la base en `listo`, crear los usuarios del estudio desde su ficha. Nacen
+   con clave provisoria: la persona la cambia al entrar.
+
+El RUT del cliente es la credencial con la que su gente inicia sesión, y no se
+puede cambiar después.
 
 ### PostgreSQL (instalado en el host Linux)
 - **Host**: host.docker.internal (desde los contenedores) / localhost (desde el host)
 - **Puerto**: 5432
-- **Base de datos**: estado_diario
-- **Usuario**: estado_diario
+- **Base principal**: estado_diario
+- **Base de cada cliente**: estado_diario_&lt;guid&gt; (las crea el sistema)
+- **Usuario**: estado_diario (con CREATEDB)
 - **Password**: Estado123
+
+## Migrar una Instalación Anterior
+
+Si ya había una instalación de la versión de una sola base, hay que convertirla
+en el primer cliente **antes** de levantar el backend nuevo contra ella:
+
+```bash
+# En seco primero: cuenta lo que movería sin escribir nada
+docker exec ed_backend python -m app.jobs.migrar_a_multitenant \
+    --nombre "Estudio X" --rut 76543210-K --ensayo
+
+# Real
+docker exec ed_backend python -m app.jobs.migrar_a_multitenant \
+    --nombre "Estudio X" --rut 76543210-K --correo contacto@estudio.cl
+```
+
+Copia usuarios y datos a la base del cliente conservando los id, y deja las
+tablas viejas en la base principal con el prefijo `_legacy_` — no borra nada.
+Las contraseñas siguen siendo las mismas; lo que cambia es que ahora hay que
+indicar el RUT del estudio al iniciar sesión. Detalles en `ARCHITECTURE.md`.
 
 ## Administrar la Base de Datos
 
@@ -108,8 +147,13 @@ sudo apt install -y pgadmin4-desktop     # o pgadmin4-web
 ## Importación por Correo (opcional)
 
 El sistema puede bajar solo los adjuntos de estado diario desde una casilla
-IMAP. La configuración vive en la UI (**Administración → Importar por Correo**,
-solo rol admin), no en archivos.
+IMAP. Hay **una casilla por cliente** y lo que llegue a ella se importa en la
+base de ese cliente: la casilla es lo que amarra un correo entrante a una base.
+
+La configuración vive en la UI, no en archivos, y se puede tocar desde dos
+lados: el administrador de la plataforma, en la ficha del cliente, o el propio
+estudio en **Administración → Importar por Correo** (solo rol admin del
+estudio). La casilla por defecto de un cliente es `<guid>@temposoft.cl`.
 
 ### Gmail
 
@@ -189,12 +233,29 @@ llegaron a su fecha/hora de envío:
 Requiere una cuenta Twilio con WhatsApp Business aprobado y una plantilla de
 mensaje ya aprobada (Content SID), pegados en **Administración → WhatsApp**.
 
+## Purga de la Bitácora
+
+`log_actividades` registra una fila por acción y crece rápido. La política de
+permanencia se fija en **Administración de la plataforma → Sistema** (con
+override por cliente en su ficha) y la aplica un job nocturno, base por base:
+
+```bash
+# crontab -e  en el host
+30 3 * * * docker exec ed_backend python -m app.jobs.purgar_logs >> /var/log/estado_diario_purga.log 2>&1
+```
+
 ## Datos Iniciales (Seeds)
 
-Al iniciar el backend, se crean automáticamente:
-- Usuario administrador (admin/admin123)
-- Usuario demo (usuario/usuario123)
-- 9 jurisdicciones predefinidas (Civil, Familia, Laboral, Penal, etc.)
+Al iniciar el backend, en la base **principal**:
+- El administrador de la plataforma, solo si no hay ninguno (ver *Primer Ingreso*).
+
+Al dar de alta un **cliente**, en su base recién creada:
+- Las 12 tablas del esquema operativo.
+- 9 jurisdicciones predefinidas (Civil, Familia, Laboral, Penal, etc.).
+
+La base de un cliente **nace sin usuarios**: los crea el administrador desde la
+ficha del cliente. Así la clave inicial la escribe alguien que la va a
+comunicar, en vez de quedar una cuenta genérica que nadie recuerda desactivar.
 
 ## Desarrollo Local (sin Docker)
 

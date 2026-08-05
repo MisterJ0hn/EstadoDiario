@@ -18,6 +18,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.database import SesionMaestra
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.models.estado_diario import EstadoDiario
 from app.models.estado_diario_agenda import EstadoDiarioAgenda
@@ -93,7 +94,7 @@ CAMPOS: dict[str, dict[str, Campo]] = {
         _c("fecha_pendiente", "Fecha en que quedó pendiente",
            lambda m: _fecha(m.fecha_pendiente)),
         _c("usuario_pendiente", "Responsable",
-           lambda m: m.usuario_pendiente.username if m.usuario_pendiente else None),
+           lambda m: m.usuario_pendiente.usuario if m.usuario_pendiente else None),
     ]),
     ReportePlantilla.FUENTE_MOVIMIENTOS: dict([
         _c("materia", "Materia", lambda m: m.materia),
@@ -122,7 +123,7 @@ CAMPOS: dict[str, dict[str, Campo]] = {
         _c("fecha_finalizacion", "Fecha de finalización",
            lambda a: _fecha(a.fecha_finalizacion)),
         _c("usuario_registro", "Creado por",
-           lambda a: a.usuario_registro.username if a.usuario_registro else None),
+           lambda a: a.usuario_registro.usuario if a.usuario_registro else None),
         _c("notificar_whatsapp", "Notifica por WhatsApp",
            lambda a: _si_no(a.notificar_whatsapp)),
         _c("enviado", "WhatsApp enviado", lambda a: _si_no(a.enviado)),
@@ -327,7 +328,7 @@ class ReporteService:
         if plantilla is None:
             raise NotFoundException("Informe no encontrado")
 
-        if not current_user.email:
+        if not current_user.correo:
             raise BadRequestException(
                 "Su usuario no tiene un correo registrado. Agréguelo en su perfil "
                 "para poder recibir informes."
@@ -338,16 +339,19 @@ class ReporteService:
         hoy = datetime.now().strftime("%d-%m-%Y")
         nombre_archivo = f"{_slug(plantilla.nombre)}_{datetime.now():%Y%m%d_%H%M}.xlsx"
         cuerpo = (
-            f"Estimado/a {current_user.nombre or current_user.username}:\n\n"
+            f"Estimado/a {current_user.nombre or current_user.usuario}:\n\n"
             f"Adjunto encontrará el informe «{plantilla.nombre}» generado el {hoy}.\n\n"
             f"Fuente de datos: {ETIQUETA_FUENTE[plantilla.fuente]}\n"
             f"Campos incluidos: {', '.join(plantilla.lista_campos)}\n\n"
             "Este correo fue generado automáticamente por el sistema Estado Diario.\n"
         )
 
+        # La cuenta de envío vive en la base PRINCIPAL, no en la del cliente:
+        # se abre una sesión corta solo para eso y se cierra al terminar.
+        db_maestra = SesionMaestra()
         try:
-            SmtpService(self.db).enviar_con_adjunto(
-                destinatario=current_user.email,
+            SmtpService(db_maestra).enviar_con_adjunto(
+                destinatario=current_user.correo,
                 asunto=f"Informe: {plantilla.nombre} ({hoy})",
                 cuerpo=cuerpo,
                 adjunto=contenido,
@@ -358,14 +362,16 @@ class ReporteService:
             plantilla.ultimo_resultado = f"Error: {e}"
             self.db.commit()
             raise BadRequestException(str(e))
+        finally:
+            db_maestra.close()
 
         plantilla.ultima_generacion = datetime.now()
-        plantilla.ultimo_resultado = f"Enviado a {current_user.email}"
+        plantilla.ultimo_resultado = f"Enviado a {current_user.correo}"
         self.db.commit()
 
         return {
             "exito": True,
-            "mensaje": f"El informe fue enviado a {current_user.email}",
+            "mensaje": f"El informe fue enviado a {current_user.correo}",
             "archivo": nombre_archivo,
         }
 

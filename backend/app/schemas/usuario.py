@@ -1,3 +1,10 @@
+"""Contratos de los usuarios de un cliente.
+
+En la BASE DE DATOS las columnas se llaman `usuario`, `correo` y `telefono`, y
+guardan texto cifrado; en la API se exponen como `username` y `email`. La
+traducción está en `UsuarioService._a_response`, en un solo lugar.
+"""
+
 import re
 from datetime import datetime
 from typing import Annotated, Literal, Optional
@@ -11,16 +18,25 @@ Rol = Literal["admin", "usuario"]
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def _validar_direccion(v: Optional[str]) -> Optional[str]:
+    if v is None or not v.strip():
+        return None
+    v = v.strip()
+    if not _EMAIL_RE.match(v):
+        raise ValueError("Correo electrónico inválido")
+    return v.lower()
+
+
 class _ConEmail(BaseModel):
     email: Annotated[str, Field(max_length=255)]
 
     @field_validator("email")
     @classmethod
     def _validar_email(cls, v: str) -> str:
-        v = v.strip()
-        if not _EMAIL_RE.match(v):
+        validado = _validar_direccion(v)
+        if validado is None:
             raise ValueError("Correo electrónico inválido")
-        return v.lower()
+        return validado
 
 
 class UsuarioResponse(BaseModel):
@@ -28,16 +44,15 @@ class UsuarioResponse(BaseModel):
 
     id: int
     username: str
-    email: str
+    email: str | None
     nombre: str | None
     apellido: str | None
     telefono: str | None = None
     rol: str
     activo: bool
+    # Clave provisoria pendiente de cambio (la puso un administrador).
+    debe_cambiar_password: bool = False
     fecha_creacion: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class UsuarioListResponse(BaseModel):
@@ -58,7 +73,7 @@ class UsuarioCreate(_ConEmail):
 
 
 class UsuarioUpdate(_ConEmail):
-    """El username no se cambia: identifica al usuario en los registros."""
+    """El nombre de usuario no se cambia: identifica a la persona en los registros."""
 
     # Vacío o ausente = conservar la contraseña actual
     password: Optional[str] = Field(default=None, min_length=8, max_length=128)
@@ -67,3 +82,43 @@ class UsuarioUpdate(_ConEmail):
     telefono: Optional[str] = Field(default=None, max_length=30)
     rol: Rol = "usuario"
     activo: bool = True
+
+
+# ── Alta/edición desde la consola de administración de la plataforma ──
+# Van aparte de UsuarioCreate/UsuarioUpdate porque el correo acá es opcional:
+# el administrador de la plataforma da de alta usuarios de un estudio que puede
+# no tener todavía las direcciones, y esa alta no puede quedar bloqueada por
+# eso.
+
+
+class UsuarioAdminCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
+    # Clave inicial: el usuario queda obligado a cambiarla al entrar.
+    password: str = Field(..., min_length=8, max_length=128)
+    email: Optional[str] = Field(default=None, max_length=255)
+    nombre: Optional[str] = Field(default=None, max_length=200)
+    apellido: Optional[str] = Field(default=None, max_length=200)
+    telefono: Optional[str] = Field(default=None, max_length=30)
+    rol: Rol = "usuario"
+    activo: bool = True
+
+    @field_validator("email")
+    @classmethod
+    def _validar_email(cls, v: Optional[str]) -> Optional[str]:
+        return _validar_direccion(v)
+
+
+class UsuarioAdminUpdate(BaseModel):
+    # Vacío o ausente = conservar la contraseña actual.
+    password: Optional[str] = Field(default=None, min_length=8, max_length=128)
+    email: Optional[str] = Field(default=None, max_length=255)
+    nombre: Optional[str] = Field(default=None, max_length=200)
+    apellido: Optional[str] = Field(default=None, max_length=200)
+    telefono: Optional[str] = Field(default=None, max_length=30)
+    rol: Rol = "usuario"
+    activo: bool = True
+
+    @field_validator("email")
+    @classmethod
+    def _validar_email(cls, v: Optional[str]) -> Optional[str]:
+        return _validar_direccion(v)

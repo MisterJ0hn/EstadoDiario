@@ -13,7 +13,7 @@ from app.core.exceptions import BadRequestException, ConflictException, NotFound
 from app.core.security import get_password_hash
 from app.models.usuario import Usuario
 from app.repositories.usuario_repository import UsuarioRepository
-from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
+from app.schemas.usuario import UsuarioCreate, UsuarioResponse, UsuarioUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -22,41 +22,69 @@ class UsuarioService:
     def __init__(self, db: Session):
         self.repo = UsuarioRepository(db)
 
-    def listar(self) -> list[Usuario]:
-        return self.repo.find_all()
+    @staticmethod
+    def a_response(usuario: Usuario) -> UsuarioResponse:
+        """Traduce el modelo al contrato de la API.
 
-    def obtener(self, usuario_id: int) -> Usuario:
+        Acá se cruza la frontera de nombres: en la base las columnas son
+        `usuario` y `correo` (cifradas), en el JSON son `username` y `email`.
+        Las propiedades del modelo descifran al leer.
+        """
+        return UsuarioResponse(
+            id=usuario.id,
+            username=usuario.usuario,
+            email=usuario.correo,
+            nombre=usuario.nombre,
+            apellido=usuario.apellido,
+            telefono=usuario.telefono,
+            rol=usuario.rol,
+            activo=usuario.activo,
+            debe_cambiar_password=usuario.debe_cambiar_password,
+            fecha_creacion=usuario.fecha_creacion,
+        )
+
+    def listar(self) -> list[UsuarioResponse]:
+        return [self.a_response(u) for u in self.repo.find_all()]
+
+    def obtener(self, usuario_id: int) -> UsuarioResponse:
+        return self.a_response(self.obtener_entidad(usuario_id))
+
+    def obtener_entidad(self, usuario_id: int) -> Usuario:
         usuario = self.repo.find_by_id(usuario_id)
         if not usuario:
             raise NotFoundException("Usuario no encontrado")
         return usuario
 
-    def crear(self, datos: UsuarioCreate, admin: Usuario) -> Usuario:
-        username = datos.username.strip().lower()
+    def crear(self, datos: UsuarioCreate, admin: Usuario) -> UsuarioResponse:
+        nombre_usuario = datos.username.strip().lower()
 
-        if self.repo.find_by_username(username):
-            raise ConflictException(f"Ya existe un usuario con el nombre '{username}'")
-        if self.repo.find_by_email(datos.email):
+        # Las búsquedas van por el hash, no por la columna: `usuario` y
+        # `correo` están cifrados y no se pueden comparar en SQL.
+        if self.repo.find_by_usuario(nombre_usuario):
+            raise ConflictException(f"Ya existe un usuario con el nombre '{nombre_usuario}'")
+        if self.repo.find_by_correo(datos.email):
             raise ConflictException(f"Ya existe un usuario con el correo '{datos.email}'")
 
         usuario = Usuario(
-            username=username,
-            email=datos.email,
             password_hash=get_password_hash(datos.password),
             nombre=datos.nombre,
             apellido=datos.apellido,
-            telefono=datos.telefono,
             rol=datos.rol,
             activo=datos.activo,
         )
+        # Por los setters: cifran el valor y calculan el hash de búsqueda.
+        usuario.usuario = nombre_usuario
+        usuario.correo = datos.email
+        usuario.telefono = datos.telefono
+
         usuario = self.repo.create(usuario)
-        logger.info("Usuario '%s' creado por '%s'", usuario.username, admin.username)
-        return usuario
+        logger.info("Usuario '%s' creado por '%s'", nombre_usuario, admin.usuario)
+        return self.a_response(usuario)
 
-    def actualizar(self, usuario_id: int, datos: UsuarioUpdate, admin: Usuario) -> Usuario:
-        usuario = self.obtener(usuario_id)
+    def actualizar(self, usuario_id: int, datos: UsuarioUpdate, admin: Usuario) -> UsuarioResponse:
+        usuario = self.obtener_entidad(usuario_id)
 
-        existente = self.repo.find_by_email(datos.email)
+        existente = self.repo.find_by_correo(datos.email)
         if existente and existente.id != usuario.id:
             raise ConflictException(f"Ya existe un usuario con el correo '{datos.email}'")
 
@@ -69,7 +97,7 @@ class UsuarioService:
             if datos.rol != "admin":
                 raise BadRequestException("No puede quitarse a sí mismo el rol de administrador")
 
-        usuario.email = datos.email
+        usuario.correo = datos.email
         usuario.nombre = datos.nombre
         usuario.apellido = datos.apellido
         usuario.telefono = datos.telefono
@@ -78,8 +106,8 @@ class UsuarioService:
 
         if datos.password:
             usuario.password_hash = get_password_hash(datos.password)
-            logger.info("Contraseña de '%s' cambiada por '%s'", usuario.username, admin.username)
+            logger.info("Contraseña de '%s' cambiada por '%s'", usuario.usuario, admin.usuario)
 
         usuario = self.repo.save(usuario)
-        logger.info("Usuario '%s' actualizado por '%s'", usuario.username, admin.username)
-        return usuario
+        logger.info("Usuario '%s' actualizado por '%s'", usuario.usuario, admin.usuario)
+        return self.a_response(usuario)

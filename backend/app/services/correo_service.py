@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR
 from app.core.crypto import descifrar
-from app.models.configuracion_correo import ConfiguracionCorreo
+from app.models.maestra.configuracion_correo import ConfiguracionCorreo
 from app.models.correo_log import (
     CorreoLog,
     RESULTADO_CONEXION,
@@ -54,13 +54,24 @@ def _decodificar(valor: Optional[str]) -> str:
 
 
 class CorreoService:
-    def __init__(self, db: Session):
+    """Trabaja contra DOS bases a la vez, y por eso recibe dos sesiones.
+
+    La configuración de la casilla vive en la base principal (es por cliente) y
+    todo lo que se importa —archivos, movimientos, bitácora— va a la base de
+    ese cliente. Mezclarlas sería escribir el estado diario de un estudio en la
+    base de otro.
+    """
+
+    def __init__(self, db: Session, db_maestra: Session):
+        # Base del cliente: acá se escribe lo importado y la bitácora.
         self.db = db
-        self.config_repo = ConfiguracionCorreoRepository(db)
+        # Base principal: solo la configuración de la casilla.
+        self.config_repo = ConfiguracionCorreoRepository(db_maestra)
         self.log_repo = CorreoLogRepository(db)
-        # Dueño de la casilla que se está revisando. Se fija en revisar() y lo
-        # lee _log(), que se invoca desde una decena de puntos: pasarlo por
-        # parámetro en todos ellos era mucha superficie para olvidarse en uno.
+        # Usuario de la base del cliente a nombre de quien queda lo importado.
+        # Se fija en revisar() y lo lee _log(), que se invoca desde una decena
+        # de puntos: pasarlo por parámetro en todos ellos era mucha superficie
+        # para olvidarse en uno.
         self._usuario_actual: Optional[int] = None
 
     # ── Conexión ──────────────────────────────────────────
@@ -80,14 +91,14 @@ class CorreoService:
             raise ErrorConfiguracion("No hay contraseña guardada para la casilla de correo")
         return descifrar(config.password_cifrado)
 
-    def probar_conexion(self, usuario_id: int, password_override: Optional[str] = None) -> dict:
+    def probar_conexion(self, cliente_id: int, password_override: Optional[str] = None) -> dict:
         """Valida credenciales y carpeta sin importar nada, sobre la casilla
-        del usuario indicado.
+        del cliente indicado.
 
         `password_override` permite probar una contraseña recién escrita en el
         formulario antes de guardarla.
         """
-        config = self.config_repo.get_or_create(usuario_id)
+        config = self.config_repo.get_or_create(cliente_id)
         if not config.usuario:
             return {"exito": False, "mensaje": "Falta el usuario de la casilla"}
 
@@ -134,61 +145,15 @@ class CorreoService:
 
     # ── Ingesta ───────────────────────────────────────────
 
-    def revisar_todas(self, disparo: str = "automatico") -> dict:
-        """Recorre TODAS las casillas activas, una por usuario.
+    def revisar(self, cliente_id: int, usuario_id: int, disparo: str = "manual") -> dict:
+        """Recorre la casilla DEL CLIENTE indicado e importa sus adjuntos.
 
-        Es lo que ejecuta el job programado: ya no existe una casilla única del
-        sistema. Un fallo en la casilla de un usuario (credencial vencida, por
-        ejemplo) no puede impedir que se revisen las demás, así que cada una va
-        en su propio try.
+        `cliente_id` dice de qué casilla leer (base principal) y `usuario_id`
+        a nombre de quién queda lo importado dentro de la base del cliente.
+        Devuelve un resumen y deja una fila en correo_log por cada adjunto
+        evaluado, incluidos los descartados.
         """
-        configs = self.config_repo.find_activas()
-        if not configs:
-            return {
-                "exito": True,
-                "mensaje": "No hay casillas de correo activas configuradas",
-                "casillas": 0,
-                "procesados": 0,
-            }
-
-        total = {"importados": 0, "descartados": 0, "duplicados": 0, "errores": 0}
-        detalle_por_usuario = []
-
-        for config in configs:
-            try:
-                resultado = self.revisar(config.usuario_id, disparo)
-            except Exception as e:
-                logger.exception(
-                    "Fallo revisando la casilla del usuario %s", config.usuario_id
-                )
-                resultado = {"exito": False, "mensaje": str(e)}
-
-            detalle_por_usuario.append(
-                {
-                    "usuario_id": config.usuario_id,
-                    "exito": resultado.get("exito", False),
-                    "mensaje": resultado.get("mensaje", ""),
-                }
-            )
-            for clave in total:
-                total[clave] += resultado.get(clave, 0)
-
-        return {
-            "exito": True,
-            "casillas": len(configs),
-            "procesados": sum(total.values()),
-            "detalle": detalle_por_usuario,
-            **total,
-        }
-
-    def revisar(self, usuario_id: int, disparo: str = "manual") -> dict:
-        """Recorre la casilla DEL USUARIO indicado e importa sus adjuntos.
-
-        Todo lo que se importe queda a nombre de ese usuario y ningún otro lo
-        verá. Devuelve un resumen y deja una fila en correo_log por cada
-        adjunto evaluado, incluidos los descartados.
-        """
-        config = self.config_repo.get_or_create(usuario_id)
+        config = self.config_repo.get_or_create(cliente_id)
         self._usuario_actual = usuario_id
 
         if not config.activo:

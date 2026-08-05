@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.crypto import cifrar, descifrar
-from app.core.database import get_db
+from app.core.database import get_db_maestra
 from app.core.deps import require_admin
-from app.models.usuario import Usuario
+from app.models.maestra.usuario_admin import UsuarioAdmin
 from app.repositories.configuracion_whatsapp_repository import ConfiguracionWhatsappRepository
 from app.schemas.configuracion_whatsapp import (
     ConfiguracionWhatsappResponse,
@@ -40,8 +40,8 @@ def _a_response(config) -> ConfiguracionWhatsappResponse:
     response_model=ConfiguracionWhatsappResponse,
     summary="Obtener la configuración de Twilio/WhatsApp",
 )
-def obtener_configuracion(db: Session = Depends(get_db)):
-    return _a_response(ConfiguracionWhatsappRepository(db).get_or_create())
+def obtener_configuracion(db: Session = Depends(get_db_maestra)):
+    return _a_response(ConfiguracionWhatsappRepository(db).get_or_create(None))
 
 
 @router.put(
@@ -51,11 +51,11 @@ def obtener_configuracion(db: Session = Depends(get_db)):
 )
 def guardar_configuracion(
     datos: ConfiguracionWhatsappUpdate,
-    db: Session = Depends(get_db),
-    admin: Usuario = Depends(require_admin),
+    db: Session = Depends(get_db_maestra),
+    admin: UsuarioAdmin = Depends(require_admin),
 ):
     repo = ConfiguracionWhatsappRepository(db)
-    config = repo.get_or_create()
+    config = repo.get_or_create(None)
 
     config.activo = datos.activo
     config.twilio_account_sid = datos.twilio_account_sid
@@ -68,7 +68,7 @@ def guardar_configuracion(
         config.twilio_auth_token_cifrado = cifrar(datos.twilio_auth_token)
 
     repo.save(config)
-    logger.info("Configuración de WhatsApp actualizada por %s", admin.username)
+    logger.info("Configuración de WhatsApp actualizada por %s", admin.usuario)
     return _a_response(config)
 
 
@@ -77,11 +77,11 @@ def guardar_configuracion(
     response_model=OperacionResponse,
     summary="Probar las credenciales de Twilio sin enviar nada",
 )
-def probar_conexion(db: Session = Depends(get_db)):
+def probar_conexion(db: Session = Depends(get_db_maestra)):
     from twilio.base.exceptions import TwilioRestException
     from twilio.rest import Client
 
-    config = ConfiguracionWhatsappRepository(db).get_or_create()
+    config = ConfiguracionWhatsappRepository(db).get_or_create(None)
     if not config.twilio_account_sid or not config.twilio_auth_token_cifrado:
         return OperacionResponse(exito=False, mensaje="Falta el Account SID o el Auth Token")
 
