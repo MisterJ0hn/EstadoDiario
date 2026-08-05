@@ -52,3 +52,16 @@ pgdata/
 *.tmp
 *.bak
 *.orig
+
+# App móvil (Ionic + Capacitor)
+ionic_app/www/
+ionic_app/.angular/
+# Lo generado por Gradle. La carpeta android/ SÍ se versiona: lleva el
+# manifiesto y la configuración de red, que son parte del proyecto.
+ionic_app/android/build/
+ionic_app/android/app/build/
+ionic_app/android/.gradle/
+ionic_app/android/local.properties
+ionic_app/android/app/src/main/assets/public/
+ionic_app/android/app/src/main/assets/capacitor.config.json
+ionic_app/android/app/src/main/assets/capacitor.plugins.json

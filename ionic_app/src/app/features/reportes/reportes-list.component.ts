@@ -240,7 +240,9 @@ export class ReportesListComponent implements OnInit {
     this.service.descargar(p.id).subscribe({
       next: (blob) => {
         this.descargandoId.set(null);
-        descargarBlob(blob, nombreArchivoSeguro(p.nombre));
+        descargarBlob(blob, nombreArchivoSeguro(p.nombre), p.nombre).catch(() =>
+          this.mensaje.set('No se pudo guardar el informe')
+        );
       },
       error: (err) => {
         this.descargandoId.set(null);
