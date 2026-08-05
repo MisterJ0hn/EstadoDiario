@@ -80,10 +80,11 @@ class ImportService:
         # validación, reimportar el archivo duplica todos los movimientos, y
         # con la ingesta automática por correo eso ocurriría sin que nadie lo
         # note. Para recargar, primero hay que borrar el origen existente.
-        # La unicidad es por dueño: dos abogados pueden recibir legítimamente
-        # el estado diario del mismo RUT el mismo día en sus casillas.
+        # La unicidad es de todo el estudio: la base es de un solo cliente y la
+        # casilla de ingesta es una, así que el mismo RUT y fecha es el mismo
+        # archivo, lo suba quien lo suba.
         existente = self.origen_repo.find_by_rut_fecha(
-            rut, fecha, usuario_id, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
+            rut, fecha, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
         )
         if existente:
             raise ValueError(

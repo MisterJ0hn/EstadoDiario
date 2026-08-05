@@ -31,6 +31,7 @@ from app.schemas.reporte import (
     ReportePlantillaRequest,
     ReportePlantillaResponse,
 )
+from app.services.estado_diario_service import EstadoDiarioService
 from app.services.reporte_service import ReporteService
 from app.services.smtp_service import XLSX_MIME, SmtpService
 
@@ -39,8 +40,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
 
-def _alcance(current_user: Usuario):
-    """Misma convención que el resto del sistema: None = admin (ve todo)."""
+def _dueno_plantillas(current_user: Usuario):
+    """Dueño de las PLANTILLAS de informe. `None` = admin (las ve todas).
+
+    Ojo: esto **no** es el permiso de visibilidad de los datos. Una plantilla
+    es un artefacto personal —el informe que alguien armó y programó— y sigue
+    siendo de quien la creó. Qué filas trae al ejecutarla es otra cosa, y la
+    decide `EstadoDiarioService.alcance()` según sus jurisdicciones.
+
+    Son dos alcances distintos sobre la misma pantalla y confundirlos deja a
+    alguien viendo causas ajenas o sin sus propios informes.
+    """
     return None if current_user.rol == "admin" else current_user.id
 
 
@@ -66,7 +76,7 @@ def listar(
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
-    plantillas = ReporteRepository(db).find_by_usuario(_alcance(current_user))
+    plantillas = ReporteRepository(db).find_by_usuario(_dueno_plantillas(current_user))
     return ReportePlantillaListResponse(
         total=len(plantillas),
         plantillas=[ReportePlantillaResponse.from_model(p) for p in plantillas],
@@ -108,7 +118,7 @@ def obtener(
     """Va declarado DESPUÉS de /campos a propósito: FastAPI resuelve por orden
     de declaración y `/{plantilla_id}` capturaría esa ruta literal si fuera
     primero (devolviendo 422 al intentar leer "campos" como entero)."""
-    plantilla = ReporteRepository(db).find_by_id(plantilla_id, _alcance(current_user))
+    plantilla = ReporteRepository(db).find_by_id(plantilla_id, _dueno_plantillas(current_user))
     if plantilla is None:
         raise NotFoundException("Informe no encontrado")
     return ReportePlantillaResponse.from_model(plantilla)
@@ -126,7 +136,7 @@ def actualizar(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = ReporteRepository(db)
-    plantilla = repo.find_by_id(plantilla_id, _alcance(current_user))
+    plantilla = repo.find_by_id(plantilla_id, _dueno_plantillas(current_user))
     if plantilla is None:
         raise NotFoundException("Informe no encontrado")
 
@@ -146,7 +156,7 @@ def eliminar(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = ReporteRepository(db)
-    plantilla = repo.find_by_id(plantilla_id, _alcance(current_user))
+    plantilla = repo.find_by_id(plantilla_id, _dueno_plantillas(current_user))
     if plantilla is None:
         raise NotFoundException("Informe no encontrado")
     repo.delete(plantilla)
@@ -190,12 +200,16 @@ def descargar(
     import io
 
     servicio = ReporteService(db)
-    alcance = _alcance(current_user)
-    plantilla = ReporteRepository(db).find_by_id(plantilla_id, alcance)
+    plantilla = ReporteRepository(db).find_by_id(
+        plantilla_id, _dueno_plantillas(current_user)
+    )
     if plantilla is None:
         raise NotFoundException("Informe no encontrado")
 
-    contenido = servicio.generar_excel(plantilla, alcance)
+    # El contenido se acota por jurisdicción, no por dueño de la plantilla.
+    contenido = servicio.generar_excel(
+        plantilla, EstadoDiarioService.alcance(db, current_user)
+    )
     nombre = f"{plantilla.nombre.replace(' ', '_')}.xlsx"
     return StreamingResponse(
         io.BytesIO(contenido),

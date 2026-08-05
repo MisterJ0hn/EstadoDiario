@@ -4,7 +4,7 @@ Dos pasos, ambos idempotentes, para que un alta a medio terminar se pueda
 reintentar sin dejar nada duplicado:
 
 1. `crear_base_datos()` — `CREATE DATABASE` si no existe.
-2. `inicializar_esquema()` — las 12 tablas y los datos semilla.
+2. `inicializar_esquema()` — las 13 tablas y los datos semilla.
 
 **Por qué AUTOCOMMIT:** en PostgreSQL `CREATE DATABASE` no puede correr dentro
 de un bloque de transacción, y SQLAlchemy abre una implícita en cada conexión.
@@ -95,7 +95,7 @@ def crear_base_datos(guid: str) -> str:
 
 
 def inicializar_esquema(guid: str) -> None:
-    """Crea las 12 tablas del cliente y siembra sus datos iniciales.
+    """Crea las 13 tablas del cliente y siembra sus datos iniciales.
 
     NO crea usuarios: el cliente nace sin nadie adentro y el administrador de
     la plataforma los da de alta después, desde la ficha. Así la clave de la

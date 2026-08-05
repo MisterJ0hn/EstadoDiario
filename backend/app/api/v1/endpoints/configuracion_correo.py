@@ -3,18 +3,21 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.crypto import cifrar
 from app.core.database import get_db_maestra
-from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
+from app.core.deps import (
+    TenantContexto,
+    get_db_tenant,
+    get_tenant_actual,
+    get_usuario_actual,
+    require_admin_cliente,
+)
 from app.models.usuario import Usuario
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.correo_log_repository import CorreoLogRepository
 from app.schemas.configuracion_correo import (
     ConfiguracionCorreoResponse,
-    ConfiguracionCorreoUpdate,
     CorreoLogListResponse,
     OperacionResponse,
-    ProbarConexionRequest,
     RevisarResponse,
 )
 from app.services.correo_service import CorreoService
@@ -25,9 +28,17 @@ logger = logging.getLogger(__name__)
 # en la base principal, no en la del cliente. Ningún endpoint de acá recibe un
 # id por parámetro: el cliente sale del token, y así no hay forma de leer ni
 # escribir la credencial de otro estudio.
+#
+# **El estudio ya no configura su casilla.** De qué casilla se lee determina en
+# qué base termina cada archivo, así que es decisión de la plataforma
+# (/api/v1/admin/clientes/{id}/inbox). Al estudio le queda ver cómo va la
+# ingesta: la configuración en modo lectura, forzar una revisión y la bitácora.
+# Todo eso exige ser administrador DEL ESTUDIO — quién recibe las causas y con
+# qué credencial no es información de cualquiera.
 router = APIRouter(
     prefix="/configuracion-correo",
     tags=["Configuración de Correo"],
+    dependencies=[Depends(require_admin_cliente)],
 )
 
 
@@ -68,59 +79,21 @@ def obtener_configuracion(
     )
 
 
-@router.put(
-    "",
-    response_model=ConfiguracionCorreoResponse,
-    summary="Guardar la configuración de la casilla de correo",
-)
-def guardar_configuracion(
-    datos: ConfiguracionCorreoUpdate,
-    db_maestra: Session = Depends(get_db_maestra),
-    tenant: TenantContexto = Depends(get_tenant_actual),
-    current_user: Usuario = Depends(get_usuario_actual),
-):
-    repo = ConfiguracionCorreoRepository(db_maestra)
-    config = repo.get_or_create(tenant.cliente_id)
-
-    config.activo = datos.activo
-    config.host = datos.host
-    config.puerto = datos.puerto
-    config.usar_ssl = datos.usar_ssl
-    config.usuario = datos.usuario
-    config.carpeta = datos.carpeta
-    config.remitentes_permitidos = datos.remitentes_permitidos
-    config.asunto_contiene = datos.asunto_contiene
-    config.asunto_estado_diario = datos.asunto_estado_diario
-    config.asunto_movimientos = datos.asunto_movimientos
-    config.asunto_audiencias = datos.asunto_audiencias
-    config.rut = datos.rut.strip() if datos.rut else None
-    config.max_tamano_mb = datos.max_tamano_mb
-    config.hora_ejecucion = datos.hora_ejecucion
-    config.marcar_como_leido = datos.marcar_como_leido
-
-    # Campo vacío = no se quiso cambiar la contraseña existente
-    if datos.password:
-        config.password_cifrado = cifrar(datos.password)
-
-    repo.save(config)
-    logger.info("Configuración de correo actualizada por %s", current_user.usuario)
-    return _a_response(config)
-
-
 @router.post(
     "/probar-conexion",
     response_model=OperacionResponse,
     summary="Probar la conexión IMAP sin importar nada",
 )
 def probar_conexion(
-    datos: ProbarConexionRequest | None = None,
     db: Session = Depends(get_db_tenant),
     db_maestra: Session = Depends(get_db_maestra),
     tenant: TenantContexto = Depends(get_tenant_actual),
 ):
-    resultado = CorreoService(db, db_maestra).probar_conexion(
-        tenant.cliente_id, password_override=datos.password if datos else None
-    )
+    """Comprueba que la casilla del estudio responda, con la credencial ya
+    guardada. No acepta una contraseña por parámetro: el estudio no puede
+    guardarla, así que probar otra distinta solo serviría para tantear
+    credenciales ajenas contra el servidor de correo."""
+    resultado = CorreoService(db, db_maestra).probar_conexion(tenant.cliente_id)
     return OperacionResponse(**resultado)
 
 
@@ -160,9 +133,10 @@ def listar_log(
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
+    # Sin filtro por usuario: la casilla es una sola y del estudio, así que su
+    # bitácora también. Solo la ve el administrador (ver el router).
     items, total, total_pages = CorreoLogRepository(db).find_all_paginated(
-        None if current_user.rol == "admin" else current_user.id,
-        page, per_page, resultado,
+        None, page, per_page, resultado,
     )
     return CorreoLogListResponse(
         total=total, page=page, total_pages=total_pages, registros=items,

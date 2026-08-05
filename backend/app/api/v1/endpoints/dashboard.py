@@ -3,12 +3,14 @@
 `GET /api/v1/dashboard?dias=30` devuelve KPIs, series y agregados. La página de
 inicio hace una sola llamada; por eso no hay ocho endpoints.
 
-Aislamiento por usuario: el alcance se resuelve **una vez** con
-`EstadoDiarioService.alcance(current_user)` (None = admin, ve todo) y se pasa a
-cada una de las consultas del repositorio, que lo aplican sobre
-`estado_diario_origen.usuario_carga_id` (estados diarios) o
-`estado_diario_agenda.usuario_registro_id` (recordatorios). Acá no se
-reimplementa la regla.
+Permiso de visibilidad: el alcance se resuelve **una vez** con
+`EstadoDiarioService.alcance(db, current_user)` (None = sin restricción) y se
+pasa a cada una de las consultas del repositorio, que lo aplican sobre
+`estado_diario.jurisdiccion_id` o, para los recordatorios, sobre la
+jurisdicción de su causa. Acá no se reimplementa la regla.
+
+Los números tienen que cuadrar con lo que la persona puede abrir: un KPI que
+sume causas invisibles la manda a buscar algo que no va a encontrar.
 """
 
 import logging
@@ -161,9 +163,9 @@ def obtener_dashboard(
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
-    # Un solo alcance para todas las consultas: None = admin (ve todo),
-    # id del usuario en cualquier otro caso.
-    alcance = EstadoDiarioService.alcance(current_user)
+    # Un solo alcance para todas las consultas: las jurisdicciones que este
+    # usuario puede ver, o None = sin restricción.
+    alcance = EstadoDiarioService.alcance(db, current_user)
 
     zona = _zona()
     ahora = datetime.now(zona)
@@ -241,5 +243,7 @@ def obtener_dashboard(
             hasta_audiencias,
             repo.ultima_fecha_audiencia(alcance),
         ),
-        aviso_carga=_armar_aviso(repo.ultima_fecha_archivo(alcance), hasta),
+        # Sin alcance: la pregunta es si llegó el archivo del estudio, y eso no
+        # depende de qué materias traiga adentro.
+        aviso_carga=_armar_aviso(repo.ultima_fecha_archivo(), hasta),
     )

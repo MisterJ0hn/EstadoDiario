@@ -1,7 +1,7 @@
 """Alta y administración de clientes. Solo lo usa el administrador del sistema.
 
 Crear un cliente son dos cosas que hay que dejar consistentes: la fila en la
-base principal y la base de datos propia con sus 12 tablas. No se pueden hacer
+base principal y la base de datos propia con sus 13 tablas. No se pueden hacer
 en una sola transacción —`CREATE DATABASE` no corre dentro de una— así que el
 orden importa: primero se guarda el cliente en estado `pendiente`, después se
 crea la base, y solo si eso resultó queda en `listo`.

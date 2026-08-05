@@ -61,6 +61,40 @@ class UsuarioListResponse(BaseModel):
     usuarios: list[UsuarioResponse]
 
 
+# ── Permisos de visibilidad (los asigna el admin del estudio) ──
+
+
+class JurisdiccionOpcion(BaseModel):
+    """Jurisdicción disponible para asignar. Va en la respuesta del listado
+    para que la pantalla no tenga que pedir el catálogo aparte."""
+
+    id: int
+    nombre: str
+
+
+class PermisosUsuario(BaseModel):
+    usuario_id: int
+    username: str
+    nombre_completo: str
+    rol: str
+    activo: bool
+    # Ids de las jurisdicciones que puede ver. **Vacío = ve todas.**
+    jurisdicciones: list[int]
+
+
+class PermisosUsuarioListResponse(BaseModel):
+    exito: bool = True
+    total: int
+    jurisdicciones: list[JurisdiccionOpcion]
+    usuarios: list[PermisosUsuario]
+
+
+class PermisosUsuarioUpdate(BaseModel):
+    # Reemplaza la asignación completa. Vacío = sin restricción (ve todas), no
+    # "no ve nada": ver el endpoint.
+    jurisdicciones: list[int] = Field(default_factory=list)
+
+
 class UsuarioCreate(_ConEmail):
     username: str = Field(..., min_length=3, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
     password: str = Field(..., min_length=8, max_length=128)

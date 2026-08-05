@@ -24,7 +24,7 @@ base de datos por cliente**.
                     │                                       │
                     │  estado_diario_<guid>   (cliente A)   │
                     │  estado_diario_<guid>   (cliente B)   │
-                    │   └ las 12 tablas operativas          │
+                    │   └ las 13 tablas operativas          │
                     └───────────────────────────────────────┘
 ```
 
@@ -47,7 +47,7 @@ si no calza, la request se rechaza con 403.
 Hay dos `DeclarativeBase` separadas porque `usuario` existe en las dos bases con
 columnas distintas: `BaseMaestra` (base principal) y `BaseTenant` (base de
 cliente). Con un solo `MetaData` serían la misma tabla y `create_all()` crearía
-las 12 tablas del cliente dentro de la base principal.
+las 13 tablas del cliente dentro de la base principal.
 
 ### Esquema sin Alembic
 
@@ -67,6 +67,56 @@ Producción corre PostgreSQL 9.2, que no entiende `ADD COLUMN IF NOT EXISTS`
 (9.6), `CREATE INDEX IF NOT EXISTS` (9.5) ni `FILTER (...)` en los agregados
 (9.4). La idempotencia se resuelve consultando `information_schema` y
 `pg_indexes` antes de cada DDL.
+
+### Quién puede hacer qué
+
+Hay **tres roles** y conviene no confundirlos, porque dos se llaman parecido:
+
+| Rol | Dónde vive | Qué decide |
+|-----|-----------|------------|
+| Administrador de la plataforma (`superadmin`) | base principal | Los clientes, sus usuarios y sus casillas de ingesta |
+| Administrador del estudio (`admin`) | base del cliente | **Qué ve cada usuario de su estudio** |
+| Usuario (`usuario`) | base del cliente | Nada de configuración; opera sus causas |
+
+El estudio **no** crea usuarios ni configura su casilla de correo: de qué
+casilla se lee determina en qué base entra cada archivo, así que es decisión de
+la plataforma. Lo que el administrador del estudio reparte es visibilidad.
+
+### Visibilidad dentro de un estudio: por jurisdicción
+
+`usuario_jurisdiccion` (usuario_id, jurisdiccion_id) dice qué jurisdicciones ve
+cada persona. La regla, resuelta en **un solo lugar**
+(`EstadoDiarioService.alcance()`):
+
+- administrador del estudio → ve todo;
+- **sin filas asignadas → ve todo** (nadie le restringió nada);
+- con filas → solo esas jurisdicciones, más lo que quedó **sin clasificar**.
+
+Dos decisiones que parecen descuidos y no lo son:
+
+**Lista vacía = ve todas, no "no ve nada".** Un estudio que nunca abrió la
+pantalla de permisos sigue funcionando igual, y no hay forma de dejar a alguien
+con el sistema en blanco: una cuenta que no ve nada se reporta como falla, no
+como falta de permisos. Para cortar el acceso se desactiva la cuenta.
+
+**Lo sin jurisdicción lo ve todo el mundo.** El parser no siempre logra
+clasificar una causa. Esconderla sería más estricto, pero la haría desaparecer
+sin que nadie lo note: nadie echa de menos una causa que no sabe que existe.
+
+Antes el criterio era el **dueño del archivo** (`usuario_carga_id`). Dejó de
+servir al pasar a una casilla de ingesta por estudio: todo lo importado queda a
+nombre de un solo usuario y el resto del estudio no veía nada. `usuario_carga_id`
+sobrevive como dato de auditoría.
+
+No todo se acota igual, y la diferencia importa:
+
+| Qué | Alcance | Por qué |
+|-----|---------|---------|
+| Causas, movimientos, audiencias | jurisdicción | Es el permiso |
+| Recordatorios | jurisdicción de SU causa | Si ve la causa, tiene que saber que un colega ya la agendó |
+| Archivos recibidos | ninguno, son del estudio | Esconderlos dejaría sin saber si llegó el estado diario del día |
+| Plantillas de informe | dueño | Es un artefacto personal; su CONTENIDO sí va por jurisdicción |
+| Credencial de Google Calendar | dueño | Es la cuenta de esa persona |
 
 ### Datos personales cifrados
 
@@ -114,7 +164,7 @@ backend/
 │   ├── services/
 │   │   ├── auth_service.py         # Dos flujos: admin y cliente
 │   │   ├── cliente_service.py      # Alta y ficha del cliente
-│   │   ├── aprovisionamiento_service.py  # CREATE DATABASE + 12 tablas
+│   │   ├── aprovisionamiento_service.py  # CREATE DATABASE + 13 tablas
 │   │   ├── admin_cliente_service.py      # Operar SOBRE un cliente
 │   │   └── admin_dashboard_service.py
 │   ├── api/v1/
@@ -248,7 +298,7 @@ frontend/src/app/
 
 ### Base de cada cliente (`estado_diario_<guid>`)
 
-Las 12 tablas operativas. El esquema es idéntico en todas; lo que cambia es a
+Las 13 tablas operativas. El esquema es idéntico en todas; lo que cambia es a
 cuál se conecta la request.
 
 ```
@@ -330,6 +380,19 @@ principal; algunas operaciones abren además la base del cliente indicado.
 | POST     | /api/v1/admin/clientes/{id}/inbox/probar          | Probar la conexión IMAP              |
 | GET/POST | /api/v1/admin/clientes/{id}/usuarios              | Usuarios, **en la base del cliente** |
 | PUT      | /api/v1/admin/clientes/{id}/usuarios/{uid}        | Editar / resetear clave              |
+
+### Dentro del estudio
+
+| Método  | Ruta                                  | Quién                  |
+|---------|---------------------------------------|------------------------|
+| GET     | /api/v1/usuarios                      | admin del estudio      |
+| GET     | /api/v1/usuarios/permisos             | admin del estudio      |
+| PUT     | /api/v1/usuarios/{id}/permisos        | admin del estudio      |
+| GET     | /api/v1/configuracion-correo          | admin del estudio (solo lectura) |
+| GET     | /api/v1/configuracion-correo/log      | admin del estudio      |
+
+No existen `POST /usuarios` ni `PUT /configuracion-correo`: crear cuentas y
+configurar la casilla son de la plataforma.
 | GET/PUT  | /api/v1/admin/configuracion/sistema               | Política de permanencia del log      |
 | POST     | /api/v1/admin/configuracion/sistema/purgar-log    | Purgar la bitácora de todos          |
 

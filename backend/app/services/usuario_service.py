@@ -1,19 +1,23 @@
-"""Alta y mantención de usuarios. Solo para administradores.
+"""Lectura de los usuarios del estudio, desde el propio estudio.
 
-No existe borrado: las tablas de estado diario referencian usuario.id (quién
-subió el archivo, quién marcó leído o pendiente), así que un usuario que ya no
-trabaja se desactiva y conserva su historial.
+**El alta y la edición ya no viven acá**: las hace la plataforma, en
+`AdminClienteService` (`/api/v1/admin/clientes/{id}/usuarios`). Quien contrata
+el servicio decide cuántas cuentas hay y quién las tiene; el administrador del
+estudio decide qué ve cada una (`UsuarioJurisdiccionRepository`).
+
+Nunca existió borrado y sigue sin existir: las tablas operativas referencian
+usuario.id (quién subió el archivo, quién marcó leído o pendiente), así que un
+usuario que ya no trabaja se desactiva y conserva su historial.
 """
 
 import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import BadRequestException, ConflictException, NotFoundException
-from app.core.security import get_password_hash
+from app.core.exceptions import NotFoundException
 from app.models.usuario import Usuario
 from app.repositories.usuario_repository import UsuarioRepository
-from app.schemas.usuario import UsuarioCreate, UsuarioResponse, UsuarioUpdate
+from app.schemas.usuario import UsuarioResponse
 
 logger = logging.getLogger(__name__)
 
@@ -54,60 +58,3 @@ class UsuarioService:
         if not usuario:
             raise NotFoundException("Usuario no encontrado")
         return usuario
-
-    def crear(self, datos: UsuarioCreate, admin: Usuario) -> UsuarioResponse:
-        nombre_usuario = datos.username.strip().lower()
-
-        # Las búsquedas van por el hash, no por la columna: `usuario` y
-        # `correo` están cifrados y no se pueden comparar en SQL.
-        if self.repo.find_by_usuario(nombre_usuario):
-            raise ConflictException(f"Ya existe un usuario con el nombre '{nombre_usuario}'")
-        if self.repo.find_by_correo(datos.email):
-            raise ConflictException(f"Ya existe un usuario con el correo '{datos.email}'")
-
-        usuario = Usuario(
-            password_hash=get_password_hash(datos.password),
-            nombre=datos.nombre,
-            apellido=datos.apellido,
-            rol=datos.rol,
-            activo=datos.activo,
-        )
-        # Por los setters: cifran el valor y calculan el hash de búsqueda.
-        usuario.usuario = nombre_usuario
-        usuario.correo = datos.email
-        usuario.telefono = datos.telefono
-
-        usuario = self.repo.create(usuario)
-        logger.info("Usuario '%s' creado por '%s'", nombre_usuario, admin.usuario)
-        return self.a_response(usuario)
-
-    def actualizar(self, usuario_id: int, datos: UsuarioUpdate, admin: Usuario) -> UsuarioResponse:
-        usuario = self.obtener_entidad(usuario_id)
-
-        existente = self.repo.find_by_correo(datos.email)
-        if existente and existente.id != usuario.id:
-            raise ConflictException(f"Ya existe un usuario con el correo '{datos.email}'")
-
-        # Un admin no puede dejarse a sí mismo sin acceso ni sin rol. Esto basta
-        # para garantizar que siempre quede al menos un administrador activo:
-        # solo un admin activo llega hasta aquí, y no puede degradarse.
-        if usuario.id == admin.id:
-            if not datos.activo:
-                raise BadRequestException("No puede desactivar su propia cuenta")
-            if datos.rol != "admin":
-                raise BadRequestException("No puede quitarse a sí mismo el rol de administrador")
-
-        usuario.correo = datos.email
-        usuario.nombre = datos.nombre
-        usuario.apellido = datos.apellido
-        usuario.telefono = datos.telefono
-        usuario.rol = datos.rol
-        usuario.activo = datos.activo
-
-        if datos.password:
-            usuario.password_hash = get_password_hash(datos.password)
-            logger.info("Contraseña de '%s' cambiada por '%s'", usuario.usuario, admin.usuario)
-
-        usuario = self.repo.save(usuario)
-        logger.info("Usuario '%s' actualizado por '%s'", usuario.usuario, admin.usuario)
-        return self.a_response(usuario)

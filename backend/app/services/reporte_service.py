@@ -16,6 +16,7 @@ from typing import Callable, Optional
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import SesionMaestra
@@ -181,11 +182,13 @@ class ReporteService:
 
     # ── Consulta ──────────────────────────────────────────
 
-    def _consultar(self, fuente: str, filtros: dict, scope_usuario_id: Optional[int]):
-        """Filas del informe, ya acotadas al dueño.
+    def _consultar(self, fuente: str, filtros: dict, jurisdicciones: Optional[list[int]]):
+        """Filas del informe, ya acotadas a lo que el usuario puede ver.
 
-        `scope_usuario_id=None` = admin (sin filtro), misma convención que el
-        resto del sistema.
+        `jurisdicciones=None` = sin restricción, misma convención que el resto
+        del sistema. Lo sin clasificar entra siempre, igual que en las
+        pantallas: un informe que calla filas que la persona sí ve en el
+        listado sería peor que uno que trae de más.
         """
         if fuente == ReportePlantilla.FUENTE_MOVIMIENTOS:
             query = (
@@ -193,8 +196,13 @@ class ReporteService:
                 .join(Movimiento.estado_diario_origen)
                 .options(joinedload(Movimiento.estado_diario_origen))
             )
-            if scope_usuario_id is not None:
-                query = query.filter(EstadoDiarioOrigen.usuario_carga_id == scope_usuario_id)
+            if jurisdicciones is not None:
+                query = query.filter(
+                    or_(
+                        Movimiento.jurisdiccion_id.in_(jurisdicciones),
+                        Movimiento.jurisdiccion_id.is_(None),
+                    )
+                )
             if filtros.get("materia"):
                 query = query.filter(Movimiento.materia == filtros["materia"])
             if filtros.get("estado_causa"):
@@ -210,9 +218,14 @@ class ReporteService:
                     joinedload(EstadoDiarioAgenda.usuario_registro),
                 )
             )
-            if scope_usuario_id is not None:
-                query = query.filter(
-                    EstadoDiarioAgenda.usuario_registro_id == scope_usuario_id
+            if jurisdicciones is not None:
+                # Por la jurisdicción de la CAUSA del recordatorio, igual que
+                # en EstadoDiarioAgendaRepository.
+                query = query.join(EstadoDiarioAgenda.estado_diario).filter(
+                    or_(
+                        EstadoDiario.jurisdiccion_id.in_(jurisdicciones),
+                        EstadoDiario.jurisdiccion_id.is_(None),
+                    )
                 )
             estado = filtros.get("estado")
             if estado == "vigentes":
@@ -237,8 +250,13 @@ class ReporteService:
                 joinedload(EstadoDiario.usuario_pendiente),
             )
         )
-        if scope_usuario_id is not None:
-            query = query.filter(EstadoDiarioOrigen.usuario_carga_id == scope_usuario_id)
+        if jurisdicciones is not None:
+            query = query.filter(
+                or_(
+                    EstadoDiario.jurisdiccion_id.in_(jurisdicciones),
+                    EstadoDiario.jurisdiccion_id.is_(None),
+                )
+            )
 
         estado = filtros.get("estado")
         if estado == "resuelto":
@@ -272,10 +290,12 @@ class ReporteService:
 
     # ── Excel ─────────────────────────────────────────────
 
-    def generar_excel(self, plantilla: ReportePlantilla, scope_usuario_id: Optional[int]) -> bytes:
+    def generar_excel(
+        self, plantilla: ReportePlantilla, jurisdicciones: Optional[list[int]]
+    ) -> bytes:
         campos = self.validar(plantilla.fuente, plantilla.lista_campos)
         catalogo = CAMPOS[plantilla.fuente]
-        filas = self._consultar(plantilla.fuente, plantilla.dict_filtros, scope_usuario_id)
+        filas = self._consultar(plantilla.fuente, plantilla.dict_filtros, jurisdicciones)
 
         wb = Workbook()
         ws = wb.active
@@ -323,8 +343,11 @@ class ReporteService:
     def generar_y_enviar(self, plantilla_id: int, current_user) -> dict:
         from app.repositories.reporte_repository import ReporteRepository
 
-        scope = None if current_user.rol == "admin" else current_user.id
-        plantilla = ReporteRepository(self.db).find_by_id(plantilla_id, scope)
+        # Dueño de la plantilla (artefacto personal) y permiso sobre los datos
+        # (jurisdicciones) son dos alcances distintos: ver `_dueno_plantillas`
+        # en app/api/v1/endpoints/reportes.py.
+        dueno = None if current_user.rol == "admin" else current_user.id
+        plantilla = ReporteRepository(self.db).find_by_id(plantilla_id, dueno)
         if plantilla is None:
             raise NotFoundException("Informe no encontrado")
 
@@ -334,7 +357,11 @@ class ReporteService:
                 "para poder recibir informes."
             )
 
-        contenido = self.generar_excel(plantilla, scope)
+        from app.services.estado_diario_service import EstadoDiarioService
+
+        contenido = self.generar_excel(
+            plantilla, EstadoDiarioService.alcance(self.db, current_user)
+        )
 
         hoy = datetime.now().strftime("%d-%m-%Y")
         nombre_archivo = f"{_slug(plantilla.nombre)}_{datetime.now():%Y%m%d_%H%M}.xlsx"

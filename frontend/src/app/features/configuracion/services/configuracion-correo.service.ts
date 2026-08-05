@@ -4,12 +4,18 @@ import { Observable } from 'rxjs';
 import { environment } from '@env/environment';
 import {
   ConfiguracionCorreo,
-  ConfiguracionCorreoUpdate,
   CorreoLogListResponse,
   OperacionResponse,
   RevisarResponse,
 } from '@core/models/configuracion-correo.model';
 
+/**
+ * Casilla de ingesta del estudio, en **solo lectura**.
+ *
+ * La configura la plataforma (`/admin/clientes/{id}/inbox`), no el estudio: de
+ * qué casilla se lee determina en qué base entra cada archivo. Al estudio le
+ * queda mirar cómo va la ingesta, y solo a su administrador.
+ */
 @Injectable({ providedIn: 'root' })
 export class ConfiguracionCorreoService {
   private readonly apiUrl = `${environment.apiUrl}/configuracion-correo`;
@@ -19,15 +25,9 @@ export class ConfiguracionCorreoService {
     return this.http.get<ConfiguracionCorreo>(this.apiUrl);
   }
 
-  save(datos: ConfiguracionCorreoUpdate): Observable<ConfiguracionCorreo> {
-    return this.http.put<ConfiguracionCorreo>(this.apiUrl, datos);
-  }
-
-  /** `password` permite probar una contraseña recién escrita sin guardarla */
-  probarConexion(password?: string | null): Observable<OperacionResponse> {
-    return this.http.post<OperacionResponse>(`${this.apiUrl}/probar-conexion`, {
-      password: password || null,
-    });
+  /** Comprueba que la casilla responda, con la credencial ya guardada. */
+  probarConexion(): Observable<OperacionResponse> {
+    return this.http.post<OperacionResponse>(`${this.apiUrl}/probar-conexion`, {});
   }
 
   revisarAhora(): Observable<RevisarResponse> {

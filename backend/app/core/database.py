@@ -5,13 +5,13 @@ Hay dos esquemas distintos y por lo tanto dos `DeclarativeBase` separadas:
 - `BaseMaestra` → base principal (`estado_diario`): `cliente`, los usuarios
   administradores del sistema y las configuraciones. Es una sola, fija, y la
   conoce el proceso desde que arranca.
-- `BaseTenant` → base de cada cliente (`estado_diario_<guid>`): las 12 tablas
+- `BaseTenant` → base de cada cliente (`estado_diario_<guid>`): las 13 tablas
   operativas. El esquema es idéntico en todas; lo que cambia es a cuál se
   conecta la request.
 
 Están separadas a propósito y no por prolijidad: `usuario` existe en las dos
 con columnas distintas (el admin del sistema y el usuario del cliente). Con un
-solo `MetaData` serían la misma tabla y `create_all()` crearía las 12 tablas
+solo `MetaData` serían la misma tabla y `create_all()` crearía las 13 tablas
 del cliente dentro de la base principal.
 
 **Cómo sabe la request a qué base ir:** el JWT del usuario de cliente lleva el

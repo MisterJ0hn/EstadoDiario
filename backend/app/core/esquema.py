@@ -69,7 +69,7 @@ INDICES_UNICOS_MAESTRA: list[tuple[str, str, str]] = [
 INDICES_UNICOS_TENANT: list[tuple[str, str, str]] = []
 
 
-# Las 12 tablas que debe tener la base de un cliente. Es una verificación, no
+# Las 13 tablas que debe tener la base de un cliente. Es una verificación, no
 # la fuente: las crea BaseTenant.metadata. Si alguien declara un modelo con la
 # Base equivocada, la base del cliente queda incompleta y esto lo delata al
 # aprovisionar en vez de a las semanas, con un "relation does not exist".
@@ -86,6 +86,7 @@ TABLAS_TENANT = (
     "movimiento",
     "reporte_plantilla",
     "usuario",
+    "usuario_jurisdiccion",
 )
 
 

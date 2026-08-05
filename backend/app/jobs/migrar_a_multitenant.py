@@ -17,7 +17,7 @@ Qué hace, en orden:
    `create_all()` no altera una tabla que ya existe, así que dejarlas en su
    lugar haría que la base principal arrancara con columnas faltantes.
 2. Crea el esquema de la base principal ya con la forma nueva.
-3. Da de alta el cliente y **crea su base de datos** con las 12 tablas.
+3. Da de alta el cliente y **crea su base de datos** con las 13 tablas.
 4. Copia a esa base los usuarios (cifrando `usuario`, `correo` y `telefono`, y
    calculando sus hash de búsqueda) y las 10 tablas operativas, **conservando
    los id** para que las referencias entre ellas sigan apuntando a lo mismo.

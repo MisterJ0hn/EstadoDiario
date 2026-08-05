@@ -59,7 +59,7 @@ def crear_cliente(
     db: Session = Depends(get_db_maestra),
     admin: UsuarioAdmin = Depends(require_admin),
 ):
-    """Da de alta el cliente y **crea su base de datos** con las 12 tablas y
+    """Da de alta el cliente y **crea su base de datos** con las 13 tablas y
     los datos iniciales. Es una operación lenta (segundos): crea una base.
 
     Si la creación de la base falla, el cliente igual queda registrado, en

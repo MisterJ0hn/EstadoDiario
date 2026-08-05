@@ -1,9 +1,9 @@
 """Endpoints del módulo Movimientos.
 
 Solo lectura + carga: no hay acciones sobre un movimiento (leído, pendiente,
-agenda) porque este reporte es de consulta. El aislamiento por usuario se
-resuelve con EstadoDiarioService.alcance(), el mismo criterio del resto de la
-app (admin ve todo, cada usuario ve solo los archivos que cargó).
+agenda) porque este reporte es de consulta. La visibilidad se resuelve con
+EstadoDiarioService.alcance(), el mismo criterio del resto de la app: cada
+usuario ve los movimientos de las jurisdicciones que tiene asignadas.
 """
 
 import logging
@@ -59,7 +59,7 @@ def listar_movimientos(
 ):
     repo = MovimientoRepository(db)
     items, total, current_page, total_pages = repo.find_filtered(
-        usuario_id=EstadoDiarioService.alcance(current_user),
+        jurisdicciones=EstadoDiarioService.alcance(db, current_user),
         materia=materia,
         estado_causa=estado_causa,
         tribunal=tribunal,
@@ -98,9 +98,9 @@ def resumen(
     """Alimenta las pestañas por materia y el combo de estado de causa. La
     agregación la hace la base de datos (GROUP BY / DISTINCT)."""
     repo = MovimientoRepository(db)
-    alcance = EstadoDiarioService.alcance(current_user)
+    alcance = EstadoDiarioService.alcance(db, current_user)
     conteos = repo.contar_por_materia(
-        usuario_id=alcance,
+        jurisdicciones=alcance,
         estado_causa=estado_causa,
         tribunal=tribunal,
         busqueda=busqueda,
@@ -112,7 +112,7 @@ def resumen(
     return MovimientoResumenResponse(
         total=sum(c for _, c in conteos),
         por_materia=[ConteoMateria(materia=m, total=c) for m, c in conteos],
-        estados_causa=repo.listar_estados_causa(usuario_id=alcance),
+        estados_causa=repo.listar_estados_causa(jurisdicciones=alcance),
     )
 
 
@@ -128,9 +128,11 @@ def listar_archivos(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = MovimientoRepository(db)
-    alcance = EstadoDiarioService.alcance(current_user)
+    alcance = EstadoDiarioService.alcance(db, current_user)
+    # Los archivos son del estudio y no se filtran; lo que se acota por
+    # jurisdicción es su contenido, que es lo que cuenta `count_filtered`.
     items, total, current_page, total_pages = repo.find_origenes_paginados(
-        usuario_id=alcance, page=page, per_page=per_page
+        page=page, per_page=per_page
     )
     return MovimientoOrigenListResponse(
         total=total,
@@ -145,7 +147,7 @@ def listar_archivos(
                 fecha_carga=o.fecha_carga,
                 usuario_carga=o.usuario_carga.usuario if o.usuario_carga else None,
                 total_movimientos=repo.count_filtered(
-                    usuario_id=alcance, origen_id=o.id
+                    jurisdicciones=alcance, origen_id=o.id
                 ),
             )
             for o in items
@@ -165,8 +167,9 @@ def upload_movimientos(
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
-    """El archivo queda a nombre del usuario que lo sube: él es su dueño y
-    nadie más (salvo el admin) verá esos movimientos."""
+    """El archivo queda a nombre de quien lo sube, como dato de auditoría. Eso
+    ya no decide quién lo ve: los archivos son del estudio y sus movimientos se
+    acotan por jurisdicción."""
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in (".xls", ".xlsx", ".xlsm"):
         return MovimientoUploadResponse(

@@ -12,10 +12,14 @@ from app.models.movimiento import Movimiento
 class EstadoDiarioOrigenRepository:
     """Archivos recibidos, de los dos tipos (ver `EstadoDiarioOrigen.tipo`).
 
-    Igual que en EstadoDiarioRepository, `usuario_id` es obligatorio en las
-    lecturas y `None` significa "sin filtro", reservado para el admin. Sin
-    valor por defecto a propósito: un llamador que lo olvide falla en vez de
-    exponer los archivos de otro usuario.
+    **Los archivos son del estudio, no de una persona.** Acá no hay filtro de
+    visibilidad: con una sola casilla de ingesta por estudio, todo lo que llega
+    queda a nombre del mismo usuario, y esconder el archivo dejaría al resto
+    sin poder ver siquiera si el estado diario del día llegó. Lo que se acota
+    por jurisdicción es su CONTENIDO, al abrirlo (ver EstadoDiarioRepository).
+
+    `usuario_carga_id` sobrevive como dato de auditoría —quién lo subió— y se
+    muestra en el listado, pero ya no decide quién lo ve.
     """
 
     def __init__(self, db: Session):
@@ -23,7 +27,6 @@ class EstadoDiarioOrigenRepository:
 
     def find_all_paginated(
         self,
-        usuario_id: Optional[int],
         tipo: Optional[str] = None,
         page: int = 1,
         per_page: int = 20,
@@ -31,9 +34,6 @@ class EstadoDiarioOrigenRepository:
         total_query = self.db.query(func.count(EstadoDiarioOrigen.id))
         items_query = self.db.query(EstadoDiarioOrigen)
 
-        if usuario_id is not None:
-            total_query = total_query.filter(EstadoDiarioOrigen.usuario_carga_id == usuario_id)
-            items_query = items_query.filter(EstadoDiarioOrigen.usuario_carga_id == usuario_id)
         if tipo is not None:
             total_query = total_query.filter(EstadoDiarioOrigen.tipo == tipo)
             items_query = items_query.filter(EstadoDiarioOrigen.tipo == tipo)
@@ -50,32 +50,39 @@ class EstadoDiarioOrigenRepository:
 
         return items, total, total_pages
 
-    def find_by_id(self, oid: int, usuario_id: Optional[int]) -> Optional[EstadoDiarioOrigen]:
-        query = self.db.query(EstadoDiarioOrigen).filter(EstadoDiarioOrigen.id == oid)
-        if usuario_id is not None:
-            query = query.filter(EstadoDiarioOrigen.usuario_carga_id == usuario_id)
-        return query.first()
+    def find_by_id(self, oid: int) -> Optional[EstadoDiarioOrigen]:
+        return (
+            self.db.query(EstadoDiarioOrigen)
+            .filter(EstadoDiarioOrigen.id == oid)
+            .first()
+        )
 
     def find_by_rut_fecha(
         self,
         rut: str,
         fecha,
-        usuario_id: Optional[int],
         tipo: str = EstadoDiarioOrigen.TIPO_ESTADO_DIARIO,
     ) -> Optional[EstadoDiarioOrigen]:
-        """Detección de duplicados. La unicidad es por (dueño, rut, fecha,
-        tipo), no global: dos abogados pueden recibir legítimamente el estado
-        diario del mismo RUT el mismo día, y el estado diario y el reporte de
-        movimientos del mismo RUT/fecha son archivos distintos.
+        """Detección de duplicados: (rut, fecha, tipo) dentro del estudio.
+
+        La unicidad dejó de ser por dueño. La base ya es de un solo estudio y
+        la casilla de ingesta es una: el mismo RUT y fecha entrando dos veces
+        es el mismo archivo repetido, sin importar quién lo suba. Mantener el
+        criterio viejo permitiría duplicar todo un estado diario subiéndolo
+        desde otra cuenta del mismo estudio.
+
+        El `tipo` sí distingue: el estado diario y el reporte de movimientos
+        del mismo RUT y fecha son archivos distintos.
         """
-        query = self.db.query(EstadoDiarioOrigen).filter(
-            EstadoDiarioOrigen.rut == rut,
-            EstadoDiarioOrigen.fecha == fecha,
-            EstadoDiarioOrigen.tipo == tipo,
+        return (
+            self.db.query(EstadoDiarioOrigen)
+            .filter(
+                EstadoDiarioOrigen.rut == rut,
+                EstadoDiarioOrigen.fecha == fecha,
+                EstadoDiarioOrigen.tipo == tipo,
+            )
+            .first()
         )
-        if usuario_id is not None:
-            query = query.filter(EstadoDiarioOrigen.usuario_carga_id == usuario_id)
-        return query.first()
 
     def create(self, origen: EstadoDiarioOrigen) -> EstadoDiarioOrigen:
         self.db.add(origen)

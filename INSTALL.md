@@ -150,10 +150,12 @@ El sistema puede bajar solo los adjuntos de estado diario desde una casilla
 IMAP. Hay **una casilla por cliente** y lo que llegue a ella se importa en la
 base de ese cliente: la casilla es lo que amarra un correo entrante a una base.
 
-La configuración vive en la UI, no en archivos, y se puede tocar desde dos
-lados: el administrador de la plataforma, en la ficha del cliente, o el propio
-estudio en **Administración → Importar por Correo** (solo rol admin del
-estudio). La casilla por defecto de un cliente es `<guid>@temposoft.cl`.
+**La configura la plataforma**, en la ficha del cliente: de qué casilla se lee
+determina en qué base entra cada archivo, así que no es decisión del estudio. La
+casilla por defecto de un cliente es `<guid>@temposoft.cl`.
+
+El estudio ve la ingesta en modo lectura (**Administración → Bitácora de
+Correo**, solo su administrador): si hoy llegó el estado diario o no.
 
 ### Gmail
 
@@ -199,6 +201,19 @@ docker exec ed_backend python -m app.jobs.revisar_correo --forzar
 
 Todo lo que ocurre queda en **Bitácora de Correo**, incluidos los mensajes
 descartados y los días en que no llegó ningún archivo.
+
+## Permisos dentro de un estudio
+
+El administrador de cada estudio reparte visibilidad en **Administración →
+Usuarios y permisos**: qué jurisdicciones ve cada integrante.
+
+**Sin nada asignado, la persona ve todas.** Es deliberado: un estudio que nunca
+abrió esa pantalla sigue funcionando igual, y nadie queda con el sistema en
+blanco sin saber por qué. Para cortarle el acceso a alguien se desactiva su
+cuenta, lo que sí dice qué pasó — eso lo hace la plataforma, no el estudio.
+
+Las causas que el sistema no logró clasificar en ninguna jurisdicción las ven
+todos, para que no desaparezcan sin que nadie lo note.
 
 ## Recordatorios: Google Calendar y WhatsApp (opcional)
 
@@ -250,7 +265,7 @@ Al iniciar el backend, en la base **principal**:
 - El administrador de la plataforma, solo si no hay ninguno (ver *Primer Ingreso*).
 
 Al dar de alta un **cliente**, en su base recién creada:
-- Las 12 tablas del esquema operativo.
+- Las 13 tablas del esquema operativo.
 - 9 jurisdicciones predefinidas (Civil, Familia, Laboral, Penal, etc.).
 
 La base de un cliente **nace sin usuarios**: los crea el administrador desde la

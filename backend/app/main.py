@@ -12,7 +12,7 @@ from app.api.v1.router import api_router
 
 # Importar los dos paquetes de modelos registra ambos esquemas: los de la base
 # principal (BaseMaestra) y los de la base de cada cliente (BaseTenant). Acá
-# solo se CREA el primero; las 12 tablas del cliente se crean al aprovisionar
+# solo se CREA el primero; las 13 tablas del cliente se crean al aprovisionar
 # su base (ver app/services/aprovisionamiento_service.py).
 from app import models  # noqa: F401
 from app.models import maestra  # noqa: F401

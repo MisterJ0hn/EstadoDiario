@@ -137,17 +137,12 @@ export const routes: Routes = [
         // resto de la configuración sigue siendo solo de administradores.
         path: 'configuracion',
         children: [
-          {
-            path: 'correo',
-            canActivate: [authGuard],
-            loadComponent: () =>
-              import('./features/configuracion/components/correo-config/correo-config.component').then(
-                (m) => m.CorreoConfigComponent
-              ),
-          },
+          // La casilla de ingesta la configura la plataforma, no el estudio:
+          // de qué casilla se lee determina en qué base entra cada archivo.
+          // Al estudio le queda la bitácora, y solo a su administrador.
           {
             path: 'correo/log',
-            canActivate: [authGuard],
+            canActivate: [adminGuard],
             loadComponent: () =>
               import('./features/configuracion/components/correo-log/correo-log.component').then(
                 (m) => m.CorreoLogComponent
@@ -163,7 +158,7 @@ export const routes: Routes = [
           },
           // SMTP, Google Calendar y WhatsApp dejaron de ser del estudio: son
           // servicios del sistema y viven en /admin/configuracion.
-          { path: '', redirectTo: 'correo', pathMatch: 'full' },
+          { path: '', redirectTo: 'usuarios', pathMatch: 'full' },
         ],
       },
       // El dashboard es la página de inicio.

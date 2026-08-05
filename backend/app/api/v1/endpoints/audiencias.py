@@ -8,9 +8,10 @@ El default del listado es "de hoy en adelante": el módulo se llama "Próximas
 audiencias" y esa es la pregunta que responde. Para ver el histórico hay que
 mandar `desde` explícitamente.
 
-El aislamiento por usuario se resuelve con EstadoDiarioService.alcance(), el
-mismo criterio del resto de la app (admin ve todo, cada usuario ve solo lo que
-llegó a su casilla).
+La visibilidad se resuelve con EstadoDiarioService.alcance(), el mismo criterio
+del resto de la app: cada usuario ve las audiencias de las jurisdicciones que
+tiene asignadas; el administrador del estudio y quien no tenga ninguna
+asignada, todas.
 """
 
 import logging
@@ -79,7 +80,7 @@ def listar_audiencias(
 
     repo = AudienciaRepository(db)
     items, total, current_page, total_pages = repo.find_filtered(
-        usuario_id=EstadoDiarioService.alcance(current_user),
+        jurisdicciones=EstadoDiarioService.alcance(db, current_user),
         materia=materia,
         tipo_audiencia=tipo_audiencia,
         tribunal=tribunal,
@@ -125,9 +126,9 @@ def resumen(
         desde = date.today()
 
     repo = AudienciaRepository(db)
-    alcance = EstadoDiarioService.alcance(current_user)
+    alcance = EstadoDiarioService.alcance(db, current_user)
     conteos = repo.contar_por_materia(
-        usuario_id=alcance,
+        jurisdicciones=alcance,
         tipo_audiencia=tipo_audiencia,
         tribunal=tribunal,
         busqueda=busqueda,
@@ -139,7 +140,7 @@ def resumen(
     return AudienciaResumenResponse(
         total=sum(c for _, c in conteos),
         por_materia=[ConteoMateriaAudiencia(materia=m, total=c) for m, c in conteos],
-        tipos_audiencia=repo.listar_tipos_audiencia(usuario_id=alcance),
+        tipos_audiencia=repo.listar_tipos_audiencia(jurisdicciones=alcance),
     )
 
 
@@ -162,7 +163,7 @@ def calendario(
     """
     repo = AudienciaRepository(db)
     items = repo.find_para_calendario(
-        usuario_id=EstadoDiarioService.alcance(current_user),
+        jurisdicciones=EstadoDiarioService.alcance(db, current_user),
         desde=desde,
         hasta=hasta,
     )
@@ -184,9 +185,11 @@ def listar_archivos(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = AudienciaRepository(db)
-    alcance = EstadoDiarioService.alcance(current_user)
+    alcance = EstadoDiarioService.alcance(db, current_user)
+    # Los archivos son del estudio y no se filtran; lo que se acota por
+    # jurisdicción es su contenido, que es lo que cuenta `count_filtered`.
     items, total, current_page, total_pages = repo.find_origenes_paginados(
-        usuario_id=alcance, page=page, per_page=per_page
+        page=page, per_page=per_page
     )
 
     # Un solo GROUP BY para toda la página en vez de un COUNT por archivo.

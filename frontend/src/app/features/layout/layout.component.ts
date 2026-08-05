@@ -47,30 +47,35 @@ const MENU_CLIENTE: GrupoMenu[] = [
     titulo: null,
     items: [
       { ruta: '/dashboard', etiqueta: 'Dashboard', icono: ICONO.grafico },
-      { ruta: '/estado-diario', etiqueta: 'Archivos', icono: ICONO.carpeta, exacto: true },
+      { ruta: '/estado-diario', etiqueta: 'Bitácora', icono: ICONO.carpeta, exacto: true },
       { ruta: '/estado-diario/upload', etiqueta: 'Cargar Archivo', icono: ICONO.subir },
       { ruta: '/estado-diario/movimientos', etiqueta: 'Estado Diario', icono: ICONO.sobre },
       { ruta: '/movimientos', etiqueta: 'Movimientos', icono: ICONO.portapapeles },
       { ruta: '/audiencias', etiqueta: 'Audiencias', icono: ICONO.reloj },
       { ruta: '/estado-diario/calendario', etiqueta: 'Calendario', icono: ICONO.calendario },
-      { ruta: '/informes', etiqueta: 'Informes', icono: ICONO.barras },
-    ],
-  },
-  {
-    // Cada usuario configura su propia casilla IMAP: de ahí salen los estados
-    // diarios que se le importan. No es una opción de admin.
-    titulo: 'Mi casilla de correo',
-    items: [
-      { ruta: '/configuracion/correo', etiqueta: 'Importar por Correo', icono: ICONO.sobre, exacto: true },
-      { ruta: '/configuracion/correo/log', etiqueta: 'Bitácora de Correo', icono: ICONO.bitacora },
+      { ruta: '/informes', etiqueta: 'Reportes', icono: ICONO.barras },
     ],
   },
 ];
 
-/** Grupo que solo ve el administrador del estudio. */
+/**
+ * Grupo que solo ve el administrador del estudio.
+ *
+ * La casilla de ingesta **no se configura desde acá**: es una por estudio y la
+ * administra la plataforma, porque de qué casilla se lee determina en qué base
+ * termina cada archivo. Al estudio le queda la bitácora, que es de solo
+ * lectura y responde la única pregunta que necesita: si hoy llegó el estado
+ * diario o no.
+ *
+ * Usuarios tampoco es un alta: los crea la plataforma. Lo que el administrador
+ * del estudio decide es **qué ve cada uno**.
+ */
 const MENU_ADMIN_CLIENTE: GrupoMenu = {
   titulo: 'Administración',
-  items: [{ ruta: '/configuracion/usuarios', etiqueta: 'Usuarios', icono: ICONO.usuarios }],
+  items: [
+    { ruta: '/configuracion/usuarios', etiqueta: 'Usuarios y permisos', icono: ICONO.usuarios },
+    { ruta: '/configuracion/correo/log', etiqueta: 'Bitácora de Correo', icono: ICONO.bitacora },
+  ],
 };
 
 /**

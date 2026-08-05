@@ -1,17 +1,21 @@
 """Consultas del módulo Movimientos.
 
-Todas las consultas parten con un JOIN a `estado_diario_origen` porque ahí
-vive el dueño del dato (`usuario_carga_id`): cada usuario solo ve los
-movimientos de los archivos que él cargó. El parámetro `usuario_id` es el
-único punto de control de ese aislamiento y `None` significa "sin filtro"
-(admin). El filtrado, el conteo y la agregación se resuelven en SQL, nunca
-trayendo filas a Python.
+La visibilidad se controla con `jurisdicciones`: la lista de jurisdicciones que
+el usuario tiene permitido ver, o `None` para "sin restricción" (el
+administrador del estudio, y quien no tenga ninguna asignada). Lo resuelve
+`EstadoDiarioService.alcance()` y es el único punto de control.
+
+Un movimiento **sin jurisdicción** lo ve todo el mundo: son los que el parser
+no pudo clasificar, y esconderlos los haría desaparecer sin que nadie lo note.
+
+El filtrado, el conteo y la agregación se resuelven en SQL, nunca trayendo
+filas a Python.
 """
 
 import math
 from typing import Optional
 
-from sqlalchemy import func, nulls_last
+from sqlalchemy import func, nulls_last, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.estado_diario_origen import EstadoDiarioOrigen
@@ -43,15 +47,19 @@ class MovimientoRepository:
 
     def find_origenes_paginados(
         self,
-        usuario_id: Optional[int] = None,
         page: int = 1,
         per_page: int = 20,
     ):
+        """Los archivos cargados por el estudio.
+
+        No se filtran por jurisdicción: el archivo es del estudio y lo que se
+        acota es su contenido, al abrirlo. Esconder el archivo entero porque
+        trae una causa de otra materia dejaría al usuario sin saber siquiera
+        que el estado diario del día llegó.
+        """
         base = self.db.query(EstadoDiarioOrigen).filter(
             EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_MOVIMIENTOS
         )
-        if usuario_id is not None:
-            base = base.filter(EstadoDiarioOrigen.usuario_carga_id == usuario_id)
 
         total = base.with_entities(func.count(EstadoDiarioOrigen.id)).scalar() or 0
         total_pages = max(1, math.ceil(total / per_page)) if per_page else 1
@@ -71,7 +79,7 @@ class MovimientoRepository:
     @staticmethod
     def _aplicar_filtros(
         query,
-        usuario_id: Optional[int],
+        jurisdicciones: Optional[list[int]],
         materia: Optional[str],
         estado_causa: Optional[str],
         tribunal: Optional[str],
@@ -87,9 +95,14 @@ class MovimientoRepository:
             EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_MOVIMIENTOS
         )
 
-        # Aislamiento por usuario. None = admin, ve todo.
-        if usuario_id is not None:
-            query = query.filter(EstadoDiarioOrigen.usuario_carga_id == usuario_id)
+        # Permiso de visibilidad. None = sin restricción.
+        if jurisdicciones is not None:
+            query = query.filter(
+                or_(
+                    Movimiento.jurisdiccion_id.in_(jurisdicciones),
+                    Movimiento.jurisdiccion_id.is_(None),
+                )
+            )
 
         if materia:
             query = query.filter(Movimiento.materia == materia)
@@ -119,7 +132,7 @@ class MovimientoRepository:
 
     def count_filtered(
         self,
-        usuario_id: Optional[int] = None,
+        jurisdicciones: Optional[list[int]] = None,
         materia: Optional[str] = None,
         estado_causa: Optional[str] = None,
         tribunal: Optional[str] = None,
@@ -134,14 +147,14 @@ class MovimientoRepository:
             .join(Movimiento.estado_diario_origen)
         )
         query = self._aplicar_filtros(
-            query, usuario_id, materia, estado_causa, tribunal, busqueda,
+            query, jurisdicciones, materia, estado_causa, tribunal, busqueda,
             rut, origen_id, fecha_desde, fecha_hasta,
         )
         return query.scalar() or 0
 
     def find_filtered(
         self,
-        usuario_id: Optional[int] = None,
+        jurisdicciones: Optional[list[int]] = None,
         materia: Optional[str] = None,
         estado_causa: Optional[str] = None,
         tribunal: Optional[str] = None,
@@ -155,7 +168,7 @@ class MovimientoRepository:
     ):
         """Devuelve (items, total, page, total_pages)."""
         total = self.count_filtered(
-            usuario_id, materia, estado_causa, tribunal, busqueda,
+            jurisdicciones, materia, estado_causa, tribunal, busqueda,
             rut, origen_id, fecha_desde, fecha_hasta,
         )
 
@@ -165,7 +178,7 @@ class MovimientoRepository:
             .options(joinedload(Movimiento.estado_diario_origen))
         )
         query = self._aplicar_filtros(
-            query, usuario_id, materia, estado_causa, tribunal, busqueda,
+            query, jurisdicciones, materia, estado_causa, tribunal, busqueda,
             rut, origen_id, fecha_desde, fecha_hasta,
         ).order_by(
             nulls_last(Movimiento.fecha_ingreso.desc()),
@@ -185,7 +198,7 @@ class MovimientoRepository:
 
     def contar_por_materia(
         self,
-        usuario_id: Optional[int] = None,
+        jurisdicciones: Optional[list[int]] = None,
         estado_causa: Optional[str] = None,
         tribunal: Optional[str] = None,
         busqueda: Optional[str] = None,
@@ -201,7 +214,7 @@ class MovimientoRepository:
             .join(Movimiento.estado_diario_origen)
         )
         query = self._aplicar_filtros(
-            query, usuario_id, None, estado_causa, tribunal, busqueda,
+            query, jurisdicciones, None, estado_causa, tribunal, busqueda,
             rut, origen_id, fecha_desde, fecha_hasta,
         )
         return (
@@ -212,7 +225,7 @@ class MovimientoRepository:
 
     def listar_estados_causa(
         self,
-        usuario_id: Optional[int] = None,
+        jurisdicciones: Optional[list[int]] = None,
         materia: Optional[str] = None,
     ) -> list[str]:
         """Valores distintos de "Estado Causa" visibles para el usuario."""
@@ -221,7 +234,7 @@ class MovimientoRepository:
             .join(Movimiento.estado_diario_origen)
         )
         query = self._aplicar_filtros(
-            query, usuario_id, materia, None, None, None, None, None, None, None
+            query, jurisdicciones, materia, None, None, None, None, None, None, None
         )
         filas = (
             query.filter(Movimiento.estado_causa.isnot(None))

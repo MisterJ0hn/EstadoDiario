@@ -49,9 +49,9 @@ def listar_origenes(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = EstadoDiarioOrigenRepository(db)
-    items, total, total_pages = repo.find_all_paginated(
-        EstadoDiarioService.alcance(current_user), tipo, page, per_page
-    )
+    # Sin alcance: los archivos son del estudio. Lo que se acota por
+    # jurisdicción es su contenido, al abrirlos.
+    items, total, total_pages = repo.find_all_paginated(tipo, page, per_page)
     origenes = []
     for o in items:
         origenes.append(EstadoDiarioOrigenResponse(
@@ -81,7 +81,7 @@ def movimientos_por_origen(
 ):
     from app.repositories.estado_diario_repository import EstadoDiarioRepository
     repo = EstadoDiarioRepository(db)
-    items = repo.find_by_origen(origen_id, EstadoDiarioService.alcance(current_user))
+    items = repo.find_by_origen(origen_id, EstadoDiarioService.alcance(db, current_user))
     service = EstadoDiarioService(db)
     data = [service._map_movimiento(m, include_pendiente=True) for m in items]
     return {"exito": True, "total": len(data), "movimientos": data}
@@ -204,7 +204,7 @@ def eliminar_origen(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = EstadoDiarioOrigenRepository(db)
-    origen = repo.find_by_id(origen_id, EstadoDiarioService.alcance(current_user))
+    origen = repo.find_by_id(origen_id)
     if not origen:
         return {"exito": False, "mensaje": "Origen no encontrado"}
     repo.delete(origen)
@@ -230,7 +230,7 @@ def no_leidos(
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_no_leidos(
-        service.alcance(current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        service.alcance(db, current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
     )
 
 
@@ -251,7 +251,7 @@ def leidos(
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_leidos(
-        service.alcance(current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        service.alcance(db, current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
     )
 
 
@@ -272,7 +272,7 @@ def pendientes(
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_pendientes(
-        service.alcance(current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        service.alcance(db, current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
     )
 
 
@@ -302,7 +302,7 @@ def detalle_movimiento(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimiento_detalle(estado_diario_id, service.alcance(current_user))
+    return service.get_movimiento_detalle(estado_diario_id, service.alcance(db, current_user))
 
 
 # ── Acciones ──────────────────────────────────────────────
@@ -324,7 +324,7 @@ def marcar_leido(
     return service.marcar_leido(
         estado_diario_id,
         current_user.id,
-        service.alcance(current_user),
+        service.alcance(db, current_user),
         body.observacion if body else None,
     )
 
@@ -343,7 +343,7 @@ def marcar_pendiente(
     return service.marcar_pendiente(
         estado_diario_id, body.nivel, body.username, body.mensaje, body.fecha_hora,
         body.notificar_whatsapp, body.whatsapp_telefono, body.fecha_hora_whatsapp,
-        service.alcance(current_user),
+        service.alcance(db, current_user),
     )
 
 
@@ -360,7 +360,7 @@ def listar_agendas(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
-    return service.get_agendas(estado_diario_id, service.alcance(current_user))
+    return service.get_agendas(estado_diario_id, service.alcance(db, current_user))
 
 
 @router.post(
@@ -376,7 +376,7 @@ def crear_agenda(
     service = EstadoDiarioService(db)
     return service.crear_agenda(
         estado_diario_id, body.detalle, body.fecha_hora, body.username,
-        service.alcance(current_user),
+        service.alcance(db, current_user),
     )
 
 

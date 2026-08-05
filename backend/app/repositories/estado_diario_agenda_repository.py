@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.estado_diario import EstadoDiario
@@ -8,8 +9,33 @@ from app.models.estado_diario_agenda import EstadoDiarioAgenda
 
 
 class EstadoDiarioAgendaRepository:
+    """Recordatorios, acotados por las jurisdicciones que el usuario puede ver.
+
+    El permiso se mira en la **causa** a la que cuelga el recordatorio, no en
+    quién lo creó: si alguien puede ver la causa, puede ver que hay un
+    recordatorio sobre ella. Al revés dejaría a un abogado con una causa
+    visible y sin saber que un colega ya la agendó, que es justo lo que hace
+    que dos personas trabajen lo mismo.
+
+    `usuario_registro_id` sigue existiendo y no es esto: dice a quién se le
+    manda el WhatsApp y quién figura como autor.
+    """
+
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _filtrar_por_jurisdiccion(query, jurisdicciones: Optional[list[int]]):
+        """Acota por la jurisdicción de la causa. Requiere que la consulta ya
+        tenga el JOIN a `EstadoDiario`."""
+        if jurisdicciones is None:
+            return query
+        return query.filter(
+            or_(
+                EstadoDiario.jurisdiccion_id.in_(jurisdicciones),
+                EstadoDiario.jurisdiccion_id.is_(None),
+            )
+        )
 
     def find_by_estado_diario(self, estado_diario_id: int) -> list[EstadoDiarioAgenda]:
         return (
@@ -20,27 +46,30 @@ class EstadoDiarioAgendaRepository:
             .all()
         )
 
-    def find_by_id(self, aid: int, usuario_id: Optional[int] = None) -> Optional[EstadoDiarioAgenda]:
-        """`usuario_id=None` = sin filtro (admin). El dueño de un recordatorio
-        es quien lo creó, igual criterio que en find_vigentes.
-        """
-        query = self.db.query(EstadoDiarioAgenda).filter(EstadoDiarioAgenda.id == aid)
-        if usuario_id is not None:
-            query = query.filter(EstadoDiarioAgenda.usuario_registro_id == usuario_id)
-        return query.first()
-
-    def find_vigentes(self, usuario_id: Optional[int]) -> list[EstadoDiarioAgenda]:
-        """Recordatorios no finalizados. `usuario_id=None` = todos (admin)."""
+    def find_by_id(
+        self, aid: int, jurisdicciones: Optional[list[int]] = None
+    ) -> Optional[EstadoDiarioAgenda]:
+        """`jurisdicciones=None` = sin restricción. Mismo criterio que
+        find_vigentes: manda la jurisdicción de la causa."""
         query = (
             self.db.query(EstadoDiarioAgenda)
+            .join(EstadoDiarioAgenda.estado_diario)
+            .filter(EstadoDiarioAgenda.id == aid)
+        )
+        return self._filtrar_por_jurisdiccion(query, jurisdicciones).first()
+
+    def find_vigentes(self, jurisdicciones: Optional[list[int]]) -> list[EstadoDiarioAgenda]:
+        """Recordatorios no finalizados. `jurisdicciones=None` = todos."""
+        query = (
+            self.db.query(EstadoDiarioAgenda)
+            .join(EstadoDiarioAgenda.estado_diario)
             .options(
                 joinedload(EstadoDiarioAgenda.usuario_registro),
                 joinedload(EstadoDiarioAgenda.estado_diario).joinedload(EstadoDiario.jurisdiccion),
             )
             .filter(EstadoDiarioAgenda.finalizado.is_(False))
         )
-        if usuario_id is not None:
-            query = query.filter(EstadoDiarioAgenda.usuario_registro_id == usuario_id)
+        query = self._filtrar_por_jurisdiccion(query, jurisdicciones)
         return query.order_by(EstadoDiarioAgenda.fecha_hora.asc()).all()
 
     def find_by_twilio_sid(self, twilio_sid: str) -> Optional[EstadoDiarioAgenda]:
