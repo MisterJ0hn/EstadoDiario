@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 9+ bloquea el tráfico HTTP en claro. El backend de Estado Diario hoy
+  responde solo por http, así que sin esta excepción la app falla con un error
+  de red genérico que no dice por qué.
+
+  La excepción va POR DOMINIO y no con `usesCleartextTraffic="true"`: eso
+  último habilitaría http contra cualquier host, incluido uno que un atacante
+  en la misma red WiFi pudiera suplantar. Acá el resto de Internet sigue
+  exigiendo TLS.
+
+  Cuando la API tenga certificado, se borra este archivo, se quita la
+  referencia del AndroidManifest y se cambia `apiUrl` a https.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">edapi.temposoft.cl</domain>
+        <!-- Para probar contra un backend levantado en el equipo de desarrollo:
+             10.0.2.2 es como el emulador de Android ve al host. -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>
