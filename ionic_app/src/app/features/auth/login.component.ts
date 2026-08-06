@@ -22,7 +22,7 @@ import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
             </div>
             <h1 class="text-2xl font-bold text-neutral-800">Movimientos PJUD</h1>
             <p class="text-neutral-500 mt-1">
-              Ingrese las credenciales de su estudio
+              Ingrese las credenciales
             </p>
           </div>
 
