@@ -1,0 +1,9 @@
+node_modules
+www
+dist
+.git
+.angular
+
+# Proyectos nativos: la imagen web no los usa y pesan mucho (Gradle, SDK).
+android
+ios

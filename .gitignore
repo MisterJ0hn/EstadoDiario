@@ -28,6 +28,16 @@ node_modules/
 frontend/.angular/
 frontend/dist/
 
+# ionic_app: `www` es la salida del build (el outputPath del proyecto), no
+# fuente. La usan tanto `build:web` (la imagen Docker) como `cap sync` para
+# el APK, así que cambia en cada compilación.
+ionic_app/.angular/
+ionic_app/www/
+
+# admin_app
+admin_app/.angular/
+admin_app/dist/
+
 # ── IDE / Editores ───────────────────────────
 .idea/
 .vscode/

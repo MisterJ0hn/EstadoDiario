@@ -43,10 +43,19 @@ services:
     networks:
       - ed_network
 
-  # ─── Frontend (Angular) ── puerto 8090 ─────────────────
+  # ─── App de los estudios ── puerto 8090 ────────────────
+  # Se sirve ionic_app y NO frontend/. Son la misma aplicación: ionic_app es el
+  # port de frontend/ a Capacitor, con las mismas pantallas, y publicar esa es
+  # lo que hace que la web y el Android salgan del mismo código.
+  #
+  # Se compila con `--configuration web`, no con `production`: esa última es la
+  # del APK y lleva la URL absoluta de la API (ver ionic_app/Dockerfile).
+  #
+  # Para volver a servir frontend/, cambiar el context a ./frontend. Los dos
+  # traen su propio Dockerfile y su nginx.conf, y los dos escuchan en el 80.
   frontend:
     build:
-      context: ./frontend
+      context: ./ionic_app
       dockerfile: Dockerfile
     container_name: ed_frontend
     restart: unless-stopped

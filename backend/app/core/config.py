@@ -72,8 +72,15 @@ class Settings(BaseSettings):
     BACKEND_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     JWT_ALGORITHM: str = "HS256"
 
-    # CORS
-    BACKEND_CORS_ORIGINS: str = "http://localhost:8090"
+    # CORS. Separados por COMA (ver cors_origins). Los dev-servers del repo:
+    # 4400 la app de escritorio, 4300 la de Ionic.
+    #
+    # El origen tiene que coincidir EXACTO con el que manda el navegador:
+    # esquema, host y puerto, sin barra final ni ningún otro carácter de más.
+    # Un separador equivocado no da error al arrancar, da un preflight
+    # rechazado con "No 'Access-Control-Allow-Origin' header", que parece un
+    # problema del endpoint y no de esta línea.
+    BACKEND_CORS_ORIGINS: str = "http://localhost:4400,http://localhost:4300"
 
     # Logging
     BACKEND_LOG_LEVEL: str = "INFO"
@@ -126,7 +133,10 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> List[str]:
-        return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",")]
+        # Se descartan los vacíos: una coma sobrante al final de la variable
+        # metía un origen "" en la lista, que no habilita nada pero deja la
+        # configuración efectiva distinta de la que se lee en el .env.
+        return [o.strip() for o in self.BACKEND_CORS_ORIGINS.split(",") if o.strip()]
 
     class Config:
         env_file = "../.env"

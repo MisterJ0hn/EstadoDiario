@@ -57,9 +57,18 @@ Son **cuatro** servicios y no dos:
 | Servicio | Puerto | Para quién |
 |---|---|---|
 | `backend` | 8091 | API de los estudios |
-| `frontend` | 8090 | App de los estudios |
+| `frontend` | 8090 | App de los estudios (se construye desde `ionic_app/`) |
 | `admin_api` | 8092 | API de administración de la plataforma |
 | `admin_app` | 8093 | Consola de administración |
+
+**La app de los estudios sale de `ionic_app/`, no de `frontend/`.** Son la
+misma aplicación —`ionic_app` es el port a Capacitor, con las mismas
+pantallas— y publicar esa hace que la web y el Android salgan del mismo
+código. Se compila con `--configuration web`, que es una configuración
+distinta de la del APK: el APK necesita la URL absoluta de la API porque se
+sirve desde el WebView, y la web necesita la relativa porque su propio Nginx
+hace de proxy. Para volver a servir `frontend/`, cambiar el `context` de ese
+servicio en el compose.
 
 Las dos APIs están separadas a propósito: el token de la consola lleva
 `ambito=sistema` y el de un estudio `ambito=cliente`, y cada servicio rechaza

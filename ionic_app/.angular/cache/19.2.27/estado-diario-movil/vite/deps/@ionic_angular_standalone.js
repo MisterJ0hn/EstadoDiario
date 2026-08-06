@@ -1,4 +1,7 @@
 import {
+  o as o4
+} from "./chunk-MJA5TOG2.js";
+import {
   t as t5
 } from "./chunk-7QVGZMG4.js";
 import {
@@ -22,10 +25,10 @@ import {
 } from "./chunk-7KY32AE7.js";
 import {
   l as l2
-} from "./chunk-YOAWWRE3.js";
+} from "./chunk-G46CXTPZ.js";
 import {
   i as i2
-} from "./chunk-BWQDHZDG.js";
+} from "./chunk-FGNYMDFH.js";
 import {
   A,
   B,
@@ -38,19 +41,7 @@ import {
   s as s3,
   t as t2,
   v as v2
-} from "./chunk-YIQUV7N7.js";
-import {
-  a,
-  c as c3,
-  o as o3
-} from "./chunk-Q4VCKSUV.js";
-import {
-  d,
-  o as o2
-} from "./chunk-JRRVO33B.js";
-import {
-  o as o4
-} from "./chunk-MJA5TOG2.js";
+} from "./chunk-Y7FGYVL7.js";
 import {
   T,
   _,
@@ -77,6 +68,15 @@ import {
   s as s4
 } from "./chunk-336XFI5V.js";
 import {
+  a,
+  c as c3,
+  o as o3
+} from "./chunk-Q4VCKSUV.js";
+import {
+  d,
+  o as o2
+} from "./chunk-JRRVO33B.js";
+import {
   An,
   Ct,
   H,
@@ -100,7 +100,7 @@ import {
 import {
   NG_VALUE_ACCESSOR,
   NgControl
-} from "./chunk-NZA2DIWO.js";
+} from "./chunk-JTQYIA4C.js";
 import {
   ActivatedRoute,
   ChildrenOutletContexts,
@@ -111,19 +111,19 @@ import {
   Router,
   RouterLink,
   UrlSerializer
-} from "./chunk-PLHTI3MJ.js";
-import "./chunk-I3DMK27Q.js";
-import "./chunk-S5LQ7WZD.js";
+} from "./chunk-X44OMUHM.js";
+import "./chunk-OIUBB5FW.js";
+import "./chunk-FQLN352J.js";
 import {
   CommonModule,
   Location,
   LocationStrategy,
   NgIf,
   NgTemplateOutlet
-} from "./chunk-R3BA2ATV.js";
+} from "./chunk-QH4DH7SD.js";
 import {
   DOCUMENT
-} from "./chunk-3ZMDPNPO.js";
+} from "./chunk-G6W3EW2H.js";
 import {
   APP_INITIALIZER,
   ApplicationRef,
@@ -7633,9 +7633,9 @@ var d7 = Vn(class extends I {
   componentDidLoad() {
     this.rIC(() => __async(this, null, function* () {
       const t18 = s5(window, "hybrid");
-      if (n.getBoolean("_testing") || import("./p-ChIZKXUu-YK6WTDEL.js").then((t19) => t19.startTapClick(n)), n.getBoolean("statusTap", t18) && import("./p-DHTSTb52-LX3JLXEO.js").then((t19) => t19.startStatusTap()), n.getBoolean("inputShims", u9())) {
+      if (n.getBoolean("_testing") || import("./p-ChIZKXUu-4ZM44N2F.js").then((t19) => t19.startTapClick(n)), n.getBoolean("statusTap", t18) && import("./p-DHTSTb52-LX3JLXEO.js").then((t19) => t19.startStatusTap()), n.getBoolean("inputShims", u9())) {
         const t19 = s5(window, "ios") ? "ios" : "android";
-        import("./p-VWbRkLT7-BP4MCIZ7.js").then((e19) => e19.startInputShims(n, t19));
+        import("./p-VWbRkLT7-TUGU5HB4.js").then((e19) => e19.startInputShims(n, t19));
       }
       const e18 = yield import("./p-Bz0dSlXZ-ZDZRSXAR.js"), i17 = t18 || o3();
       n.getBoolean("hardwareBackButton", i17) ? e18.startHardwareBackButton() : (o3() && u("[ion-app] - experimentalCloseWatcher was set to `true`, but hardwareBackButton was set to `false`. Both config options must be `true` for the Close Watcher API to be used."), e18.blockHardwareBackButton()), "undefined" != typeof window && import("./p-D6Ynv7Xh-CDZ3DJ7Q.js").then((t19) => t19.startKeyboardAssist(window)), import("./p-BmVRXR1y-WREUTANF.js").then((t19) => this.focusVisible = t19.startFocusVisible());
