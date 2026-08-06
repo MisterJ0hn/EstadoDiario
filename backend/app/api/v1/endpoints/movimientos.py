@@ -17,8 +17,11 @@ from sqlalchemy.orm import Session
 from app.core.config import UPLOAD_DIR
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
+from app.repositories.movimiento_corte_repository import MovimientoCorteRepository
 from app.repositories.movimiento_repository import MovimientoRepository
 from app.schemas.movimiento import (
+    MovimientoCorteListResponse,
+    MovimientoCorteResponse,
     ConteoMateria,
     MovimientoListResponse,
     MovimientoOrigenListResponse,
@@ -226,3 +229,67 @@ def upload_movimientos(
         return MovimientoUploadResponse(
             exito=False, mensaje=f"Error al procesar el archivo: {e}"
         )
+
+
+# ── Causas de corte (submenú Corte) ───────────────────────
+
+
+@router.get(
+    "/cortes",
+    response_model=MovimientoCorteListResponse,
+    summary="Causas de Corte Suprema y Corte de Apelaciones",
+)
+def listar_cortes(
+    tipo: str | None = Query(None, description="suprema | apelaciones"),
+    busqueda: str | None = Query(None, description="Busca en carátula y rol"),
+    corte: str | None = Query(None, description="Nombre de la corte, coincidencia parcial"),
+    fecha_desde: str | None = Query(None, description="Fecha del archivo (YYYY-MM-DD)"),
+    fecha_hasta: str | None = Query(None),
+    page: int | None = Query(None, ge=1),
+    limit: int | None = Query(None, ge=1, le=500),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Las causas que el reporte de movimientos trae en sus hojas de corte.
+
+    Están en otra tabla y en otra pantalla porque no comparten columnas con las
+    de materia: traen Era, Ubicación y Fecha Ubicación, y no traen tribunal. Se
+    acotan con el mismo permiso por jurisdicción que el resto del sistema.
+    """
+    repo = MovimientoCorteRepository(db)
+    alcance = EstadoDiarioService.alcance(db, current_user)
+
+    items, total, pagina, total_pages = repo.find_filtered(
+        jurisdicciones=alcance,
+        tipo=tipo,
+        busqueda=busqueda,
+        corte=corte,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        page=page,
+        limit=limit,
+    )
+
+    return MovimientoCorteListResponse(
+        total=total,
+        page=pagina,
+        total_pages=total_pages,
+        cortes=[
+            MovimientoCorteResponse(
+                id=c.id,
+                tipo=c.tipo,
+                rol=c.rol,
+                era=c.era,
+                fecha_ingreso=c.fecha_ingreso,
+                caratulado=c.caratulado,
+                estado_causa=c.estado_causa,
+                institucion=c.institucion,
+                corte=c.corte,
+                ubicacion=c.ubicacion,
+                fecha_ubicacion=c.fecha_ubicacion,
+                fecha_archivo=c.estado_diario_origen.fecha if c.estado_diario_origen else None,
+            )
+            for c in items
+        ],
+        cortes_disponibles=repo.listar_cortes(alcance),
+    )

@@ -1,0 +1,11 @@
+{
+	"appId": "cl.temposoft.estadodiario",
+	"appName": "Estado Diario",
+	"webDir": "www",
+	"android": {
+		"allowMixedContent": true
+	},
+	"server": {
+		"androidScheme": "https"
+	}
+}

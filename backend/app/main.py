@@ -11,9 +11,10 @@ from app.core.logging_config import setup_logging
 from app.api.v1.router import api_router
 
 # Importar los dos paquetes de modelos registra ambos esquemas: los de la base
-# principal (BaseMaestra) y los de la base de cada cliente (BaseTenant). Acá
-# solo se CREA el primero; las 13 tablas del cliente se crean al aprovisionar
-# su base (ver app/services/aprovisionamiento_service.py).
+# principal (BaseMaestra) y los de la base de cada cliente (BaseTenant). El
+# backend sigue LEYENDO la base principal (clientes y configuraciones) para
+# rutear la ingesta y los envíos; **darlos de alta es de `admin_app/`**, que es
+# quien crea las bases de los clientes.
 from app import models  # noqa: F401
 from app.models import maestra  # noqa: F401
 
@@ -51,51 +52,6 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Include API routes
 app.include_router(api_router)
-
-
-def _sembrar_administrador_inicial() -> None:
-    """Primer administrador del sistema, en el primer arranque.
-
-    Sin él no hay forma de crear el primer cliente: la API de administración
-    exige un administrador autenticado y no hay ninguno todavía.
-
-    Nace con `debe_cambiar_password`, así que la clave inicial sirve para
-    entrar y para nada más — mientras esté puesta, ningún endpoint de
-    administración responde (ver `require_admin` en app/core/deps.py). El
-    usuario y la clave salen de la configuración para que el despliegue los
-    fije por variable de entorno; la clave NO se escribe en el log.
-
-    Idempotente: si ya existe algún administrador no se crea nada.
-    """
-    from app.core.security import get_password_hash
-    from app.models.maestra.usuario_admin import UsuarioAdmin
-    from app.repositories.usuario_admin_repository import UsuarioAdminRepository
-
-    db = SesionMaestra()
-    try:
-        repo = UsuarioAdminRepository(db)
-        if repo.existe_alguno():
-            return
-
-        repo.save(
-            UsuarioAdmin(
-                usuario=settings.ADMIN_INICIAL_USUARIO,
-                password_hash=get_password_hash(settings.ADMIN_INICIAL_PASSWORD),
-                nombre="Administrador del sistema",
-                activo=True,
-                debe_cambiar_password=True,
-            )
-        )
-        logger.warning(
-            "Primer arranque: se creó el administrador '%s' con clave provisoria. "
-            "Hay que cambiarla en el primer inicio de sesión.",
-            settings.ADMIN_INICIAL_USUARIO,
-        )
-    except Exception as e:
-        db.rollback()
-        logger.error("No se pudo sembrar el administrador inicial: %s", e)
-    finally:
-        db.close()
 
 
 def _actualizar_esquema_de_los_clientes() -> None:
@@ -139,7 +95,6 @@ def _actualizar_esquema_de_los_clientes() -> None:
 def on_startup():
     logger.info("Creando/actualizando el esquema de la base principal...")
     aplicar_esquema_maestra(engine_maestro)
-    _sembrar_administrador_inicial()
     if settings.APLICAR_ESQUEMA_TENANTS_AL_ARRANCAR:
         _actualizar_esquema_de_los_clientes()
     logger.info("Aplicación iniciada - Ambiente: %s", settings.APP_ENV)

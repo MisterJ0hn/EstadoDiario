@@ -11,6 +11,8 @@ from app.core.config import UPLOAD_DIR, settings
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.schemas.estado_diario import (
+    CorteListResponse,
+    CorteResponse,
     MovimientoListResponse,
     MarcarLeidoRequest,
     MarcarLeidoResponse,
@@ -23,6 +25,7 @@ from app.schemas.estado_diario import (
     EstadoDiarioOrigenListResponse,
     EstadoDiarioOrigenResponse,
 )
+from app.repositories.estado_diario_corte_repository import EstadoDiarioCorteRepository
 from app.services.estado_diario_service import EstadoDiarioService
 from app.services.import_service import ImportService
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
@@ -291,6 +294,68 @@ def calendario(
 
 
 # ── Detalle ───────────────────────────────────────────────
+
+# ── Causas de corte (submenú Corte) ───────────────────────
+
+
+@router.get(
+    "/cortes",
+    response_model=CorteListResponse,
+    summary="Causas de Corte Suprema y Corte de Apelaciones",
+)
+def listar_cortes(
+    tipo: str | None = Query(None, description="suprema | apelaciones"),
+    busqueda: str | None = Query(None, description="Busca en carátula y número de ingreso"),
+    corte: str | None = Query(None, description="Nombre de la corte, coincidencia parcial"),
+    fecha_desde: str | None = Query(None, description="Fecha del archivo (YYYY-MM-DD)"),
+    fecha_hasta: str | None = Query(None),
+    page: int | None = Query(None, ge=1),
+    limit: int | None = Query(None, ge=1, le=500),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Las causas que el Excel trae en las hojas de corte.
+
+    Están en otra tabla y en otra pantalla porque no comparten columnas con las
+    de materia: no traen rol único, ni tribunal, ni estado de la causa. Se
+    acotan con el mismo permiso por jurisdicción que el resto del sistema.
+    """
+    repo = EstadoDiarioCorteRepository(db)
+    alcance = EstadoDiarioService.alcance(db, current_user)
+
+    items, total, pagina, total_pages = repo.find_filtered(
+        jurisdicciones=alcance,
+        tipo=tipo,
+        busqueda=busqueda,
+        corte=corte,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        page=page,
+        limit=limit,
+    )
+
+    return CorteListResponse(
+        total=total,
+        page=pagina,
+        total_pages=total_pages,
+        cortes=[
+            CorteResponse(
+                id=c.id,
+                tipo=c.tipo,
+                numero_ingreso=c.numero_ingreso,
+                fecha_ingreso=c.fecha_ingreso,
+                caratulado=c.caratulado,
+                ubicacion=c.ubicacion,
+                fecha_ubicacion=c.fecha_ubicacion,
+                corte=c.corte,
+                tipo_recurso=c.tipo_recurso,
+                fecha_archivo=c.estado_diario_origen.fecha if c.estado_diario_origen else None,
+            )
+            for c in items
+        ],
+        cortes_disponibles=repo.listar_cortes(alcance),
+    )
+
 
 @router.get(
     "/{estado_diario_id}",

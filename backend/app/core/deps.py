@@ -1,19 +1,18 @@
 """Dependencias de FastAPI: quién es quien pide, y a qué base de datos va.
 
-Dos cadenas separadas, una por flujo de autenticación:
+Una sola cadena de autenticación: usuario de un cliente,
+`get_tenant_actual` → `get_db_tenant` → `get_usuario_actual`, sobre la base de
+ese cliente.
 
-- Administrador del sistema: `get_admin_actual` → `require_admin`, sobre la
-  base principal.
-- Usuario de un cliente: `get_tenant_actual` → `get_db_tenant` →
-  `get_usuario_actual`, sobre la base de ese cliente.
+**Acá ya no hay administrador de la plataforma.** Esa consola se separó a
+`admin_app/`, que habla con la base principal por su cuenta. Este backend es
+solo de los estudios.
 
 El guid del tenant sale SIEMPRE del token firmado, nunca de un parámetro ni de
 un header de la request. Es lo único que impide que alguien pida los datos de
 otro cliente cambiando un valor. El header `X-Cliente-Guid` que manda el
 frontend se usa solo para verificar que calce (ver `get_tenant_actual`).
 
-Los endpoints de administración (`/api/v1/admin/...` y `/api/v1/auth/admin`)
-no llevan tenant: operan sobre la base principal.
 """
 
 import logging
@@ -26,9 +25,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import crear_sesion_tenant, get_db_maestra
 from app.core.security import decode_token
-from app.models.maestra.usuario_admin import UsuarioAdmin
 from app.models.usuario import Usuario
-from app.services.auth_service import AMBITO_ADMIN, AMBITO_CLIENTE
+from app.services.auth_service import AMBITO_CLIENTE
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +34,7 @@ security_scheme = HTTPBearer()
 
 # Código propio para "tienes que cambiar la clave antes de seguir". Se usa 403
 # y un mensaje fijo para que el frontend lo reconozca y mande a esa pantalla.
-MENSAJE_CAMBIO_PASSWORD = (
-    "Debe cambiar su contraseña antes de continuar"
-)
+MENSAJE_CAMBIO_PASSWORD = "Debe cambiar su contraseña antes de continuar"
 
 
 @dataclass(frozen=True)
@@ -59,49 +55,6 @@ def _payload(credentials: HTTPAuthorizationCredentials) -> dict:
             detail="Token inválido o expirado",
         )
     return payload
-
-
-# ── Administrador del sistema (base principal) ────────────────────────────
-
-
-def get_admin_actual(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
-    db: Session = Depends(get_db_maestra),
-) -> UsuarioAdmin:
-    """Administrador autenticado, sin exigir que ya haya cambiado la clave.
-
-    Solo la debería usar el endpoint de cambio de contraseña; todo lo demás va
-    por `require_admin`.
-    """
-    payload = _payload(credentials)
-    if payload.get("ambito") != AMBITO_ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este recurso es solo para administradores del sistema",
-        )
-
-    admin = db.get(UsuarioAdmin, int(payload.get("sub", 0)))
-    if not admin or not admin.activo:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario no encontrado o desactivado",
-        )
-    return admin
-
-
-def require_admin(admin: UsuarioAdmin = Depends(get_admin_actual)) -> UsuarioAdmin:
-    """Administrador con la clave ya definitiva.
-
-    Mientras `debe_cambiar_password` esté puesto, el login entrega token pero
-    ningún endpoint de administración responde: con una clave provisoria
-    conocida, cualquiera que la adivine podría crear clientes.
-    """
-    if admin.debe_cambiar_password:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=MENSAJE_CAMBIO_PASSWORD,
-        )
-    return admin
 
 
 # ── Usuario de un cliente (base del cliente) ──────────────────────────────

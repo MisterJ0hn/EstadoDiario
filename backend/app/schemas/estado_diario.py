@@ -160,3 +160,36 @@ class WebhookResponse(BaseModel):
 class ErrorResponse(BaseModel):
     exito: bool = False
     mensaje: str
+
+
+# ── Causas de corte (submenú Corte) ───────────────────────
+# Van en su propia tabla porque las hojas de corte del Excel no tienen las
+# mismas columnas que las de materia. Ver `app/models/estado_diario_corte.py`.
+
+
+class CorteResponse(BaseModel):
+    id: int
+    # 'suprema' | 'apelaciones'. Distingue de qué hoja salió la fila, que es
+    # lo que explica por qué unas columnas vienen vacías y otras no.
+    tipo: str
+    numero_ingreso: str | None = None
+    fecha_ingreso: date | None = None
+    caratulado: str | None = None
+    # Solo Corte de Apelaciones.
+    ubicacion: str | None = None
+    fecha_ubicacion: date | None = None
+    corte: str | None = None
+    # Solo Corte Suprema.
+    tipo_recurso: str | None = None
+    # Fecha del archivo que la trajo.
+    fecha_archivo: date | None = None
+
+
+class CorteListResponse(BaseModel):
+    exito: bool = True
+    total: int
+    page: int = 1
+    total_pages: int = 1
+    cortes: list[CorteResponse]
+    # Nombres de corte presentes, para el combo del filtro.
+    cortes_disponibles: list[str] = []

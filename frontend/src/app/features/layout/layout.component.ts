@@ -1,17 +1,26 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { NavigationEnd, Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { filter, map, startWith } from 'rxjs';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { AuthService } from '@core/services/auth.service';
 import { NotificationService } from '@core/services/notification.service';
 
 /** Entrada del menú lateral. `icono` es el atributo `d` de un único path SVG:
  *  todos los íconos del sistema son de un solo trazo. */
 interface ItemMenu {
-  ruta: string;
+  /** Ausente en los ítems que solo despliegan: ésos no navegan a ningún lado. */
+  ruta?: string;
   etiqueta: string;
   icono: string;
   /** Solo marcar activo en coincidencia exacta (rutas que son prefijo de otras). */
   exacto?: boolean;
+  /**
+   * Submenú. Un ítem con hijos NO navega: pincharlo abre o cierra el grupo.
+   * Es el caso de Estado Diario y Movimientos, que llegan en el mismo archivo
+   * del PJUD pero en hojas distintas (materia y corte) y no comparten columnas.
+   */
+  hijos?: ItemMenu[];
 }
 
 /** Bloque del menú. `titulo` null = sin encabezado ni separador. */
@@ -29,6 +38,8 @@ const ICONO = {
   portapapeles:
     'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
   reloj: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  balanza:
+    'M12 3v18m-7-5l3-7 3 7m-6 0a3 3 0 006 0m4 0l3-7 3 7m-6 0a3 3 0 006 0M5 6h14',
   calendario: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
   barras: 'M9 17v-6m3 6V7m3 10v-4M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z',
   bitacora:
@@ -49,8 +60,22 @@ const MENU_CLIENTE: GrupoMenu[] = [
       { ruta: '/dashboard', etiqueta: 'Dashboard', icono: ICONO.grafico },
       { ruta: '/estado-diario', etiqueta: 'Bitácora', icono: ICONO.carpeta, exacto: true },
       { ruta: '/estado-diario/upload', etiqueta: 'Cargar Archivo', icono: ICONO.subir },
-      { ruta: '/estado-diario/movimientos', etiqueta: 'Estado Diario', icono: ICONO.sobre },
-      { ruta: '/movimientos', etiqueta: 'Movimientos', icono: ICONO.portapapeles },
+      {
+        etiqueta: 'Estado Diario',
+        icono: ICONO.sobre,
+        hijos: [
+          { ruta: '/estado-diario/movimientos', etiqueta: 'Materia', icono: ICONO.sobre },
+          { ruta: '/estado-diario/cortes', etiqueta: 'Corte', icono: ICONO.balanza },
+        ],
+      },
+      {
+        etiqueta: 'Movimientos',
+        icono: ICONO.portapapeles,
+        hijos: [
+          { ruta: '/movimientos', etiqueta: 'Materia', icono: ICONO.portapapeles, exacto: true },
+          { ruta: '/movimientos/cortes', etiqueta: 'Corte', icono: ICONO.balanza },
+        ],
+      },
       { ruta: '/audiencias', etiqueta: 'Audiencias', icono: ICONO.reloj },
       { ruta: '/estado-diario/calendario', etiqueta: 'Calendario', icono: ICONO.calendario },
       { ruta: '/informes', etiqueta: 'Reportes', icono: ICONO.barras },
@@ -77,25 +102,6 @@ const MENU_ADMIN_CLIENTE: GrupoMenu = {
     { ruta: '/configuracion/correo/log', etiqueta: 'Bitácora de Correo', icono: ICONO.bitacora },
   ],
 };
-
-/**
- * Menú del administrador de la plataforma. Es corto a propósito: no tiene
- * causas, ni archivos, ni calendario. Vive en el mismo armazón para que la
- * consola se vea y se opere igual que el resto del sistema.
- */
-const MENU_PLATAFORMA: GrupoMenu[] = [
-  {
-    titulo: null,
-    items: [
-      { ruta: '/admin', etiqueta: 'Clientes activos', icono: ICONO.grafico, exacto: true },
-      { ruta: '/admin/clientes', etiqueta: 'Clientes', icono: ICONO.edificio },
-    ],
-  },
-  {
-    titulo: 'Plataforma',
-    items: [{ ruta: '/admin/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje }],
-  },
-];
 
 @Component({
   selector: 'app-layout',
@@ -135,9 +141,9 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
       >
         <div class="h-16 flex items-center justify-between px-4 border-b border-neutral-700 shrink-0">
           @if (showLabels()) {
-            <span class="text-lg font-bold tracking-tight">{{ marca().largo }}</span>
+            <span class="text-lg font-bold tracking-tight">{{ marca.largo }}</span>
           } @else {
-            <span class="text-lg font-bold mx-auto">{{ marca().corto }}</span>
+            <span class="text-lg font-bold mx-auto">{{ marca.corto }}</span>
           }
           <button (click)="mobileOpen.set(false)" class="text-neutral-400 hover:text-white md:hidden"
                   aria-label="Cerrar menú">
@@ -155,22 +161,63 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
                   {{ grupo.titulo }}
                 </p>
               }
-              @for (item of grupo.items; track item.ruta) {
-                <a
-                  [routerLink]="item.ruta"
-                  routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
-                  [routerLinkActiveOptions]="{ exact: !!item.exacto }"
-                  (click)="mobileOpen.set(false)"
-                  [attr.title]="showLabels() ? null : item.etiqueta"
-                  class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
-                >
-                  <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" [attr.d]="item.icono" />
-                  </svg>
-                  @if (showLabels()) {
-                    <span>{{ item.etiqueta }}</span>
+              @for (item of grupo.items; track item.etiqueta) {
+                @if (item.hijos) {
+                  <!-- Ítem con submenú: no navega, abre y cierra el grupo. -->
+                  <button
+                    type="button"
+                    (click)="alternarGrupo(item.etiqueta)"
+                    [attr.aria-expanded]="estaAbierto(item)"
+                    [attr.title]="showLabels() ? null : item.etiqueta"
+                    class="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors
+                           hover:text-white hover:bg-neutral-800"
+                    [class]="hayHijoActivo(item) ? 'text-primary-400' : 'text-neutral-300'"
+                  >
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" [attr.d]="item.icono" />
+                    </svg>
+                    @if (showLabels()) {
+                      <span class="flex-1 text-left">{{ item.etiqueta }}</span>
+                      <svg class="w-4 h-4 shrink-0 transition-transform"
+                           [class.rotate-90]="estaAbierto(item)"
+                           fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    }
+                  </button>
+
+                  @if (estaAbierto(item) && showLabels()) {
+                    @for (hijo of item.hijos; track hijo.ruta) {
+                      <a
+                        [routerLink]="hijo.ruta"
+                        routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
+                        [routerLinkActiveOptions]="{ exact: !!hijo.exacto }"
+                        (click)="mobileOpen.set(false)"
+                        class="flex items-center gap-3 py-2 pr-4 text-sm text-neutral-400
+                               hover:text-white hover:bg-neutral-800 transition-colors"
+                        style="padding-left: 3.25rem"
+                      >
+                        <span>{{ hijo.etiqueta }}</span>
+                      </a>
+                    }
                   }
-                </a>
+                } @else {
+                  <a
+                    [routerLink]="item.ruta"
+                    routerLinkActive="bg-primary-600/20 text-primary-400 border-r-2 border-primary-400"
+                    [routerLinkActiveOptions]="{ exact: !!item.exacto }"
+                    (click)="mobileOpen.set(false)"
+                    [attr.title]="showLabels() ? null : item.etiqueta"
+                    class="flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors"
+                  >
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" [attr.d]="item.icono" />
+                    </svg>
+                    @if (showLabels()) {
+                      <span>{{ item.etiqueta }}</span>
+                    }
+                  </a>
+                }
               }
             </div>
           }
@@ -218,13 +265,11 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h2 class="text-base md:text-lg font-semibold text-neutral-800 truncate">Estado Diario CRM</h2>
+          <h2 class="text-base md:text-lg font-semibold text-neutral-800 truncate">Movimientos PJUD</h2>
 
           <!-- Con varios estudios en la misma plataforma, saber en cuál se está
                parado deja de ser un adorno: va fijo en la barra superior. -->
-          @if (auth.esAdminPlataforma()) {
-            <span class="badge-info shrink-0">Administración</span>
-          } @else if (nombreCliente()) {
+          @if (nombreCliente()) {
             <span class="badge-neutral shrink-0 max-w-[12rem] truncate" [title]="nombreCliente()">
               {{ nombreCliente() }}
             </span>
@@ -254,29 +299,76 @@ export class LayoutComponent {
   /** En móvil el menú siempre muestra los textos; en escritorio depende de si está contraído. */
   showLabels = computed(() => !this.collapsed() || this.mobileOpen());
 
+  private router = inject(Router);
+
+  /** URL actual, para saber qué grupo del menú corresponde al lugar donde uno
+   *  está parado. Se sigue con una señal y no leyendo `router.url` en el
+   *  template: eso no se reevalúa al navegar. */
+  private urlActual = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects),
+      startWith(this.router.url)
+    ),
+    { initialValue: this.router.url }
+  );
+
+  /**
+   * Grupos que el usuario abrió o cerró a mano. Lo que NO está acá sigue la
+   * regla por defecto: un grupo se ve abierto si la ruta actual es de alguno
+   * de sus hijos, para que al entrar por un enlace directo el menú muestre
+   * dónde está uno parado.
+   */
+  private gruposAlternados = signal<Record<string, boolean>>({});
+
+  alternarGrupo(etiqueta: string): void {
+    // Si el usuario contrajo la barra, desplegar un submenú no se vería:
+    // primero se expande.
+    if (this.collapsed()) this.collapsed.set(false);
+
+    const item = this.buscarGrupo(etiqueta);
+    const abiertoAhora = item ? this.estaAbierto(item) : false;
+    this.gruposAlternados.update((estado) => ({ ...estado, [etiqueta]: !abiertoAhora }));
+  }
+
+  estaAbierto(item: ItemMenu): boolean {
+    const decidido = this.gruposAlternados()[item.etiqueta];
+    return decidido ?? this.hayHijoActivo(item);
+  }
+
+  /** true si la ruta actual pertenece a alguno de los hijos del grupo. */
+  hayHijoActivo(item: ItemMenu): boolean {
+    const url = this.urlActual();
+    return (item.hijos ?? []).some((h) =>
+      h.exacto ? url === h.ruta : !!h.ruta && url.startsWith(h.ruta)
+    );
+  }
+
+  private buscarGrupo(etiqueta: string): ItemMenu | undefined {
+    for (const grupo of this.menu()) {
+      const encontrado = grupo.items.find((i) => i.etiqueta === etiqueta);
+      if (encontrado) return encontrado;
+    }
+    return undefined;
+  }
+
   /**
    * El armazón es el mismo para las dos sesiones; lo que cambia es el menú.
    * Duplicar el layout habría duplicado también el riesgo de que la consola
    * se fuera separando visualmente del resto del sistema.
    */
-  menu = computed<GrupoMenu[]>(() => {
-    if (this.auth.esAdminPlataforma()) return MENU_PLATAFORMA;
-    return this.auth.isAdmin() ? [...MENU_CLIENTE, MENU_ADMIN_CLIENTE] : MENU_CLIENTE;
-  });
+  /** El administrador del estudio suma su bloque. La consola de la plataforma
+   *  es otra aplicación (`admin_app/`) y no aparece acá. */
+  menu = computed<GrupoMenu[]>(() =>
+    this.auth.isAdmin() ? [...MENU_CLIENTE, MENU_ADMIN_CLIENTE] : MENU_CLIENTE
+  );
 
   /** Nombre del estudio de la sesión actual, para la barra superior. */
   nombreCliente = computed(() => this.auth.user()?.cliente_nombre ?? '');
 
-  marca = computed(() =>
-    this.auth.esAdminPlataforma()
-      ? { largo: 'Administración', corto: 'AD' }
-      : { largo: 'Estado Diario', corto: 'ED' }
-  );
+  marca = { largo: 'Movimientos PJUD', corto: 'MP' } as const;
 
-  etiquetaRol = computed(() => {
-    const rol = this.auth.user()?.rol;
-    if (rol === 'superadmin') return 'Administrador de la plataforma';
-    if (rol === 'admin') return 'Administrador';
-    return 'Usuario';
-  });
+  etiquetaRol = computed(() =>
+    this.auth.user()?.rol === 'admin' ? 'Administrador' : 'Usuario'
+  );
 }

@@ -133,25 +133,12 @@ import {
               <thead>
                 <tr>
                   <th class="w-8"></th>
-                  @if (materiaActiva() === null) {
-                    <th>Materia</th>
-                  }
-                  <th>Rol</th>
-                  @if (esMateriaCorte()) {
-                    <th>Era</th>
-                  }
-                  <th>Carátula</th>
-                  @if (esMateriaCorte()) {
-                    <th>Corte</th>
-                  } @else {
-                    <th>Tribunal</th>
-                  }
-                  <th>Estado de la causa</th>
-                  @if (esMateriaCorte()) {
-                    <th>Ubicación</th>
-                  }
-                  <th>F. Ingreso</th>
-                  <th>RUT</th>
+                  <th>Rit</th>
+                  <th>Tribunal</th>
+                  <th>Caratulado</th>
+                  <th>FechaIngreso</th>
+                  <th>EstadoCausa</th>
+                  <th>Institución</th>
                 </tr>
               </thead>
               <tbody>
@@ -164,33 +151,16 @@ import {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
                     </td>
-                    @if (materiaActiva() === null) {
-                      <td>
-                        @if (m.materia) {
-                          <span class="badge-neutral">{{ m.materia }}</span>
-                        } @else { - }
-                      </td>
-                    }
-                    <td class="font-medium">{{ m.rol || '-' }}</td>
-                    @if (esMateriaCorte()) {
-                      <td>{{ m.era || '-' }}</td>
-                    }
+                    <td class="font-medium whitespace-nowrap">{{ m.rol || '-' }}</td>
+                    <td class="max-w-[200px] truncate" [title]="m.tribunal || ''">{{ m.tribunal || '-' }}</td>
                     <td class="max-w-[280px] truncate" [title]="m.caratulado || ''">{{ m.caratulado || '-' }}</td>
-                    @if (esMateriaCorte()) {
-                      <td class="max-w-[200px] truncate" [title]="m.corte || ''">{{ m.corte || '-' }}</td>
-                    } @else {
-                      <td class="max-w-[200px] truncate" [title]="m.tribunal || ''">{{ m.tribunal || '-' }}</td>
-                    }
+                    <td class="whitespace-nowrap">{{ fmtFecha(m.fecha_ingreso) }}</td>
                     <td>
                       @if (m.estado_causa) {
                         <span class="badge-info">{{ m.estado_causa }}</span>
                       } @else { - }
                     </td>
-                    @if (esMateriaCorte()) {
-                      <td class="max-w-[180px] truncate" [title]="m.ubicacion || ''">{{ m.ubicacion || '-' }}</td>
-                    }
-                    <td>{{ fmtFecha(m.fecha_ingreso) }}</td>
-                    <td>{{ m.rut || '-' }}</td>
+                    <td class="max-w-[180px] truncate" [title]="m.institucion || ''">{{ m.institucion || '-' }}</td>
                   </tr>
 
                   <!-- Detalle expandible: solo los campos con dato. Es la forma de
@@ -198,7 +168,7 @@ import {
                        esporádicamente, sin columnas vacías en la tabla. -->
                   @if (detalleAbiertoId() === m.id) {
                     <tr class="bg-neutral-50">
-                      <td [attr.colspan]="colspan()" class="whitespace-normal">
+                      <td [attr.colspan]="colspan" class="whitespace-normal">
                         <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 py-2">
                           @for (d of detalle(m); track d.etiqueta) {
                             <div>
@@ -214,7 +184,7 @@ import {
                   }
                 } @empty {
                   <tr>
-                    <td [attr.colspan]="colspan()" class="text-center py-10 text-neutral-400">
+                    <td [attr.colspan]="colspan" class="text-center py-10 text-neutral-400">
                       No se encontraron movimientos
                     </td>
                   </tr>
@@ -273,17 +243,11 @@ export class MovimientosComponent implements OnInit {
   /** Fijado por query param cuando se entra desde un archivo concreto; no se edita en pantalla. */
   filtroOrigenId: number | undefined;
 
-  /** Las hojas de Corte son las únicas que traen era / corte / ubicación. */
-  esMateriaCorte = computed(() => (this.materiaActiva() ?? '').toLowerCase().startsWith('corte'));
-
-  /** Columnas visibles, para el colspan de las filas de detalle y del estado vacío. */
-  colspan = computed(() => {
-    // Base: chevron + rol + carátula + tribunal/corte + estado + fecha ingreso + rut
-    let columnas = 7;
-    if (this.materiaActiva() === null) columnas += 1; // Materia
-    if (this.esMateriaCorte()) columnas += 2; // Era + Ubicación
-    return columnas;
-  });
+  /** Columnas de la tabla, para el colspan del detalle y del estado vacío.
+   *  Chevron + Rut + Tribunal + Caratulado + FechaIngreso + EstadoCausa +
+   *  Institución. Es fijo desde que las causas de corte se fueron a su propia
+   *  pantalla y dejó de haber columnas condicionales. */
+  readonly colspan = 7;
 
   ngOnInit(): void {
     const materia = this.route.snapshot.queryParamMap.get('materia');

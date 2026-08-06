@@ -20,9 +20,9 @@ import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-            <h1 class="text-2xl font-bold text-neutral-800">Estado Diario CRM</h1>
+            <h1 class="text-2xl font-bold text-neutral-800">Movimientos PJUD</h1>
             <p class="text-neutral-500 mt-1">
-              {{ modoAdmin() ? 'Acceso de administrador de la plataforma' : 'Ingrese las credenciales de su estudio' }}
+              Ingrese las credenciales
             </p>
           </div>
 
@@ -34,30 +34,28 @@ import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
             <!-- El RUT del estudio es lo primero: define en qué base de datos
                  se busca el usuario. Sin él, el mismo nombre de usuario puede
                  existir en varios estudios. -->
-            @if (!modoAdmin()) {
-              <div>
-                <label class="form-label" for="rut">RUT del estudio</label>
-                <input
-                  id="rut"
-                  type="text"
-                  class="form-input"
-                  [ngModel]="rut()"
-                  (ngModelChange)="alEscribirRut($event)"
-                  name="rut"
-                  inputmode="text"
-                  placeholder="12.345.678-9"
-                  autocomplete="organization"
-                  [attr.aria-invalid]="rutMalFormado() ? 'true' : null"
-                  aria-describedby="ayuda-rut"
-                />
-                <p id="ayuda-rut" class="text-xs mt-1"
-                   [class]="rutMalFormado() ? 'text-danger-600' : 'text-neutral-500'">
-                  {{ rutMalFormado()
-                      ? 'Revise el RUT: el dígito verificador no corresponde.'
-                      : 'El RUT con el que su estudio está registrado, con dígito verificador.' }}
-                </p>
-              </div>
-            }
+            <div>
+              <label class="form-label" for="rut">RUT Cliente</label>
+              <input
+                id="rut"
+                type="text"
+                class="form-input"
+                [ngModel]="rut()"
+                (ngModelChange)="alEscribirRut($event)"
+                name="rut"
+                inputmode="text"
+                placeholder="12.345.678-9"
+                autocomplete="organization"
+                [attr.aria-invalid]="rutMalFormado() ? 'true' : null"
+                aria-describedby="ayuda-rut"
+              />
+              <p id="ayuda-rut" class="text-xs mt-1"
+                 [class]="rutMalFormado() ? 'text-danger-600' : 'text-neutral-500'">
+                {{ rutMalFormado()
+                    ? 'Revise el RUT: el dígito verificador no corresponde.'
+                    : '' }}
+              </p>
+            </div>
 
             <div>
               <label class="form-label" for="username">Usuario</label>
@@ -81,16 +79,6 @@ import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
               {{ loading() ? 'Ingresando...' : 'Ingresar' }}
             </button>
           </form>
-
-          <!-- El acceso de administrador es de uso interno y poco frecuente:
-               va discreto al pie, no como una alternativa de igual peso. -->
-          <div class="border-t border-neutral-200 mt-6 pt-4 text-center">
-            <button type="button" (click)="cambiarModo()" [disabled]="loading()"
-                    class="text-sm text-neutral-500 hover:text-primary-700 hover:underline
-                           focus:outline-none focus:ring-2 focus:ring-primary-200 rounded px-2 py-1">
-              {{ modoAdmin() ? 'Volver al ingreso de estudios' : 'Ingresar como administrador de la plataforma' }}
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -103,7 +91,6 @@ export class LoginComponent {
   rut = signal('');
   username = '';
   password = '';
-  modoAdmin = signal(false);
   loading = signal(false);
   errorMsg = signal('');
 
@@ -118,21 +105,14 @@ export class LoginComponent {
     this.rut.set(formatearRut(valor));
   }
 
-  cambiarModo(): void {
-    this.modoAdmin.update((v) => !v);
-    this.errorMsg.set('');
-  }
-
   onLogin(): void {
-    if (!this.modoAdmin()) {
-      if (!this.rut().trim()) {
-        this.errorMsg.set('Indique el RUT de su estudio');
-        return;
-      }
-      if (!rutValido(this.rut())) {
-        this.errorMsg.set('El RUT no es válido. Revise el dígito verificador.');
-        return;
-      }
+    if (!this.rut().trim()) {
+      this.errorMsg.set('Indique el RUT de su estudio');
+      return;
+    }
+    if (!rutValido(this.rut())) {
+      this.errorMsg.set('El RUT no es válido. Revise el dígito verificador.');
+      return;
     }
     if (!this.username || !this.password) {
       this.errorMsg.set('Ingrese usuario y contraseña');
@@ -142,22 +122,22 @@ export class LoginComponent {
     this.loading.set(true);
     this.errorMsg.set('');
 
-    const peticion = this.modoAdmin()
-      ? this.auth.loginAdmin({ username: this.username, password: this.password })
-      : this.auth.login({
-          rut: rutPlano(this.rut()),
-          username: this.username,
-          password: this.password,
-        });
-
-    peticion.subscribe({
+    // La consola de la plataforma es otra aplicación (`admin_app/`): acá solo
+    // entran los estudios.
+    this.auth
+      .login({
+        rut: rutPlano(this.rut()),
+        username: this.username,
+        password: this.password,
+      })
+      .subscribe({
       next: (usuario) => {
         // Clave provisoria: no entra al sistema, entra a cambiarla.
         if (usuario.debe_cambiar_password) {
           this.router.navigate(['/cambiar-clave']);
           return;
         }
-        this.router.navigate([this.modoAdmin() ? '/admin' : '/']);
+        this.router.navigate(['/']);
       },
       error: (err) => {
         this.loading.set(false);

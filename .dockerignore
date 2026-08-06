@@ -1,0 +1,35 @@
+# Contexto de build de la RAÍZ. Hoy lo usa un solo servicio: admin_api, que
+# necesita el repo entero como contexto porque copia backend/app además de su
+# propio directorio (ver admin_api/Dockerfile).
+#
+# backend/ y frontend/ se construyen con su propio contexto y su propio
+# .dockerignore; lo de acá no les afecta.
+#
+# Si algún día otro servicio se construye desde la raíz, revisar esta lista
+# antes: acá se excluyen directorios completos que ese otro servicio podría
+# necesitar.
+
+.git
+.gitignore
+.env
+*.md
+
+# Apps que no entran en la imagen de admin_api
+frontend/
+ionic_app/
+admin_app/
+
+# Del backend solo se copia app/; el resto (uploads, venv, pruebas) sobra
+backend/uploads/
+backend/.venv/
+backend/venv/
+backend/tests/
+
+# Datos y material de trabajo
+datos/
+ejemplos/
+
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/

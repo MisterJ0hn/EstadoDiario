@@ -1,0 +1,16 @@
+# Dependencias de admin_api.
+#
+# NO se repiten las del backend: se incluyen. `admin_api` importa el paquete
+# `app` de `backend/` (ver admin_api/app/__init__.py), así que necesita TODAS
+# las dependencias de ese paquete, no solo las que nombra su propio código.
+#
+# Concretamente: `admin_api/app/services/admin_cliente_service.py` importa
+# `app.services.correo_service`, que arrastra el importador de Excel (openpyxl,
+# xlrd) y el de audiencias (google-api-python-client). Con una lista propia y
+# recortada el servicio instalaba bien y reventaba al arrancar, con un
+# ModuleNotFoundError a mitad de la cadena de imports.
+#
+# Incluirlas por referencia también resuelve el otro problema que advertía el
+# README: las versiones no pueden divergir, porque los dos procesos cargan el
+# MISMO código compartido.
+-r ../backend/requirements.txt

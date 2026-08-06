@@ -20,8 +20,40 @@ import { CorreoLog, ResultadoCorreo } from '@core/models/configuracion-correo.mo
             duplicados y errores
           </p>
         </div>
-        <a routerLink="/configuracion/correo" class="btn-secondary shrink-0">Configuración</a>
+        <!-- Una sola revisión cubre los tres reportes: el tipo se deduce del
+             asunto de cada correo, no se elige acá. -->
+        <button
+          type="button"
+          (click)="revisarAhora()"
+          [disabled]="revisando()"
+          class="btn-primary shrink-0 flex items-center gap-2"
+        >
+          @if (revisando()) {
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                      stroke-width="4" fill="none" />
+              <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Revisando...
+          } @else {
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                 aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0
+                       0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Revisar casilla ahora
+          }
+        </button>
       </div>
+
+      @if (revisando()) {
+        <div class="alert-info">
+          Revisando la casilla e importando lo que corresponda: estado diario, movimientos y
+          audiencias. Puede tardar según cuántos correos haya sin leer.
+        </div>
+      }
 
       <div class="card">
         <div class="card-body">
@@ -113,12 +145,64 @@ export class CorreoLogComponent implements OnInit {
   filtro = 'importado';
   registros = signal<CorreoLog[]>([]);
   cargando = signal(true);
+  revisando = signal(false);
   page = signal(1);
   totalPages = signal(1);
   total = signal(0);
 
   ngOnInit(): void {
     this.cargar(1);
+  }
+
+  /**
+   * Fuerza una revisión de la casilla sin esperar a la hora programada.
+   *
+   * No hay un botón por tipo de reporte: el tipo lo decide el asunto del
+   * correo (`asunto_estado_diario` / `asunto_movimientos` /
+   * `asunto_audiencias`), así que pedir "importa solo audiencias" no
+   * significaría nada del lado del servidor.
+   */
+  revisarAhora(): void {
+    if (this.revisando()) return;
+    this.revisando.set(true);
+
+    this.service.revisarAhora().subscribe({
+      next: (res) => {
+        this.revisando.set(false);
+
+        if (!res.exito) {
+          // Falla de conexión o de credencial: el detalle queda en la bitácora
+          // como resultado "conexion".
+          this.notification.error(res.mensaje || 'No se pudo revisar la casilla');
+          this.filtro = '';
+          this.cargar(1);
+          return;
+        }
+
+        if (res.procesados === 0) {
+          this.notification.info('No había correos nuevos en la casilla');
+          return;
+        }
+
+        this.notification.success(
+          `${res.importados} importados de ${res.procesados} correos ` +
+            `(${res.duplicados} duplicados, ${res.descartados} descartados, ` +
+            `${res.errores} con error)`
+        );
+
+        // Si no entró nada, con el filtro "importado" la pantalla quedaría
+        // igual que antes y parecería que el botón no hizo nada. Se pasa a
+        // "Todos" para que se vea POR QUÉ no entró.
+        if (res.importados === 0) {
+          this.filtro = '';
+        }
+        this.cargar(1);
+      },
+      error: () => {
+        this.revisando.set(false);
+        this.notification.error('No se pudo revisar la casilla');
+      },
+    });
   }
 
   cargar(page: number): void {

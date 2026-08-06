@@ -20,7 +20,6 @@ from app.core.database import crear_sesion_tenant, get_db_maestra
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.core.exceptions import BadRequestException, UnauthorizedException
 from app.core.security import decode_token, get_password_hash, verify_password
-from app.models.maestra.usuario_admin import UsuarioAdmin
 from app.models.usuario import Usuario
 from app.repositories.cliente_repository import ClienteRepository
 from app.repositories.usuario_repository import UsuarioRepository
@@ -32,11 +31,9 @@ from app.schemas.auth import (
     TokenResponse,
     UserInfo,
 )
-from app.schemas.cliente import OperacionResponse
+from app.schemas.comunes import OperacionResponse
 from app.services.auth_service import (
-    AMBITO_ADMIN,
     AuthClienteService,
-    perfil_admin,
     perfil_cliente,
     refrescar,
 )
@@ -94,19 +91,12 @@ def me(
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
     db_maestra: Session = Depends(get_db_maestra),
 ):
-    """Perfil del usuario de cliente **o** del administrador de la plataforma.
+    """Perfil del usuario de un estudio, con la ficha de su cliente.
 
-    En el primer caso incluye la ficha del cliente (`cliente_*`), que sale de
-    la base principal porque en la del cliente no está; en el segundo esos
-    campos van nulos.
+    Los `cliente_*` salen de la base principal porque en la del cliente no
+    están.
     """
     payload = _payload_valido(credentials)
-
-    if payload.get("ambito") == AMBITO_ADMIN:
-        admin = db_maestra.get(UsuarioAdmin, int(payload.get("sub", 0)))
-        if not admin or not admin.activo:
-            raise UnauthorizedException("Usuario no encontrado o desactivado")
-        return perfil_admin(admin)
 
     guid = payload.get("guid")
     if not guid:
@@ -155,7 +145,7 @@ def actualizar_perfil(
 @router.post(
     "/cambiar-password",
     response_model=OperacionResponse,
-    summary="Cambiar la propia contraseña (cualquiera de las dos sesiones)",
+    summary="Cambiar la propia contraseña",
     responses={401: {"description": "La contraseña actual no es correcta"}},
 )
 def cambiar_password(
@@ -170,14 +160,6 @@ def cambiar_password(
     schema): con una provisoria el usuario acaba de escribirla para entrar.
     """
     payload = _payload_valido(credentials)
-
-    if payload.get("ambito") == AMBITO_ADMIN:
-        admin = db_maestra.get(UsuarioAdmin, int(payload.get("sub", 0)))
-        if not admin or not admin.activo:
-            raise UnauthorizedException("Usuario no encontrado o desactivado")
-        _cambiar(admin, body, db_maestra)
-        logger.info("El administrador '%s' cambió su contraseña", admin.usuario)
-        return OperacionResponse(exito=True, mensaje="Contraseña actualizada")
 
     guid = payload.get("guid")
     if not guid:
@@ -196,8 +178,7 @@ def cambiar_password(
 
 
 def _cambiar(registro, body: CambiarPasswordRequest, db: Session) -> None:
-    """Valida y aplica el cambio. Sirve para las dos tablas de usuario porque
-    ambas tienen `password_hash` y `debe_cambiar_password`."""
+    """Valida y aplica el cambio de contraseña."""
     if not registro.debe_cambiar_password:
         # Cambio voluntario: se exige la clave actual. Sin esto, una sesión
         # olvidada abierta permite quedarse con la cuenta.

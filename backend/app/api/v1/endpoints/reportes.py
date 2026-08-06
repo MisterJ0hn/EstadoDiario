@@ -2,9 +2,8 @@
 para reutilizarlo y lo recibe por correo en Excel. La tabla que los guarda
 sigue llamándose `reporte_plantilla`.
 
-La configuración SMTP va en este mismo módulo pero bajo rol admin y contra la
-base PRINCIPAL: es una cuenta única del sistema, no algo que cada usuario
-configure (a diferencia de la casilla IMAP de entrada, que es por cliente).
+La cuenta de correo de SALIDA no se configura acá: es única del sistema y la
+administra `admin_api`. Este módulo solo la usa para despachar.
 """
 
 import json
@@ -23,8 +22,6 @@ from app.models.usuario import Usuario
 from app.repositories.reporte_repository import ReporteRepository
 from app.schemas.reporte import (
     CamposDisponiblesResponse,
-    ConfiguracionSmtpResponse,
-    ConfiguracionSmtpUpdate,
     GenerarReporteResponse,
     OperacionResponse,
     ReportePlantillaListResponse,
@@ -218,65 +215,11 @@ def descargar(
     )
 
 
-# ── Configuración SMTP (solo admin) ───────────────────────
+# La configuración SMTP se administra en `admin_api`: es la cuenta de salida
+# del SISTEMA (fila con `cliente_id` nulo), no de un estudio. Acá estaba
+# protegida con `require_admin_cliente`, así que el administrador de cualquier
+# estudio podía cambiarle la cuenta de correo a toda la plataforma.
+#
+# El envío de informes sigue usándola desde `SmtpService`; lo que se fue es
+# poder editarla.
 
-@router.get(
-    "/configuracion/smtp",
-    response_model=ConfiguracionSmtpResponse,
-    summary="Obtener la configuración de la cuenta de envío",
-    dependencies=[Depends(require_admin_cliente)],
-)
-def obtener_smtp(db: Session = Depends(get_db_maestra)):
-    c = SmtpService(db).get_config()
-    return ConfiguracionSmtpResponse(
-        activo=c.activo, host=c.host, puerto=c.puerto,
-        usar_tls=c.usar_tls, usar_ssl=c.usar_ssl, usuario=c.usuario,
-        tiene_password=bool(c.password_cifrado),
-        remitente_email=c.remitente_email, remitente_nombre=c.remitente_nombre,
-        ultimo_envio=c.ultimo_envio, ultimo_resultado=c.ultimo_resultado,
-    )
-
-
-@router.put(
-    "/configuracion/smtp",
-    response_model=ConfiguracionSmtpResponse,
-    summary="Guardar la configuración de la cuenta de envío",
-    dependencies=[Depends(require_admin_cliente)],
-)
-def guardar_smtp(
-    datos: ConfiguracionSmtpUpdate,
-    db: Session = Depends(get_db_maestra),
-    admin: Usuario = Depends(require_admin_cliente),
-):
-    servicio = SmtpService(db)
-    c = servicio.get_config()
-    c.activo = datos.activo
-    c.host = datos.host
-    c.puerto = datos.puerto
-    c.usar_tls = datos.usar_tls
-    c.usar_ssl = datos.usar_ssl
-    c.usuario = datos.usuario
-    c.remitente_email = datos.remitente_email
-    c.remitente_nombre = datos.remitente_nombre
-    if datos.password:
-        c.password_cifrado = cifrar(datos.password)
-    db.commit()
-    db.refresh(c)
-    logger.info("Configuración SMTP actualizada por %s", admin.usuario)
-    return obtener_smtp(db)
-
-
-@router.post(
-    "/configuracion/smtp/probar",
-    response_model=OperacionResponse,
-    summary="Probar la conexión SMTP sin enviar nada",
-    dependencies=[Depends(require_admin_cliente)],
-)
-def probar_smtp(
-    datos: ConfiguracionSmtpUpdate | None = None,
-    db: Session = Depends(get_db_maestra),
-):
-    resultado = SmtpService(db).probar_conexion(
-        password_override=datos.password if datos else None
-    )
-    return OperacionResponse(**resultado)

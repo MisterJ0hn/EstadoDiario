@@ -6,7 +6,6 @@ import { environment } from '@env/environment';
 import {
   ActualizarPerfilRequest,
   CambiarPasswordRequest,
-  LoginAdminRequest,
   LoginRequest,
   TokenResponse,
   UserInfo,
@@ -24,8 +23,6 @@ export class AuthService {
   readonly user = this._user.asReadonly();
   readonly isAuthenticated = computed(() => !!this._user());
   readonly isAdmin = computed(() => this._user()?.rol === 'admin');
-  /** Administrador de la plataforma: ve clientes, no causas. */
-  readonly esAdminPlataforma = computed(() => this._user()?.rol === 'superadmin');
 
   constructor(
     private http: HttpClient,
@@ -57,12 +54,6 @@ export class AuthService {
       .pipe(switchMap((res) => this.guardarSesion(res)));
   }
 
-  /** Sesión del administrador de la plataforma: usuario + contraseña. */
-  loginAdmin(credentials: LoginAdminRequest): Observable<UserInfo> {
-    return this.http
-      .post<TokenResponse>(`${this.apiUrl}/admin/login`, credentials)
-      .pipe(switchMap((res) => this.guardarSesion(res)));
-  }
 
   private guardarSesion(res: TokenResponse): Observable<UserInfo> {
     localStorage.setItem(TOKEN_KEY, res.access_token);
@@ -84,7 +75,7 @@ export class AuthService {
   /** Adónde mandar al usuario recién autenticado según su tipo de sesión. */
   rutaInicial(): string {
     if (this.debeCambiarPassword()) return '/cambiar-clave';
-    return this.esAdminPlataforma() ? '/admin' : '/';
+    return '/';
   }
 
   refreshToken(): Observable<TokenResponse> {

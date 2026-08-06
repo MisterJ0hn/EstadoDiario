@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../../../../node_modules/@capacitor/share/dist/esm/web.js"],
+  "sourcesContent": ["import { WebPlugin } from '@capacitor/core';\nexport class ShareWeb extends WebPlugin {\n  async canShare() {\n    if (typeof navigator === 'undefined' || !navigator.share) {\n      return {\n        value: false\n      };\n    } else {\n      return {\n        value: true\n      };\n    }\n  }\n  async share(options) {\n    if (typeof navigator === 'undefined' || !navigator.share) {\n      throw this.unavailable('Share API not available in this browser');\n    }\n    await navigator.share({\n      title: options.title,\n      text: options.text,\n      url: options.url\n    });\n    return {};\n  }\n}\n"],
+  "mappings": ";;;;;;;;AACO,IAAM,WAAN,cAAuB,UAAU;AAAA,EAChC,WAAW;AAAA;AACf,UAAI,OAAO,cAAc,eAAe,CAAC,UAAU,OAAO;AACxD,eAAO;AAAA,UACL,OAAO;AAAA,QACT;AAAA,MACF,OAAO;AACL,eAAO;AAAA,UACL,OAAO;AAAA,QACT;AAAA,MACF;AAAA,IACF;AAAA;AAAA,EACM,MAAM,SAAS;AAAA;AACnB,UAAI,OAAO,cAAc,eAAe,CAAC,UAAU,OAAO;AACxD,cAAM,KAAK,YAAY,yCAAyC;AAAA,MAClE;AACA,YAAM,UAAU,MAAM;AAAA,QACpB,OAAO,QAAQ;AAAA,QACf,MAAM,QAAQ;AAAA,QACd,KAAK,QAAQ;AAAA,MACf,CAAC;AACD,aAAO,CAAC;AAAA,IACV;AAAA;AACF;",
+  "names": []
+}

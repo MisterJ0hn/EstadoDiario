@@ -127,3 +127,36 @@ export interface ApiResponse {
   exito: boolean;
   mensaje?: string;
 }
+
+// ── Causas de corte (submenú Corte) ──────────────────────────────────────
+// Viven en su propia tabla porque las hojas de corte del Excel no comparten
+// columnas con las de materia: no traen rol único, ni tribunal, ni estado.
+
+export type TipoCorte = 'suprema' | 'apelaciones';
+
+export interface Corte {
+  id: number;
+  /** De qué hoja salió: explica por qué unas columnas vienen vacías. */
+  tipo: TipoCorte;
+  numero_ingreso: string | null;
+  fecha_ingreso: string | null;
+  caratulado: string | null;
+  /** Solo Corte de Apelaciones. */
+  ubicacion: string | null;
+  fecha_ubicacion: string | null;
+  corte: string | null;
+  /** Solo Corte Suprema. */
+  tipo_recurso: string | null;
+  /** Fecha del archivo que la trajo. */
+  fecha_archivo: string | null;
+}
+
+export interface CorteListResponse {
+  exito: boolean;
+  total: number;
+  page: number;
+  total_pages: number;
+  cortes: Corte[];
+  /** Nombres de corte presentes, para el combo del filtro. */
+  cortes_disponibles: string[];
+}

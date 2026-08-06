@@ -2,7 +2,6 @@ import { inject } from '@angular/core';
 import { Router, Routes, UrlTree } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
-import { adminPlataformaGuard } from './core/guards/admin-plataforma.guard';
 import { cambioClaveGuard, claveVigenteGuard } from './core/guards/clave-vigente.guard';
 
 const redirectToTab = (tab: string): UrlTree =>
@@ -59,6 +58,16 @@ export const routes: Routes = [
             data: { filter: 'movimientos' },
           },
           {
+            // Las causas de corte viven en otra tabla y tienen otras columnas
+            // que las de materia: por eso son una pantalla aparte y no una
+            // pestaña más del listado por materia.
+            path: 'cortes',
+            loadComponent: () =>
+              import('./features/estado-diario/components/cortes-list/cortes-list.component').then(
+                (m) => m.CortesListComponent
+              ),
+          },
+          {
             path: 'calendario',
             loadComponent: () =>
               import('./features/calendario/calendario.component').then((m) => m.CalendarioComponent),
@@ -83,6 +92,15 @@ export const routes: Routes = [
               ),
           },
         ],
+      },
+      {
+        // Las causas de corte del reporte viven en otra tabla y tienen otras
+        // columnas: pantalla aparte, igual que en Estado Diario.
+        path: 'movimientos/cortes',
+        loadComponent: () =>
+          import('./features/movimientos/movimientos-cortes.component').then(
+            (m) => m.MovimientosCortesComponent
+          ),
       },
       {
         // Módulo Movimientos: reporte de estado procesal, solo consulta.
@@ -163,82 +181,6 @@ export const routes: Routes = [
       },
       // El dashboard es la página de inicio.
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-    ],
-  },
-  {
-    // Consola de la plataforma. Mismo armazón que el resto del sistema
-    // (LayoutComponent), otro menú: el administrador no tiene causas.
-    path: 'admin',
-    loadComponent: () =>
-      import('./features/layout/layout.component').then((m) => m.LayoutComponent),
-    canActivate: [adminPlataformaGuard, claveVigenteGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./features/admin/dashboard/admin-dashboard.component').then(
-            (m) => m.AdminDashboardComponent
-          ),
-      },
-      {
-        path: 'clientes',
-        children: [
-          {
-            path: '',
-            loadComponent: () =>
-              import('./features/admin/clientes/clientes-list.component').then(
-                (m) => m.ClientesListComponent
-              ),
-          },
-          {
-            path: ':id',
-            loadComponent: () =>
-              import('./features/admin/clientes/cliente-detalle.component').then(
-                (m) => m.ClienteDetalleComponent
-              ),
-          },
-        ],
-      },
-      {
-        // Un solo módulo con paneles: se configuran juntos al montar el
-        // sistema y casi nunca después.
-        path: 'configuracion',
-        loadComponent: () =>
-          import('./features/admin/configuracion/configuracion-shell.component').then(
-            (m) => m.ConfiguracionShellComponent
-          ),
-        children: [
-          {
-            path: 'smtp',
-            loadComponent: () =>
-              import('./features/configuracion/components/smtp-config/smtp-config.component').then(
-                (m) => m.SmtpConfigComponent
-              ),
-          },
-          {
-            path: 'google-calendar',
-            loadComponent: () =>
-              import('./features/configuracion/components/google-config/google-config.component').then(
-                (m) => m.GoogleConfigComponent
-              ),
-          },
-          {
-            path: 'whatsapp',
-            loadComponent: () =>
-              import('./features/configuracion/components/whatsapp-config/whatsapp-config.component').then(
-                (m) => m.WhatsappConfigComponent
-              ),
-          },
-          {
-            path: 'sistema',
-            loadComponent: () =>
-              import('./features/admin/configuracion/sistema-config.component').then(
-                (m) => m.SistemaConfigComponent
-              ),
-          },
-          { path: '', redirectTo: 'smtp', pathMatch: 'full' },
-        ],
-      },
     ],
   },
   { path: '**', redirectTo: '' },

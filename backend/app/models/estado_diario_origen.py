@@ -51,6 +51,15 @@ class EstadoDiarioOrigen(BaseTenant):
     movimientos: Mapped[List["Movimiento"]] = relationship(
         "Movimiento", back_populates="estado_diario_origen", cascade="all, delete-orphan"
     )
+    # Las causas de corte de los dos reportes. Van con la misma cascada que sus
+    # hermanas: sin esto, borrar un archivo desde Bitácora falla con una
+    # violación de clave foránea.
+    cortes_estado_diario: Mapped[List["EstadoDiarioCorte"]] = relationship(
+        "EstadoDiarioCorte", back_populates="estado_diario_origen", cascade="all, delete-orphan"
+    )
+    cortes_movimiento: Mapped[List["MovimientoCorte"]] = relationship(
+        "MovimientoCorte", back_populates="estado_diario_origen", cascade="all, delete-orphan"
+    )
     # Sin delete-orphan, a diferencia de los otros dos: una audiencia sobrevive
     # a sus archivos porque se deduplica entre cargas traslapadas y
     # `estado_diario_origen_id` apunta solo al último que la trajo. Borrar ese

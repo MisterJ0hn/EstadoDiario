@@ -57,6 +57,64 @@ services:
     networks:
       - ed_network
 
+  # ─── admin_api (FastAPI) ── puerto 8092 ────────────────
+  # Consola de plataforma. Es OTRO servicio, no otro endpoint del backend:
+  # distinto público (el operador de Temposoft, no los estudios) y tokens con
+  # ambito=sistema que el backend de clientes rechaza, y viceversa.
+  #
+  # El contexto es la RAÍZ del repo porque la imagen tiene que incluir
+  # backend/app: admin_api reutiliza los modelos, el cifrado y el esquema de
+  # las bases de cliente en vez de copiarlos. Sin ese directorio no levanta.
+  admin_api:
+    build:
+      context: .
+      dockerfile: admin_api/Dockerfile
+    container_name: ed_admin_api
+    restart: unless-stopped
+    environment:
+      - APP_ENV=${APP_ENV}
+      - POSTGRES_HOST=${POSTGRES_HOST:-host.docker.internal}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TENANT_DB_PREFIJO=${TENANT_DB_PREFIJO:-estado_diario_}
+      # Tiene que ser LA MISMA que la del backend: firma los tokens y además
+      # es la semilla del cifrado de RUTs y del hash de búsqueda. Con claves
+      # distintas, lo que cifra la consola el backend no lo puede leer.
+      - BACKEND_SECRET_KEY=${BACKEND_SECRET_KEY}
+      - BACKEND_ACCESS_TOKEN_EXPIRE_MINUTES=${BACKEND_ACCESS_TOKEN_EXPIRE_MINUTES}
+      - BACKEND_REFRESH_TOKEN_EXPIRE_DAYS=${BACKEND_REFRESH_TOKEN_EXPIRE_DAYS}
+      - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL}
+      - MAIL_ENCRYPTION_KEY=${MAIL_ENCRYPTION_KEY:-}
+      - TIMEZONE=${TIMEZONE:-America/Santiago}
+      - ADMIN_INICIAL_USUARIO=${ADMIN_INICIAL_USUARIO:-admin}
+      - ADMIN_INICIAL_PASSWORD=${ADMIN_INICIAL_PASSWORD:-admin123}
+      # Sirviendo la consola por su Nginx (servicio admin_app) la SPA y la API
+      # quedan en el mismo origen y esto no se usa. Queda por si se expone el
+      # puerto 8092 directo a un navegador.
+      - ADMIN_API_CORS_ORIGINS=${ADMIN_API_CORS_ORIGINS:-http://localhost:8093}
+    ports:
+      - "${ADMIN_API_PORT:-8092}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ed_network
+
+  # ─── admin_app (Angular) ── puerto 8093 ────────────────
+  admin_app:
+    build:
+      context: ./admin_app
+      dockerfile: Dockerfile
+    container_name: ed_admin_app
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_APP_PORT:-8093}:80"
+    depends_on:
+      - admin_api
+    networks:
+      - ed_network
+
 volumes:
   backend_uploads:
 

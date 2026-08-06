@@ -105,3 +105,34 @@ class MovimientoUploadResponse(BaseModel):
     origen_id: int | None = None
     movimientos_importados: int | None = None
     por_materia: dict[str, int] | None = None
+
+
+# ── Causas de corte (submenú Corte) ───────────────────────
+# Van en su propia tabla: las hojas de corte del reporte traen Era, Ubicación y
+# Fecha Ubicación, que las hojas de materia no tienen, y les falta el tribunal.
+
+
+class MovimientoCorteResponse(BaseModel):
+    id: int
+    # 'suprema' | 'apelaciones'. Explica por qué unas columnas vienen vacías.
+    tipo: str
+    rol: str | None = None
+    era: str | None = None
+    fecha_ingreso: date | None = None
+    caratulado: str | None = None
+    estado_causa: str | None = None
+    institucion: str | None = None
+    # Solo Corte de Apelaciones.
+    corte: str | None = None
+    ubicacion: str | None = None
+    fecha_ubicacion: date | None = None
+    fecha_archivo: date | None = None
+
+
+class MovimientoCorteListResponse(BaseModel):
+    exito: bool = True
+    total: int
+    page: int = 1
+    total_pages: int = 1
+    cortes: list[MovimientoCorteResponse]
+    cortes_disponibles: list[str] = []

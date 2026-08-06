@@ -23,8 +23,6 @@ from app.core.esquema import TABLAS_TENANT
 from app.core.hash_busqueda import hash_busqueda, hash_rut, normalizar_rut
 from app.models.maestra.cliente import Cliente
 from app.models.usuario import Usuario
-from app.schemas.cliente import ClienteActividad
-from app.services.admin_dashboard_service import orden_por_abandono
 
 
 # ── Hash de búsqueda ──────────────────────────────────────
@@ -90,27 +88,6 @@ def test_cliente_normaliza_el_rut_antes_de_cifrarlo():
     c.rut = "12.345.678-9"
     assert c.rut == "12345678-9"
     assert c.rut_hash == hash_rut("123456789")
-
-
-def test_el_dashboard_pone_primero_al_que_nunca_recibio_archivos():
-    # El orden ES la funcionalidad de esa tabla: arriba el que hay que mirar.
-    def item(nombre, dias):
-        return ClienteActividad(
-            id=1,
-            nombre=nombre,
-            rut="12345678-9",
-            inbox=f"{nombre}@temposoft.cl",
-            activo=True,
-            total_usuarios=0,
-            aprovisionamiento="listo",
-            ultima_importacion=None,
-            dias_sin_importar=dias,
-            movimientos_periodo=0,
-        )
-
-    items = [item("al-dia", 0), item("nunca", None), item("hace-un-mes", 30)]
-    items.sort(key=orden_por_abandono)
-    assert [i.nombre for i in items] == ["nunca", "hace-un-mes", "al-dia"]
 
 
 def test_inbox_por_defecto_del_cliente():

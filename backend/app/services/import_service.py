@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import unicodedata
 from datetime import datetime, timezone, date
 from typing import Optional
 
@@ -9,6 +10,7 @@ import openpyxl
 from sqlalchemy.orm import Session
 
 from app.models.estado_diario import EstadoDiario
+from app.models.estado_diario_corte import EstadoDiarioCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
@@ -20,6 +22,36 @@ logger = logging.getLogger(__name__)
 
 # Mapeo de nombres de columna del Excel a campos internos
 # Cada hoja puede tener columnas distintas; se busca por nombre de header
+# Hojas que NO son de materia sino de corte. Sus filas van a
+# `estado_diario_corte`, no a `estado_diario`: no traen rol único, ni tribunal,
+# ni estado de la causa, y mezclarlas dejaba media tabla vacía y el listado por
+# materia mostrando filas que no calzaban con sus columnas.
+#
+# Se comparan sin acentos y en minúsculas porque el nombre de la hoja cambia
+# entre archivos ("Corte Apelaciones", "Corte de Apelaciones").
+HOJAS_CORTE = {
+    "corte suprema": "suprema",
+    "corte apelaciones": "apelaciones",
+    "corte de apelaciones": "apelaciones",
+}
+
+# Encabezados propios de las hojas de corte. Van aparte de HEADER_ALIASES
+# porque chocan: "tipo recurso" es `tipo_causa` en una hoja de materia y
+# `tipo_recurso` acá, y el número de ingreso no es el `rol` de una causa.
+HEADER_ALIASES_CORTE = {
+    "n ingreso": "numero_ingreso",
+    "n de ingreso": "numero_ingreso",
+    "numero ingreso": "numero_ingreso",
+    "numero de ingreso": "numero_ingreso",
+    "rol": "numero_ingreso",
+    "fecha ingreso": "fecha_ingreso",
+    "caratulado": "caratulado",
+    "ubicacion": "ubicacion",
+    "fecha ubicacion": "fecha_ubicacion",
+    "corte": "corte",
+    "tipo recurso": "tipo_recurso",
+}
+
 HEADER_ALIASES = {
     "rol": "rol",
     "n° ingreso": "rol",
@@ -43,6 +75,28 @@ HEADER_ALIASES = {
     "estado": "estado",
     "corte": "corte",
 }
+
+
+def normalizar_texto(valor: str) -> str:
+    """Minúsculas, sin acentos y con los espacios colapsados.
+
+    Los encabezados y los nombres de hoja llegan escritos de varias formas
+    entre un archivo y otro ("N° Ingreso", "Número de Ingreso", "Ubicación"),
+    así que compararlos tal cual falla en cuanto cambia el archivo.
+    """
+    if not valor:
+        return ""
+    sin_acentos = "".join(
+        c for c in unicodedata.normalize("NFD", str(valor))
+        if unicodedata.category(c) != "Mn"
+    )
+    limpio = sin_acentos.replace("°", "").replace("º", "").replace(".", " ")
+    return " ".join(limpio.lower().split())
+
+
+def tipo_de_hoja_corte(nombre_hoja: str) -> Optional[str]:
+    """Devuelve 'suprema'/'apelaciones' si la hoja es de corte; si no, None."""
+    return HOJAS_CORTE.get(normalizar_texto(nombre_hoja))
 
 
 class ImportService:
@@ -100,16 +154,17 @@ class ImportService:
         ext = os.path.splitext(file_path)[1].lower()
         if ext == ".xlsx":
             try:
-                rows = self._read_xlsx(file_path)
+                filas_materia, filas_corte = self._read_xlsx(file_path)
             except Exception as e:
                 raise ValueError(f"No se pudo leer el archivo XLSX: {e}")
         else:
             try:
-                rows = self._read_xls(file_path)
+                filas_materia, filas_corte = self._read_xls(file_path)
             except Exception as e:
                 raise ValueError(f"No se pudo leer el archivo XLS: {e}")
 
-        if not rows:
+        # Un archivo que solo trajera hojas de corte igual es válido.
+        if not filas_materia and not filas_corte:
             raise ValueError(
                 "El archivo no contiene movimientos reconocibles. "
                 "Verifique que las columnas tengan los encabezados esperados."
@@ -127,7 +182,7 @@ class ImportService:
         self.db.flush()  # asigna origen.id sin cerrar la transacción
 
         count = 0
-        for row in rows:
+        for row in filas_materia:
             ed = EstadoDiario(
                 estado_diario_origen_id=origen.id,
                 rol=row.get("rol"),
@@ -151,9 +206,50 @@ class ImportService:
             self.db.add(ed)
             count += 1
 
+        # Las causas de corte van a su propia tabla: tienen otras columnas y se
+        # muestran en otra pantalla (submenú Corte).
+        cortes = 0
+        for row in filas_corte:
+            registro = EstadoDiarioCorte(
+                estado_diario_origen_id=origen.id,
+                tipo=row["tipo"],
+                numero_ingreso=row.get("numero_ingreso"),
+                fecha_ingreso=row.get("fecha_ingreso"),
+                caratulado=row.get("caratulado"),
+                ubicacion=row.get("ubicacion"),
+                fecha_ubicacion=row.get("fecha_ubicacion"),
+                corte=row.get("corte"),
+                tipo_recurso=row.get("tipo_recurso"),
+                jurisdiccion_id=self._jurisdiccion_de_corte(row["tipo"]),
+            )
+            self.db.add(registro)
+            cortes += 1
+
         self.db.commit()
-        logger.info("Importados %d movimientos para origen %d", count, origen.id)
-        return {"origen_id": origen.id, "movimientos_importados": count}
+        logger.info(
+            "Importados %d movimientos y %d causas de corte para origen %d",
+            count, cortes, origen.id,
+        )
+        return {
+            "origen_id": origen.id,
+            "movimientos_importados": count,
+            "cortes_importados": cortes,
+        }
+
+    def _jurisdiccion_de_corte(self, tipo: str) -> Optional[int]:
+        """Jurisdicción que corresponde a una hoja de corte.
+
+        Se busca por nombre normalizado y no por el literal de la hoja porque
+        no coinciden: la hoja dice "Corte Apelaciones" y la jurisdicción
+        sembrada es "Corte de Apelaciones". Sin esto, las causas de corte
+        quedaban sin jurisdicción y el permiso de visibilidad del estudio no
+        podía acotarlas.
+        """
+        buscado = "corte suprema" if tipo == EstadoDiarioCorte.TIPO_SUPREMA else "corte de apelaciones"
+        for jur in self.jurisdiccion_repo.find_all():
+            if normalizar_texto(jur.nombre) == buscado:
+                return jur.id
+        return None
 
     @staticmethod
     def _ensure_correct_extension(file_path: str) -> str:
@@ -176,22 +272,25 @@ class ImportService:
             return new_path
         return file_path
 
-    def _read_xls(self, file_path: str) -> list[dict]:
+    def _read_xls(self, file_path: str) -> tuple[list[dict], list[dict]]:
+        """Devuelve (filas de materia, filas de corte)."""
         wb = xlrd.open_workbook(file_path)
-        rows = []
+        materia: list[dict] = []
+        cortes: list[dict] = []
+
         for sheet_idx in range(wb.nsheets):
             ws = wb.sheet_by_index(sheet_idx)
             if ws.nrows < 2:
                 continue
 
-            # Build column mapping from header
+            tipo_corte = tipo_de_hoja_corte(ws.name)
+            alias = HEADER_ALIASES_CORTE if tipo_corte else HEADER_ALIASES
+
             col_map = {}
             for col_idx in range(ws.ncols):
-                header = str(ws.cell_value(0, col_idx)).strip().lower()
-                for orig, field in HEADER_ALIASES.items():
-                    if header == orig:
-                        col_map[col_idx] = field
-                        break
+                campo = self._campo_de_encabezado(ws.cell_value(0, col_idx), alias)
+                if campo:
+                    col_map[col_idx] = campo
 
             if not col_map:
                 continue
@@ -206,23 +305,44 @@ class ImportService:
                         value = str(value).strip() if value else None
                     row_data[field] = value
 
+                if tipo_corte:
+                    if any(row_data.values()):
+                        row_data["tipo"] = tipo_corte
+                        cortes.append(row_data)
+                    continue
+
                 if not row_data.get("corte"):
                     row_data["corte"] = ws.name
-
                 if any(v for k, v in row_data.items() if k != "corte"):
-                    rows.append(row_data)
-        return rows
+                    materia.append(row_data)
 
-    def _read_xlsx(self, file_path: str) -> list[dict]:
+        return materia, cortes
+
+    @staticmethod
+    def _campo_de_encabezado(encabezado, alias: dict) -> Optional[str]:
+        """Campo interno que corresponde a un encabezado del Excel.
+
+        La comparación va normalizada (sin acentos, sin grados, en minúsculas)
+        porque el mismo dato viene escrito distinto en cada archivo: "N°
+        Ingreso", "Número de Ingreso", "Ubicación"/"Ubicacion".
+        """
+        return alias.get(normalizar_texto(encabezado))
+
+    def _read_xlsx(self, file_path: str) -> tuple[list[dict], list[dict]]:
+        """Devuelve (filas de materia, filas de corte)."""
         wb = openpyxl.load_workbook(file_path)
-        rows = []
+        materia: list[dict] = []
+        cortes: list[dict] = []
+
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             if ws.max_row is None or ws.max_row < 2:
                 continue
 
-            # Build column mapping from header row
-            col_map = self._build_col_map(ws)
+            tipo_corte = tipo_de_hoja_corte(sheet_name)
+            col_map = self._build_col_map(
+                ws, HEADER_ALIASES_CORTE if tipo_corte else HEADER_ALIASES
+            )
             if not col_map:
                 continue
 
@@ -236,29 +356,29 @@ class ImportService:
                         value = str(value).strip() if value else None
                     row_data[field] = value
 
+                if tipo_corte:
+                    if any(row_data.values()):
+                        row_data["tipo"] = tipo_corte
+                        cortes.append(row_data)
+                    continue
+
                 # Use sheet name as corte if not already set
                 if not row_data.get("corte"):
                     row_data["corte"] = sheet_name
 
                 if any(v for k, v in row_data.items() if k != "corte"):
-                    rows.append(row_data)
+                    materia.append(row_data)
         wb.close()
-        return rows
+        return materia, cortes
 
-    @staticmethod
-    def _build_col_map(ws) -> dict[int, str]:
-        """Map 1-based column indices to field names using header aliases."""
+    @classmethod
+    def _build_col_map(cls, ws, alias: dict) -> dict[int, str]:
+        """Índice de columna (base 1) -> campo interno, según los encabezados."""
         col_map = {}
         for col_idx in range(1, (ws.max_column or 0) + 1):
-            header = ws.cell(1, col_idx).value
-            if not header:
-                continue
-            normalized = header.strip().lower()
-            # Remove special chars for matching
-            for orig, field in HEADER_ALIASES.items():
-                if normalized == orig or normalized.replace("°", "").replace("º", "") == orig.replace("°", "").replace("º", ""):
-                    col_map[col_idx] = field
-                    break
+            campo = cls._campo_de_encabezado(ws.cell(1, col_idx).value, alias)
+            if campo:
+                col_map[col_idx] = campo
         return col_map
 
     def _parse_date_xls(self, value, datemode) -> Optional[date]:
