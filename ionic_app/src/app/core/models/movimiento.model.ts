@@ -71,3 +71,32 @@ export interface MovimientoUploadResponse {
   movimientos_importados?: number;
   por_materia?: Record<string, number>;
 }
+
+// ── Causas de corte del reporte de Movimientos ───────────────────────────
+// Tabla propia: las hojas de corte traen Era, Ubicación y Fecha Ubicación, que
+// las de materia no tienen, y les falta el tribunal.
+
+export interface MovimientoCorte {
+  id: number;
+  tipo: 'suprema' | 'apelaciones';
+  rol: string | null;
+  era: string | null;
+  fecha_ingreso: string | null;
+  caratulado: string | null;
+  estado_causa: string | null;
+  institucion: string | null;
+  /** Solo Corte de Apelaciones. */
+  corte: string | null;
+  ubicacion: string | null;
+  fecha_ubicacion: string | null;
+  fecha_archivo: string | null;
+}
+
+export interface MovimientoCorteListResponse {
+  exito: boolean;
+  total: number;
+  page: number;
+  total_pages: number;
+  cortes: MovimientoCorte[];
+  cortes_disponibles: string[];
+}

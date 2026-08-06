@@ -110,14 +110,13 @@ function fmtFechaChip(iso: string): string {
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Rol</th>
+                  <th>Rit/Rol</th>
+                  <th>Ruc/RolUnico</th>
+                  <th>FechaIngreso</th>
                   <th>Caratulado</th>
                   <th>Tribunal</th>
+                  <th>TipoCausa</th>
                   <th>Estado</th>
-                  <th>Tipo Causa</th>
-                  <th>Fecha Ingreso</th>
-                  <th>RUT</th>
-                  <th>Estado Causa</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -129,12 +128,15 @@ function fmtFechaChip(iso: string): string {
                         {{ m.rol || '-' }}
                       </a>
                     </td>
+                    <td>{{ m.rol_unico || '-' }}</td>
+                    <td class="whitespace-nowrap">{{ m.fecha_ingreso || '-' }}</td>
                     <td class="max-w-[200px] truncate" [title]="m.caratulado || ''">
                       <a [routerLink]="['/estado-diario', m.id]" class="hover:text-primary-600 hover:underline">
                         {{ m.caratulado || '-' }}
                       </a>
                     </td>
                     <td>{{ m.tribunal || '-' }}</td>
+                    <td>{{ m.tipo_causa || '-' }}</td>
                     <td>
                       @if (m.leido) {
                         <span class="badge-success">Resuelto</span>
@@ -142,16 +144,6 @@ function fmtFechaChip(iso: string): string {
                         <span [class]="claseNivel(m.nivel_pendiente)">Pendiente - {{ m.nivel_pendiente }}</span>
                       } @else {
                         <span class="badge-neutral">No leído</span>
-                      }
-                    </td>
-                    <td>{{ m.tipo_causa || '-' }}</td>
-                    <td>{{ m.fecha_ingreso || '-' }}</td>
-                    <td>{{ m.rut || '-' }}</td>
-                    <td>
-                      @if (m.estado) {
-                        <span class="badge-info">{{ m.estado }}</span>
-                      } @else {
-                        -
                       }
                     </td>
                     <td class="relative">
@@ -320,7 +312,9 @@ export class MovimientosListComponent implements OnInit {
     const queryTab = this.route.snapshot.queryParamMap.get('tab');
     this.activeTab.set(this.normalizeTab(queryTab) ?? this.normalizeTab(filter) ?? 'no-leidos');
 
-    this.service.getJurisdicciones().subscribe({
+    // Sin las de corte: esas causas se movieron a su propia tabla y filtrar
+    // por ellas acá no devolvería nada.
+    this.service.getJurisdicciones(true).subscribe({
       next: (res) => this.jurisdicciones.set(res.jurisdicciones),
     });
 

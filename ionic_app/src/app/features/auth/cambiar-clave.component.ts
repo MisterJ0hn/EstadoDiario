@@ -159,7 +159,7 @@ export class CambiarClaveComponent {
     this.auth.cambiarPasswordObligatorio({ password_nueva: this.nueva() }).subscribe({
       next: (user) => {
         this.guardando.set(false);
-        this.router.navigate([user.rol === 'superadmin' ? '/admin' : '/dashboard']);
+        this.router.navigate(['/dashboard']);
       },
       error: (err) => {
         this.guardando.set(false);

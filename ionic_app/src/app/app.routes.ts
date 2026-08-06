@@ -58,6 +58,16 @@ export const routes: Routes = [
             data: { filter: 'movimientos' },
           },
           {
+            // Las causas de corte viven en otra tabla y tienen otras columnas
+            // que las de materia: por eso son una pantalla aparte y no una
+            // pestaña más del listado por materia.
+            path: 'cortes',
+            loadComponent: () =>
+              import('./features/estado-diario/components/cortes-list/cortes-list.component').then(
+                (m) => m.CortesListComponent
+              ),
+          },
+          {
             path: 'calendario',
             loadComponent: () =>
               import('./features/calendario/calendario.component').then((m) => m.CalendarioComponent),
@@ -82,6 +92,15 @@ export const routes: Routes = [
               ),
           },
         ],
+      },
+      {
+        // Las causas de corte del reporte viven en otra tabla y tienen otras
+        // columnas: pantalla aparte, igual que en Estado Diario.
+        path: 'movimientos/cortes',
+        loadComponent: () =>
+          import('./features/movimientos/movimientos-cortes.component').then(
+            (m) => m.MovimientosCortesComponent
+          ),
       },
       {
         // Módulo Movimientos: reporte de estado procesal, solo consulta.

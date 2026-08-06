@@ -22,7 +22,9 @@ export interface TokenResponse {
 
 /**
  * `rol`:
- * - `superadmin`: administra la plataforma (clientes, usuarios y configuración
+ * - `superadmin`: administra la plataforma. **No inicia sesión acá**: su
+ *   consola es otra aplicación (`admin_app/`). El tipo se conserva porque el
+ *   backend puede seguir devolviendo ese rol en un token viejo.
  *   del sistema). No tiene causas ni movimientos.
  * - `admin` / `usuario`: viven dentro de un cliente.
  */

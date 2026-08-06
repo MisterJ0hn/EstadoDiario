@@ -13,6 +13,8 @@ import {
   FinalizarAgendaRequest,
   MarcarPendienteRequest,
   TipoOrigen,
+  CorteListResponse,
+  TipoCorte,
 } from '@core/models/estado-diario.model';
 
 @Injectable({ providedIn: 'root' })
@@ -23,8 +25,35 @@ export class EstadoDiarioService {
   constructor(private http: HttpClient) {}
 
   // ── Jurisdicciones ─────────────────────
-  getJurisdicciones(): Observable<JurisdiccionListResponse> {
-    return this.http.get<JurisdiccionListResponse>(this.jurisdiccionUrl);
+  /**
+   * `excluirCorte` deja fuera Corte Suprema y Corte de Apelaciones. Se usa en
+   * el filtro de Materia: esas causas se movieron a su propia tabla, así que
+   * ofrecerlas ahí no filtraría nada.
+   */
+  getJurisdicciones(excluirCorte = false): Observable<JurisdiccionListResponse> {
+    const params = excluirCorte ? new HttpParams().set('excluir_corte', true) : undefined;
+    return this.http.get<JurisdiccionListResponse>(this.jurisdiccionUrl, { params });
+  }
+
+  // ── Causas de corte ────────────────────
+  getCortes(
+    params: {
+      tipo?: TipoCorte;
+      busqueda?: string;
+      corte?: string;
+      fecha_desde?: string;
+      fecha_hasta?: string;
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Observable<CorteListResponse> {
+    let httpParams = new HttpParams();
+    for (const [clave, valor] of Object.entries(params)) {
+      if (valor !== undefined && valor !== null && valor !== '') {
+        httpParams = httpParams.set(clave, valor as string | number);
+      }
+    }
+    return this.http.get<CorteListResponse>(`${this.apiUrl}/cortes`, { params: httpParams });
   }
 
   // ── Orígenes ───────────────────────────

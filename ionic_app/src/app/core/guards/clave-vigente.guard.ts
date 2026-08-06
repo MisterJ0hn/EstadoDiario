@@ -31,7 +31,7 @@ export const cambioClaveGuard: CanActivateFn = () => {
     return false;
   }
   if (!auth.debeCambiarPassword()) {
-    router.navigate([auth.esAdminPlataforma() ? '/admin' : '/dashboard']);
+    router.navigate(['/dashboard']);
     return false;
   }
   return true;

@@ -7,6 +7,7 @@ import {
   MovimientoListResponse,
   MovimientoResumenResponse,
   MovimientoUploadResponse,
+  MovimientoCorteListResponse,
 } from '@core/models/movimiento.model';
 
 /**
@@ -36,6 +37,29 @@ export class MovimientoService {
         rut: filtros.rut,
         origen_id: filtros.origen_id,
       }),
+    });
+  }
+
+  /** Causas de corte: viven en otra tabla y se muestran en el submenú Corte. */
+  getCortes(
+    params: {
+      tipo?: 'suprema' | 'apelaciones';
+      busqueda?: string;
+      corte?: string;
+      fecha_desde?: string;
+      fecha_hasta?: string;
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Observable<MovimientoCorteListResponse> {
+    let httpParams = new HttpParams();
+    for (const [clave, valor] of Object.entries(params)) {
+      if (valor !== undefined && valor !== null && valor !== '') {
+        httpParams = httpParams.set(clave, valor as string | number);
+      }
+    }
+    return this.http.get<MovimientoCorteListResponse>(`${this.apiUrl}/cortes`, {
+      params: httpParams,
     });
   }
 
