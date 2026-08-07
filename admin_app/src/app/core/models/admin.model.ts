@@ -30,6 +30,19 @@ export interface Cliente {
   /** Qué falló, cuando `aprovisionamiento` es `error`. */
   aprovisionamiento_detalle: string | null;
   total_usuarios: number;
+  tipo: TipoCliente;
+  /** Tope de usuarios contratado. Null en los patrocinadores, donde es 1. */
+  cal: number | null;
+  /** Solo en la respuesta del alta: cuántos usuarios se crearon. */
+  usuarios_creados?: number | null;
+  /** Solo en la respuesta del alta: los que no se pudieron crear, con el motivo. */
+  usuarios_con_error?: string[];
+  /**
+   * Logo del estudio como `data:<mime>;base64,<...>`, listo para un <img src>.
+   * `null` = sin logo. Ojo: para GUARDARLO se manda el base64 SIN el prefijo
+   * (ver `guardarLogo`); acá viene con él porque es para mostrar.
+   */
+  logo: string | null;
 }
 
 export interface ClienteListResponse {
@@ -40,15 +53,49 @@ export interface ClienteListResponse {
   clientes: Cliente[];
 }
 
+export type TipoCliente = 'estudio' | 'patrocinador';
+
+/** Un usuario a crear junto con el cliente, en la misma llamada. */
+export interface UsuarioInicial {
+  username: string;
+  email: string | null;
+  password: string;
+  /** Una sola palabra cada uno; el backend rechaza los compuestos. */
+  nombre: string | null;
+  apellido: string | null;
+  telefono: string | null;
+}
+
+/**
+ * Alta de un cliente CON sus usuarios.
+ *
+ * Van juntos a propósito: antes el cliente se creaba vacío y los usuarios se
+ * agregaban después, y un alta interrumpida dejaba un estudio al que nadie
+ * podía entrar, indistinguible de uno completo.
+ */
 export interface ClienteCreate {
   nombre: string;
   rut: string;
   correo: string;
+  tipo: TipoCliente;
+  /** Abogados patrocinadores contratados. Null en `patrocinador`, donde es 1. */
+  cal: number | null;
+  /** Tantos como el CAL; exactamente uno si es `patrocinador`. */
+  usuarios: UsuarioInicial[];
 }
 
 export interface ClienteUpdate {
   nombre: string;
+  /**
+   * Se puede corregir. Es la credencial de login del estudio, así que
+   * cambiarlo obliga a todos sus usuarios a entrar con el nuevo.
+   * `guid` y `base_datos` NO están acá a propósito: identifican la base de
+   * datos del cliente.
+   */
+  rut: string;
   correo: string;
+  /** Ampliar o reducir lo contratado. No puede quedar bajo los usuarios activos. */
+  cal?: number | null;
   activo: boolean;
 }
 

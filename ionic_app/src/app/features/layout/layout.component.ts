@@ -60,6 +60,15 @@ const MENU_CLIENTE: GrupoMenu[] = [
       { ruta: '/dashboard', etiqueta: 'Dashboard', icono: ICONO.grafico },
       { ruta: '/estado-diario', etiqueta: 'Bitácora', icono: ICONO.carpeta, exacto: true },
       { ruta: '/estado-diario/upload', etiqueta: 'Cargar Archivo', icono: ICONO.subir },
+      { ruta: '/causas/cargar', etiqueta: 'Cargar Causas', icono: ICONO.subir },
+      {
+        etiqueta: 'Mis Causas',
+        icono: ICONO.carpeta,
+        hijos: [
+          { ruta: '/causas', etiqueta: 'Materia', icono: ICONO.carpeta, exacto: true },
+          { ruta: '/causas/cortes', etiqueta: 'Corte', icono: ICONO.balanza },
+        ],
+      },
       {
         etiqueta: 'Estado Diario',
         icono: ICONO.sobre,
@@ -76,6 +85,7 @@ const MENU_CLIENTE: GrupoMenu[] = [
           { ruta: '/movimientos/cortes', etiqueta: 'Corte', icono: ICONO.balanza },
         ],
       },
+      
       { ruta: '/audiencias', etiqueta: 'Audiencias', icono: ICONO.reloj },
       { ruta: '/estado-diario/calendario', etiqueta: 'Calendario', icono: ICONO.calendario },
       { ruta: '/informes', etiqueta: 'Reportes', icono: ICONO.barras },
@@ -98,7 +108,6 @@ const MENU_CLIENTE: GrupoMenu[] = [
 const MENU_ADMIN_CLIENTE: GrupoMenu = {
   titulo: 'Administración',
   items: [
-    { ruta: '/configuracion/usuarios', etiqueta: 'Usuarios y permisos', icono: ICONO.usuarios },
     { ruta: '/configuracion/correo/log', etiqueta: 'Bitácora de Correo', icono: ICONO.bitacora },
   ],
 };
@@ -140,7 +149,18 @@ const MENU_ADMIN_CLIENTE: GrupoMenu = {
         [ngClass]="collapsed() ? 'md:w-16' : 'md:w-64'"
       >
         <div class="h-16 flex items-center justify-between px-4 border-b border-neutral-700 shrink-0">
-          @if (showLabels()) {
+          <!-- El logo del estudio reemplaza al nombre del producto: el
+               sistema es de ellos y así se ve. Sin logo, el texto de siempre.
+               El alto va acotado porque la imagen la sube el administrador y
+               no hay forma de exigirle una proporción. -->
+          @if (logo(); as src) {
+            <img
+              [src]="src"
+              [alt]="auth.user()?.cliente_nombre || marca.largo"
+              class="object-contain"
+              [class]="showLabels() ? 'max-h-10 max-w-[11rem]' : 'max-h-8 max-w-8 mx-auto'"
+            />
+          } @else if (showLabels()) {
             <span class="text-lg font-bold tracking-tight">{{ marca.largo }}</span>
           } @else {
             <span class="text-lg font-bold mx-auto">{{ marca.corto }}</span>
@@ -355,7 +375,7 @@ export class LayoutComponent {
   /** La app móvil es solo para estudios: el administrador del estudio suma su
    *  bloque, y no hay menú de plataforma (esa consola se usa del navegador). */
   menu = computed<GrupoMenu[]>(() =>
-    this.auth.isAdmin() ? [...MENU_CLIENTE, MENU_ADMIN_CLIENTE] : MENU_CLIENTE
+    [...MENU_CLIENTE, MENU_ADMIN_CLIENTE]
   );
 
   /** Nombre del estudio de la sesión actual, para la barra superior. */
@@ -363,7 +383,12 @@ export class LayoutComponent {
 
   marca = { largo: 'Movimientos PJUD', corto: 'MP' } as const;
 
+  /** Logo del estudio, como `data:` URI. Viene en la sesión (ver
+   *  `cliente_logo` en el backend): un <img> no puede mandar el header
+   *  Authorization, así que no puede salir de un endpoint protegido. */
+  logo = computed(() => this.auth.user()?.cliente_logo || null);
+
   etiquetaRol = computed(() =>
-    this.auth.user()?.rol === 'admin' ? 'Administrador' : 'Usuario'
+    'Usuario'
   );
 }

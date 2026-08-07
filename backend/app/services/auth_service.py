@@ -52,7 +52,6 @@ def perfil_cliente(usuario, cliente=None) -> UserInfo:
         nombre=usuario.nombre,
         apellido=usuario.apellido,
         telefono=usuario.telefono,
-        rol=usuario.rol,
         activo=usuario.activo,
         debe_cambiar_password=usuario.debe_cambiar_password,
     )
@@ -62,6 +61,7 @@ def perfil_cliente(usuario, cliente=None) -> UserInfo:
         # Descifrado por la propiedad del modelo.
         info.cliente_rut = cliente.rut
         info.cliente_guid = cliente.guid
+        info.cliente_logo = cliente.logo_data_uri
     return info
 
 
@@ -120,7 +120,6 @@ class AuthClienteService:
             token_data = {
                 "sub": str(registro.id),
                 "usuario": usuario,
-                "rol": registro.rol,
                 "ambito": AMBITO_CLIENTE,
                 # A qué base va cada request de este token.
                 "guid": cliente.guid,
@@ -158,7 +157,6 @@ class AuthClienteService:
             token_data = {
                 "sub": str(registro.id),
                 "usuario": registro.usuario,
-                "rol": registro.rol,
                 "ambito": AMBITO_CLIENTE,
                 "guid": cliente.guid,
                 "cliente_id": cliente.cliente_id,

@@ -12,6 +12,7 @@ con el motivo, visible en la consola y **reintentable**, que es la única forma
 de que un alta a medias no quede invisible.
 """
 
+import base64
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -25,12 +26,14 @@ from app.core.database import (
     olvidar_engine_tenant,
     sesion_tenant,
 )
-from app.core.exceptions import ConflictException, NotFoundException
+from app.core.exceptions import BadRequestException, ConflictException, NotFoundException
+from app.core.hash_busqueda import normalizar_rut
 from app.models.maestra.cliente import Cliente
 from app.repositories.cliente_repository import ClienteRepository
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.configuracion_sistema_repository import ConfiguracionSistemaRepository
 from admin_api.app.schemas.cliente import (
+    ClienteLogoUpdate,
     AprovisionamientoEstado,
     ClienteCreate,
     ClienteResponse,
@@ -50,6 +53,21 @@ class ClienteService:
     # ── Alta ──────────────────────────────────────────────
 
     def crear(self, datos: ClienteCreate) -> ClienteResponse:
+        """Crea el cliente, aprovisiona su base y siembra sus usuarios.
+
+        Es UNA operación de cara al usuario aunque por dentro sean tres pasos
+        contra sistemas distintos (la base principal, el servidor PostgreSQL y
+        la base recién creada). No hay transacción que abarque los tres —
+        `CREATE DATABASE` no es transaccional—, así que lo que se hace es
+        fallar temprano: la validación de los usuarios ocurre en el esquema,
+        antes de crear nada.
+
+        Si un usuario falla igual (un correo que ya estaba en otra base, por
+        ejemplo), el cliente queda creado y la respuesta dice cuáles no se
+        crearon. Se prefiere eso a deshacer todo: la base ya existe y borrarla
+        automáticamente es peor negocio que dejar un cliente al que hay que
+        agregarle un usuario a mano.
+        """
         if self.repo.find_by_rut(datos.rut):
             raise ConflictException(f"Ya existe un cliente con el RUT {datos.rut}")
 
@@ -59,6 +77,8 @@ class ClienteService:
             guid=guid,
             base_datos=nombre_base_tenant(guid),
             estado_aprovisionamiento=Cliente.APROV_EN_COLA,
+            tipo=datos.tipo,
+            cal=datos.cal,
             activo=True,
         )
         # Por los setters del modelo: cifran y calculan el hash de búsqueda.
@@ -67,7 +87,59 @@ class ClienteService:
         self.repo.save(cliente)
 
         self._aprovisionar(cliente)
-        return self.a_response(cliente)
+
+        respuesta = self.a_response(cliente)
+        if datos.usuarios:
+            creados, con_error = self._sembrar_usuarios(cliente, datos.usuarios)
+            respuesta.usuarios_creados = creados
+            respuesta.usuarios_con_error = con_error
+            respuesta.total_usuarios = creados
+        return respuesta
+
+    def _sembrar_usuarios(self, cliente: Cliente, usuarios) -> tuple[int, list[str]]:
+        """Crea los usuarios en la base recién aprovisionada.
+
+        Devuelve (cuántos se crearon, qué falló). No lanza: el cliente ya
+        existe y lo útil es decir exactamente cuáles quedaron fuera.
+        """
+        if cliente.estado_aprovisionamiento != Cliente.APROV_LISTO:
+            return 0, [
+                "No se creó ningún usuario: la base de datos del cliente no quedó lista."
+            ]
+
+        # Import local: `admin_cliente_service` importa este módulo, y al revés
+        # sería un ciclo.
+        from admin_api.app.services.admin_cliente_service import AdminClienteService
+        from app.schemas.usuario import UsuarioAdminCreate
+
+        servicio = AdminClienteService(self.db)
+        creados = 0
+        con_error: list[str] = []
+
+        for u in usuarios:
+            try:
+                servicio.crear_usuario(
+                    cliente.cliente_id,
+                    UsuarioAdminCreate(
+                        username=u.username,
+                        password=u.password,
+                        email=u.email,
+                        nombre=u.nombre,
+                        apellido=u.apellido,
+                        telefono=u.telefono,
+                    ),
+                )
+                creados += 1
+            except Exception as e:
+                logger.exception(
+                    "No se pudo crear el usuario '%s' del cliente %s", u.username, cliente.guid
+                )
+                con_error.append(f"{u.username}: {e}")
+
+        logger.info(
+            "Cliente %s sembrado con %d/%d usuarios", cliente.guid, creados, len(usuarios)
+        )
+        return creados, con_error
 
     def _aprovisionar(self, cliente: Cliente) -> None:
         """Crea la base del cliente y deja registrado cómo terminó.
@@ -187,6 +259,27 @@ class ClienteService:
         cliente.nombre = datos.nombre.strip()
         cliente.correo = datos.correo
 
+        # El RUT es la credencial de login del estudio y tiene UNIQUE por
+        # `rut_hash`: si ya es de otro cliente, el login quedaría ambiguo (no
+        # se sabría a qué base entrar), así que se rechaza antes de guardar.
+        if datos.rut and normalizar_rut(datos.rut) != normalizar_rut(cliente.rut):
+            existente = self.repo.find_by_rut(datos.rut)
+            if existente and existente.cliente_id != cliente.cliente_id:
+                raise ConflictException(f"Ya existe un cliente con el RUT {datos.rut}")
+            # El setter normaliza, cifra y recalcula el hash de búsqueda.
+            cliente.rut = datos.rut
+            logger.info("RUT del cliente %s cambiado", cliente.guid)
+
+        # El CAL solo aplica a los estudios; en un patrocinador siempre es 1.
+        if datos.cal is not None and not cliente.es_patrocinador:
+            activos = self.total_usuarios(cliente)
+            if datos.cal < activos:
+                raise BadRequestException(
+                    f"El cliente tiene {activos} usuarios activos: no se puede dejar "
+                    f"el CAL en {datos.cal}. Desactive usuarios primero."
+                )
+            cliente.cal = datos.cal
+
         # Suspender desde la ficha tiene que hacer lo mismo que el botón de
         # suspender, o quedarían conexiones abiertas contra un cliente apagado.
         if cliente.activo and not datos.activo:
@@ -263,6 +356,47 @@ class ClienteService:
             )
             return 0
 
+    # Tope del logo YA EN BASE64. 400 KB de base64 son ~300 KB de imagen: de
+    # sobra para un logo y poco para que moleste, porque este dato viaja en la
+    # respuesta del login de cada usuario del estudio.
+    MAX_LOGO_BASE64 = 400 * 1024
+
+    MIMES_LOGO = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml")
+
+    def guardar_logo(self, cliente_id: int, datos: ClienteLogoUpdate) -> ClienteResponse:
+        """Guarda o quita el logo del estudio."""
+        cliente = self.obtener_entidad(cliente_id)
+
+        if not datos.logo:
+            cliente.logo = None
+            cliente.logo_mime = None
+            self.repo.save(cliente)
+            logger.info("Logo del cliente %s eliminado", cliente.guid)
+            return self.a_response(cliente)
+
+        mime = (datos.logo_mime or "").lower().strip()
+        if mime not in self.MIMES_LOGO:
+            raise BadRequestException(
+                f"Formato de imagen no admitido: {mime or 'desconocido'}. "
+                f"Use PNG, JPG, GIF, WEBP o SVG."
+            )
+        if len(datos.logo) > self.MAX_LOGO_BASE64:
+            raise BadRequestException(
+                "La imagen es demasiado grande. El máximo son unos 300 KB."
+            )
+        # Que sea base64 de verdad: si no, el <img> del estudio quedaría roto y
+        # el error aparecería en su pantalla, no acá.
+        try:
+            base64.b64decode(datos.logo, validate=True)
+        except Exception as e:
+            raise BadRequestException("La imagen no llegó en base64 válido") from e
+
+        cliente.logo = datos.logo
+        cliente.logo_mime = mime
+        self.repo.save(cliente)
+        logger.info("Logo del cliente %s actualizado (%s)", cliente.guid, mime)
+        return self.a_response(cliente)
+
     def a_response(self, cliente: Cliente) -> ClienteResponse:
         return ClienteResponse(
             id=cliente.cliente_id,
@@ -270,6 +404,9 @@ class ClienteService:
             # Descifrados por las propiedades del modelo.
             rut=cliente.rut,
             correo=cliente.correo,
+            tipo=cliente.tipo,
+            cal=cliente.cal,
+            logo=cliente.logo_data_uri,
             guid=cliente.guid,
             inbox=self.inbox_por_defecto(cliente),
             activo=cliente.activo,

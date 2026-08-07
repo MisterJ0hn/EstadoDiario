@@ -3,9 +3,7 @@
 `GET /api/v1/dashboard?dias=30` devuelve KPIs, series y agregados. La página de
 inicio hace una sola llamada; por eso no hay ocho endpoints.
 
-Permiso de visibilidad: el alcance se resuelve **una vez** con
-`EstadoDiarioService.alcance(db, current_user)` (None = sin restricción) y se
-pasa a cada una de las consultas del repositorio, que lo aplican sobre
+Sin filtro de visibilidad: dentro de un estudio todos ven todo.
 `estado_diario.jurisdiccion_id` o, para los recordatorios, sobre la
 jurisdicción de su causa. Acá no se reimplementa la regla.
 
@@ -163,9 +161,6 @@ def obtener_dashboard(
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
-    # Un solo alcance para todas las consultas: las jurisdicciones que este
-    # usuario puede ver, o None = sin restricción.
-    alcance = EstadoDiarioService.alcance(db, current_user)
 
     zona = _zona()
     ahora = datetime.now(zona)
@@ -180,21 +175,21 @@ def obtener_dashboard(
     repo = MetricasRepository(db)
 
     kpis = DashboardKpis(
-        sin_revisar=repo.contar_sin_revisar(alcance),
-        pendientes=repo.contar_pendientes(alcance),
-        resueltos_periodo=repo.contar_resueltos(alcance, desde, hasta),
-        recibidos_periodo=repo.contar_recibidos(alcance, desde, hasta),
-        recordatorios_vigentes=repo.contar_recordatorios_vigentes(alcance),
-        recordatorios_atrasados=repo.contar_recordatorios_atrasados(alcance, ahora),
-        promedio_resolucion_dias=repo.promedio_resolucion(alcance, desde, hasta),
+        sin_revisar=repo.contar_sin_revisar(),
+        pendientes=repo.contar_pendientes(),
+        resueltos_periodo=repo.contar_resueltos(desde, hasta),
+        recibidos_periodo=repo.contar_recibidos(desde, hasta),
+        recordatorios_vigentes=repo.contar_recordatorios_vigentes(),
+        recordatorios_atrasados=repo.contar_recordatorios_atrasados(ahora),
+        promedio_resolucion_dias=repo.promedio_resolucion(desde, hasta),
     )
 
-    por_nivel = repo.atrasados_por_nivel(alcance, ahora)
+    por_nivel = repo.atrasados_por_nivel(ahora)
 
     # Las series diarias vienen dispersas desde SQL (solo días con datos). Se
     # rellenan los ceros acá: es armar el eje, no contar filas en Python.
-    recibidos = repo.recibidos_por_dia(alcance, desde, hasta)
-    resueltos = repo.resueltos_por_dia(alcance, desde, hasta)
+    recibidos = repo.recibidos_por_dia(desde, hasta)
+    resueltos = repo.resueltos_por_dia(desde, hasta)
     evolucion = []
     cursor = desde
     while cursor <= hasta:
@@ -209,13 +204,13 @@ def obtener_dashboard(
 
     # El tiempo de resolución NO se rellena con ceros: un día sin resoluciones
     # no es "se resolvió en 0 días", es un día sin dato. La línea se corta.
-    promedios = repo.promedio_resolucion_por_dia(alcance, desde, hasta)
+    promedios = repo.promedio_resolucion_por_dia(desde, hasta)
     evolucion_resolucion = [
         PuntoResolucion(dia=d, dias_promedio=v) for d, v in sorted(promedios.items())
     ]
 
-    comp = repo.composicion(alcance, desde, hasta)
-    cumpl = repo.cumplimiento_recordatorios(alcance, desde, hasta)
+    comp = repo.composicion(desde, hasta)
+    cumpl = repo.cumplimiento_recordatorios(desde, hasta)
 
     return DashboardResponse(
         dias=dias,
@@ -230,20 +225,20 @@ def obtener_dashboard(
         composicion=Composicion(**comp),
         por_tribunal=[
             ConteoEtiqueta(etiqueta=t, total=n)
-            for t, n in repo.por_tribunal(alcance, desde, hasta, limite=10)
+            for t, n in repo.por_tribunal(desde, hasta, limite=10)
         ],
         por_jurisdiccion=[
             ConteoEtiqueta(etiqueta=j, total=n)
-            for j, n in repo.por_jurisdiccion(alcance, desde, hasta)
+            for j, n in repo.por_jurisdiccion(desde, hasta)
         ],
         cumplimiento=Cumplimiento(**cumpl),
         audiencias=_armar_audiencias(
-            repo.audiencias_por_dia_materia(alcance, hasta, hasta_audiencias),
+            repo.audiencias_por_dia_materia(hasta, hasta_audiencias),
             hasta,
             hasta_audiencias,
-            repo.ultima_fecha_audiencia(alcance),
+            repo.ultima_fecha_audiencia(),
         ),
-        # Sin alcance: la pregunta es si llegó el archivo del estudio, y eso no
+        # La pregunta es si llegó el archivo del estudio, y eso no
         # depende de qué materias traiga adentro.
         aviso_carga=_armar_aviso(repo.ultima_fecha_archivo(), hasta),
     )

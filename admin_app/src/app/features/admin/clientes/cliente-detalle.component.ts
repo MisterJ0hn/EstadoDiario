@@ -4,9 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { Cliente, ClienteInbox, ClienteInboxUpdate } from '@core/models/admin.model';
-import { RolUsuario, Usuario } from '@core/models/usuario.model';
+import { Usuario } from '@core/models/usuario.model';
 import { NotificationService } from '@core/services/notification.service';
-import { formatearRut } from '@core/utils/rut';
+import { formatearRut, rutValido } from '@core/utils/rut';
 import { AdminClienteService } from '../services/admin-cliente.service';
 
 type Seccion = 'datos' | 'inbox' | 'usuarios';
@@ -141,11 +141,69 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
               </div>
 
               <div>
+                <label class="form-label" for="rut">RUT</label>
+                <input id="rut" type="text" class="form-input tabular-nums" [(ngModel)]="datos.rut"
+                       placeholder="76.543.210-K" />
+                <p class="text-xs text-warning-700 mt-1">
+                  Es la credencial con la que entra el estudio. Si lo cambia, todos sus usuarios
+                  deben iniciar sesión con el RUT nuevo desde ese momento.
+                </p>
+              </div>
+
+              <div>
                 <label class="form-label" for="correo">Correo de contacto</label>
                 <input id="correo" type="email" class="form-input" [(ngModel)]="datos.correo" />
                 <p class="text-xs text-neutral-500 mt-1">
                   Para avisos administrativos. No recibe los estados diarios.
                 </p>
+              </div>
+
+              <!-- Logo: se guarda al elegir el archivo, no con el botón de
+                   abajo. Es su propio endpoint, y mezclarlo con el resto haría
+                   que cambiar el nombre del estudio subiera la imagen de
+                   nuevo. -->
+              <div>
+                <span class="form-label">Logo del estudio</span>
+                <div class="flex items-center gap-4 mt-1">
+                  <div
+                    class="flex h-16 w-32 shrink-0 items-center justify-center rounded-lg border
+                           border-dashed border-neutral-300 bg-neutral-50 overflow-hidden"
+                  >
+                    @if (cliente()?.logo; as src) {
+                      <img [src]="src" alt="Logo actual" class="max-h-14 max-w-28 object-contain" />
+                    } @else {
+                      <span class="text-xs text-neutral-400">Sin logo</span>
+                    }
+                  </div>
+
+                  <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap gap-2">
+                      <label class="btn-secondary btn-sm cursor-pointer mb-0">
+                        {{ cliente()?.logo ? 'Cambiar' : 'Subir imagen' }}
+                        <input
+                          type="file"
+                          class="hidden"
+                          accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                          (change)="elegirLogo($event)"
+                        />
+                      </label>
+                      @if (cliente()?.logo) {
+                        <button type="button" class="btn-danger btn-sm" [disabled]="subiendoLogo()"
+                                (click)="quitarLogo()">
+                          Quitar
+                        </button>
+                      }
+                    </div>
+                    <p class="text-xs text-neutral-500 mt-1">
+                      @if (subiendoLogo()) {
+                        Guardando...
+                      } @else {
+                        PNG, JPG, GIF, WEBP o SVG, hasta 300 KB. Se ve en la barra lateral del
+                        estudio y encabeza los correos que le envía el sistema.
+                      }
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <hr class="border-neutral-200" />
@@ -154,10 +212,6 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                    necesita para soporte, pero no se editan: cambiarlos
                    dejaría la base de datos huérfana. -->
               <dl class="rounded-lg border border-neutral-200 divide-y divide-neutral-200 text-sm">
-                <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
-                  <dt class="text-neutral-500">RUT</dt>
-                  <dd class="font-medium text-neutral-800 tabular-nums">{{ rutBonito(c.rut) }}</dd>
-                </div>
                 <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
                   <dt class="text-neutral-500">Identificador (guid)</dt>
                   <dd class="flex items-center gap-2 min-w-0">
@@ -362,11 +416,27 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                 <p class="text-sm text-neutral-500">
                   Ingresan con el RUT {{ rutBonito(c.rut) }} más su usuario y contraseña
                 </p>
+                @if (esPatrocinador(c)) {
+                  <p class="text-sm text-neutral-500 mt-0.5">
+                    Es un abogado patrocinador: tiene una sola cuenta y no admite más.
+                  </p>
+                } @else if (c.cal) {
+                  <p class="text-sm text-neutral-500 mt-0.5">
+                    {{ activos() }} de {{ c.cal }} usuarios contratados (CAL).
+                    @if (!hayCupo(c)) {
+                      Para agregar otro, amplíe el CAL en la pestaña Datos o desactive a alguien.
+                    }
+                  </p>
+                }
               </div>
-              <button type="button" class="btn-primary btn-sm" (click)="abrirNuevoUsuario()"
-                      [disabled]="c.aprovisionamiento !== 'listo'">
-                Nuevo usuario
-              </button>
+              <!-- El botón desaparece sin cupo en vez de quedar deshabilitado:
+                   deshabilitado no dice POR QUÉ, y el motivo está justo arriba. -->
+              @if (hayCupo(c)) {
+                <button type="button" class="btn-primary btn-sm" (click)="abrirNuevoUsuario()"
+                        [disabled]="c.aprovisionamiento !== 'listo'">
+                  Nuevo usuario
+                </button>
+              }
             </div>
             <div class="card-body">
               @if (c.aprovisionamiento !== 'listo') {
@@ -395,11 +465,17 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                 <div class="py-16 text-center">
                   <p class="text-neutral-600 font-medium">Este cliente todavía no tiene usuarios</p>
                   <p class="text-neutral-500 text-sm mt-1">
-                    Cree al menos uno con rol de administrador: será quien gestione al resto del estudio.
+                    @if (esPatrocinador(c)) {
+                      Cree su cuenta de acceso.
+                    } @else {
+                      Cree las cuentas del estudio: dentro de un estudio todos hacen lo mismo.
+                    }
                   </p>
-                  <button type="button" class="btn-primary mt-4" (click)="abrirNuevoUsuario()">
-                    Crear el primer usuario
-                  </button>
+                  @if (hayCupo(c)) {
+                    <button type="button" class="btn-primary mt-4" (click)="abrirNuevoUsuario()">
+                      Crear el primer usuario
+                    </button>
+                  }
                 </div>
               } @else {
                 <div class="table-wrapper">
@@ -420,11 +496,6 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                           <td class="font-medium">{{ u.username }}</td>
                           <td>{{ (u.nombre || '') + ' ' + (u.apellido || '') | titlecase }}</td>
                           <td class="break-all">{{ u.email }}</td>
-                          <td>
-                            <span [class]="u.rol === 'admin' ? 'badge-info' : 'badge-neutral'">
-                              {{ u.rol === 'admin' ? 'Administrador' : 'Usuario' }}
-                            </span>
-                          </td>
                           <td>
                             <span [class]="u.activo ? 'badge-success' : 'badge-neutral'">
                               {{ u.activo ? 'Activo' : 'Inactivo' }}
@@ -467,12 +538,12 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                 Nombre de usuario <span class="text-danger-600">*</span>
               </label>
               <input id="u-username" type="text" class="form-input" [(ngModel)]="usuarioModelo.username"
-                     [disabled]="!!editandoUsuario()" placeholder="jperez" autocomplete="off" />
+                     placeholder="jperez" autocomplete="off" />
               <p class="text-xs text-neutral-500 mt-1">
+                Mínimo 3 caracteres. Solo letras, números, punto, guion y guion bajo.
                 @if (editandoUsuario()) {
-                  El nombre de usuario no se puede cambiar: identifica al usuario en los registros.
-                } @else {
-                  Mínimo 3 caracteres. Solo letras, números, punto, guion y guion bajo.
+                  <br />Al cambiarlo, la persona entra con el nombre nuevo. Su historial no se
+                  pierde: los registros apuntan al usuario, no a su nombre.
                 }
               </p>
             </div>
@@ -480,11 +551,15 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="form-label" for="u-nombre">Nombre</label>
-                <input id="u-nombre" type="text" class="form-input" [(ngModel)]="usuarioModelo.nombre" />
+                <input id="u-nombre" type="text" class="form-input" [ngModel]="usuarioModelo.nombre"
+                       (ngModelChange)="alEscribirNombre('nombre', $event)" placeholder="Juan" />
+                <p class="text-xs text-neutral-500 mt-1">Solo el primer nombre.</p>
               </div>
               <div>
                 <label class="form-label" for="u-apellido">Apellido</label>
-                <input id="u-apellido" type="text" class="form-input" [(ngModel)]="usuarioModelo.apellido" />
+                <input id="u-apellido" type="text" class="form-input" [ngModel]="usuarioModelo.apellido"
+                       (ngModelChange)="alEscribirNombre('apellido', $event)" placeholder="Pérez" />
+                <p class="text-xs text-neutral-500 mt-1">Solo el primer apellido.</p>
               </div>
             </div>
 
@@ -515,16 +590,6 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="form-label" for="u-rol">Rol</label>
-                <select id="u-rol" class="form-select" [(ngModel)]="usuarioModelo.rol">
-                  <option value="usuario">Usuario</option>
-                  <option value="admin">Administrador</option>
-                </select>
-                <p class="text-xs text-neutral-500 mt-1">
-                  El administrador del estudio gestiona los usuarios de su propio cliente.
-                </p>
-              </div>
               <div class="flex items-end pb-2">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" [(ngModel)]="usuarioModelo.activo" />
@@ -568,7 +633,7 @@ export class ClienteDetalleComponent implements OnInit {
   cliente = signal<Cliente | null>(null);
   errorCliente = signal<string | null>(null);
   guardando = signal(false);
-  datos = { nombre: '', correo: '' };
+  datos = { nombre: '', rut: '', correo: '' };
 
   inbox = signal<ClienteInbox | null>(null);
   errorInbox = signal<string | null>(null);
@@ -603,9 +668,63 @@ export class ClienteDetalleComponent implements OnInit {
     this.service.get(this.clienteId).subscribe({
       next: (c) => {
         this.cliente.set(c);
-        this.datos = { nombre: c.nombre, correo: c.correo };
+        this.datos = { nombre: c.nombre, rut: formatearRut(c.rut), correo: c.correo };
       },
       error: (e) => this.errorCliente.set(this.mensajeError(e)),
+    });
+  }
+
+  subiendoLogo = signal(false);
+
+  /** Tope del ARCHIVO. El base64 pesa ~4/3, y el backend corta en 400 KB de
+   *  base64: se avisa acá con el tamaño real para que el mensaje se entienda. */
+  private readonly MAX_LOGO_BYTES = 300 * 1024;
+
+  elegirLogo(evento: Event): void {
+    const input = evento.target as HTMLInputElement;
+    const archivo = input.files?.[0];
+    // Se limpia siempre: si no, elegir el mismo archivo dos veces seguidas no
+    // dispara el evento y parece que el botón dejó de funcionar.
+    input.value = '';
+    if (!archivo) return;
+
+    if (archivo.size > this.MAX_LOGO_BYTES) {
+      this.notification.error('La imagen supera los 300 KB. Use una más liviana.');
+      return;
+    }
+
+    const lector = new FileReader();
+    lector.onerror = () => this.notification.error('No se pudo leer la imagen');
+    lector.onload = () => {
+      // FileReader entrega `data:<mime>;base64,<...>`. Se manda solo la parte
+      // de después de la coma: el backend guarda el base64 puro.
+      const resultado = String(lector.result ?? '');
+      const coma = resultado.indexOf(',');
+      if (coma < 0) {
+        this.notification.error('No se pudo leer la imagen');
+        return;
+      }
+      this.guardarLogo(resultado.slice(coma + 1), archivo.type || 'image/png');
+    };
+    lector.readAsDataURL(archivo);
+  }
+
+  quitarLogo(): void {
+    this.guardarLogo(null, null);
+  }
+
+  private guardarLogo(base64: string | null, mime: string | null): void {
+    this.subiendoLogo.set(true);
+    this.service.guardarLogo(this.clienteId, base64, mime).subscribe({
+      next: (c) => {
+        this.subiendoLogo.set(false);
+        this.cliente.set(c);
+        this.notification.success(base64 ? 'Logo actualizado' : 'Logo quitado');
+      },
+      error: (e) => {
+        this.subiendoLogo.set(false);
+        this.notification.error(this.mensajeError(e));
+      },
     });
   }
 
@@ -616,11 +735,19 @@ export class ClienteDetalleComponent implements OnInit {
       this.notification.error('Indique el nombre del estudio');
       return;
     }
+    // Se valida acá y no solo en el backend porque un RUT con dígito
+    // verificador malo dejaría al estudio sin poder entrar, y el error
+    // aparecería recién en el próximo login de otra persona.
+    if (!rutValido(this.datos.rut)) {
+      this.notification.error('El RUT no es válido: revise el dígito verificador');
+      return;
+    }
 
     this.guardando.set(true);
     this.service
       .update(this.clienteId, {
         nombre: this.datos.nombre.trim(),
+        rut: this.datos.rut.trim(),
         correo: this.datos.correo.trim(),
         activo: actual.activo,
       })
@@ -774,7 +901,6 @@ export class ClienteDetalleComponent implements OnInit {
       nombre: '',
       apellido: '',
       telefono: '',
-      rol: 'usuario' as RolUsuario,
       activo: true,
     };
   }
@@ -794,10 +920,45 @@ export class ClienteDetalleComponent implements OnInit {
     });
   }
 
+  esPatrocinador(c: Cliente): boolean {
+    return c.tipo === 'patrocinador';
+  }
+
+  /** Usuarios ACTIVOS. Los desactivados no ocupan cupo: es lo que pasa cuando
+   *  alguien deja el estudio y entra otro en su lugar. */
+  activos(): number {
+    return this.usuarios().filter((u) => u.activo).length;
+  }
+
+  /**
+   * Cuántas cuentas admite el cliente. Un patrocinador es un abogado solo, así
+   * que siempre una; un estudio, las que dice su CAL.
+   *
+   * `0` = sin tope declarado. Son los clientes anteriores al CAL: no se les
+   * puede inventar un límite retroactivo, así que siguen sin restricción hasta
+   * que alguien les fije uno.
+   */
+  cupos(c: Cliente): number {
+    if (this.esPatrocinador(c)) return 1;
+    return c.cal ?? 0;
+  }
+
+  /**
+   * Si se puede agregar otra cuenta.
+   *
+   * Es la MISMA regla que aplica el backend (`crear_usuario` la revisa contra
+   * la base). Acá solo se adelanta para no ofrecer un botón que va a fallar:
+   * la decisión sigue siendo del servidor, porque este conteo es de la lista
+   * cargada en pantalla y puede estar desactualizado.
+   */
+  hayCupo(c: Cliente): boolean {
+    const tope = this.cupos(c);
+    return tope === 0 || this.activos() < tope;
+  }
+
   abrirNuevoUsuario(): void {
     this.usuarioModelo = this.usuarioVacio();
     // El primer usuario del estudio tiene que poder administrar al resto.
-    if (this.usuarios().length === 0) this.usuarioModelo.rol = 'admin';
     this.editandoUsuario.set(null);
     this.errorUsuario.set('');
     this.modalUsuario.set(true);
@@ -811,7 +972,6 @@ export class ClienteDetalleComponent implements OnInit {
       nombre: u.nombre ?? '',
       apellido: u.apellido ?? '',
       telefono: u.telefono ?? '',
-      rol: u.rol,
       activo: u.activo,
     };
     this.editandoUsuario.set(u.id);
@@ -824,15 +984,32 @@ export class ClienteDetalleComponent implements OnInit {
     this.modalUsuario.set(false);
   }
 
+  /** Quita los espacios al escribir: nombre y apellido son de UNA palabra.
+   *  Impedirlo al teclear es más claro que avisarlo recién al guardar. */
+  alEscribirNombre(campo: 'nombre' | 'apellido', valor: string): void {
+    this.usuarioModelo[campo] = valor.replace(/\s+/g, '');
+  }
+
   private validarUsuario(): string | null {
-    if (!this.editandoUsuario()) {
-      if (this.usuarioModelo.username.trim().length < 3) {
-        return 'El nombre de usuario debe tener al menos 3 caracteres';
-      }
-      if (!/^[A-Za-z0-9._-]+$/.test(this.usuarioModelo.username.trim())) {
-        return 'El nombre de usuario solo admite letras, números, punto, guion y guion bajo';
-      }
-      if (!this.usuarioModelo.password) return 'Indique una contraseña';
+    // El nombre de usuario se valida SIEMPRE, no solo al crear: ahora también
+    // se puede cambiar.
+    if (this.usuarioModelo.username.trim().length < 3) {
+      return 'El nombre de usuario debe tener al menos 3 caracteres';
+    }
+    if (!/^[A-Za-z0-9._-]+$/.test(this.usuarioModelo.username.trim())) {
+      return 'El nombre de usuario solo admite letras, números, punto, guion y guion bajo';
+    }
+    if (!this.editandoUsuario() && !this.usuarioModelo.password) {
+      return 'Indique una contraseña';
+    }
+
+    // Un nombre y un apellido: el backend lo rechaza igual, pero avisarlo acá
+    // evita perder lo escrito en el resto del formulario.
+    if (/\s/.test(this.usuarioModelo.nombre.trim())) {
+      return 'El nombre debe ser una sola palabra. Indique solo el primer nombre.';
+    }
+    if (/\s/.test(this.usuarioModelo.apellido.trim())) {
+      return 'El apellido debe ser una sola palabra. Indique solo el primer apellido.';
     }
     if (!this.usuarioModelo.email.trim()) return 'Indique el correo electrónico';
     if (this.usuarioModelo.password && this.usuarioModelo.password.length < 8) {
@@ -853,11 +1030,11 @@ export class ClienteDetalleComponent implements OnInit {
 
     const id = this.editandoUsuario();
     const base = {
+      username: this.usuarioModelo.username.trim(),
       email: this.usuarioModelo.email.trim(),
       nombre: this.usuarioModelo.nombre.trim() || null,
       apellido: this.usuarioModelo.apellido.trim() || null,
       telefono: this.usuarioModelo.telefono.trim() || null,
-      rol: this.usuarioModelo.rol,
       activo: this.usuarioModelo.activo,
     };
 

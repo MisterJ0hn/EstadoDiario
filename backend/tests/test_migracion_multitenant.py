@@ -135,16 +135,20 @@ def test_todas_las_tablas_del_tenant_se_copian_o_se_justifican():
     """
     from app.jobs.migrar_a_multitenant import TABLAS_A_COPIAR
 
-    # `usuario` se migra aparte (hay que cifrarlo). Las otras tres no existen
-    # en el esquema viejo y nacen vacías: `estado_diario_corte` porque las
-    # causas de corte se separaron después, y en una instalación vieja siguen
-    # dentro de `estado_diario` (se reimportan al cargar el archivo siguiente).
+    # `usuario` se migra aparte (hay que cifrarlo). Las demás no existen en el
+    # esquema viejo y nacen vacías:
+    # - `estado_diario_corte` / `movimiento_corte`: las causas de corte se
+    #   separaron después y en una instalación vieja siguen dentro de su tabla
+    #   madre (se reimportan al cargar el archivo siguiente).
+    # - `causa` / `causa_corte`: el reporte de Causas es posterior a la
+    #   migración; una instalación vieja nunca lo importó.
     aparte = {
         "usuario",
         "log_actividades",
-        "usuario_jurisdiccion",
         "estado_diario_corte",
         "movimiento_corte",
+        "causa",
+        "causa_corte",
     }
     sin_cubrir = set(BaseTenant.metadata.tables) - set(TABLAS_A_COPIAR) - aparte
     assert not sin_cubrir, (

@@ -185,13 +185,16 @@ def test_token_sin_guid_no_rutea_a_ninguna_base():
 
 
 def test_usuario_es_una_tabla_distinta_en_cada_base():
-    # Mismo nombre, columnas distintas: el admin del sistema no tiene rol ni
-    # campos cifrados (su nombre de usuario va en claro y se busca directo);
-    # el del cliente sí, y por eso necesita el hash para poder buscarlo.
+    # Mismo nombre, columnas distintas: el admin del sistema no tiene campos
+    # cifrados (su nombre de usuario va en claro y se busca directo); el del
+    # cliente sí, y por eso necesita el hash para poder buscarlo.
+    #
+    # NINGUNA de las dos tiene `rol`: el del sistema nunca lo tuvo y el del
+    # cliente lo perdió al eliminarse los roles dentro del estudio.
     maestra = BaseMaestra.metadata.tables["usuario"]
     tenant = BaseTenant.metadata.tables["usuario"]
     assert maestra is not tenant
     assert "usuario_hash" not in maestra.columns
     assert "rol" not in maestra.columns
     assert "usuario_hash" in tenant.columns
-    assert "rol" in tenant.columns
+    assert "rol" not in tenant.columns

@@ -6,12 +6,11 @@ Dos reglas que no se negocian en este archivo:
    contarlas en Python: se usan `func.count`, `group_by` y `COUNT(CASE WHEN)`.
    Un estudio con 200.000 movimientos no puede pagar traerlos al proceso.
 
-2. **Permiso de visibilidad.** Igual que el resto de los repositorios,
-   `jurisdicciones` es obligatorio (sin valor por defecto) y `None` significa
-   "sin restricción". Lo resuelve `EstadoDiarioService.alcance()`. Un número
-   del dashboard que sume causas que la persona no puede abrir la mandaría a
-   buscar algo que no va a encontrar, así que el filtro se aplica en **cada**
-   consulta, sin excepción.
+2. **Sin filtro de visibilidad.** Dentro de un estudio todos ven todo, así que
+   estas consultas no acotan por usuario ni por jurisdicción. Hubo un permiso
+   por jurisdicción y se eliminó: si alguna vez vuelve, tiene que aplicarse en
+   **cada** consulta de acá, porque un número del dashboard que sume causas que
+   la persona no puede abrir la manda a buscar algo que no va a encontrar.
 
 Compatibilidad: la base de producción puede ser PostgreSQL 9.2. Por eso NO se
 usa `FILTER (WHERE ...)`, ni `jsonb`, ni funciones de ventana. `COUNT(CASE WHEN
@@ -21,7 +20,7 @@ usa `FILTER (WHERE ...)`, ni `jsonb`, ni funciones de ventana. `COUNT(CASE WHEN
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import case, func, or_
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -51,65 +50,53 @@ class MetricasRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    # ── Ayudas de alcance ────────────────────────────────────────────────
-    @staticmethod
-    def _acotar(query, columna, jurisdicciones: Optional[list[int]]):
-        """Restringe a las jurisdicciones permitidas. Lo sin clasificar entra
-        siempre: esconderlo lo haría desaparecer de los totales sin que nadie
-        pueda notar que falta."""
-        if jurisdicciones is None:
-            return query
-        return query.filter(or_(columna.in_(jurisdicciones), columna.is_(None)))
-
-    def _q_estados(self, jurisdicciones: Optional[list[int]]):
-        """Query base sobre estado_diario ya unida a su origen y acotada a lo
-        que el usuario puede ver. Todo lo que consulte estados diarios debe
-        partir de acá.
+    # ── Queries base ─────────────────────────────────────────────────────
+    def _q_estados(self):
+        """Query base sobre estado_diario ya unida a su origen. Todo lo que
+        consulte estados diarios debe partir de acá.
         """
-        query = self.db.query(EstadoDiario).join(
+        return self.db.query(EstadoDiario).join(
             EstadoDiarioOrigen,
             EstadoDiario.estado_diario_origen_id == EstadoDiarioOrigen.id,
         )
-        return self._acotar(query, EstadoDiario.jurisdiccion_id, jurisdicciones)
 
-    def _q_agendas(self, jurisdicciones: Optional[list[int]]):
-        """Recordatorios acotados por la jurisdicción de SU CAUSA, igual que en
-        EstadoDiarioAgendaRepository. Por eso necesita el join, que la consulta
-        no traía cuando el criterio era el dueño del recordatorio."""
-        query = self.db.query(EstadoDiarioAgenda).join(
+    def _q_agendas(self):
+        """Recordatorios unidos a SU CAUSA. El join se conserva porque varias
+        métricas agrupan por datos del estado diario, no solo del
+        recordatorio."""
+        return self.db.query(EstadoDiarioAgenda).join(
             EstadoDiario, EstadoDiarioAgenda.estado_diario_id == EstadoDiario.id
         )
-        return self._acotar(query, EstadoDiario.jurisdiccion_id, jurisdicciones)
 
     # ── KPIs ─────────────────────────────────────────────────────────────
-    def contar_sin_revisar(self, jurisdicciones: Optional[list[int]]) -> int:
+    def contar_sin_revisar(self) -> int:
         """El "inbox": ni resuelto ni marcado pendiente. Es deuda acumulada,
         por eso NO se acota al período: un no leído de hace dos meses sigue
         siendo trabajo por hacer hoy.
         """
         return (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(EstadoDiario.leido.is_(False), EstadoDiario.pendiente.is_(False))
             .with_entities(func.count(EstadoDiario.id))
             .scalar()
         ) or 0
 
-    def contar_pendientes(self, jurisdicciones: Optional[list[int]]) -> int:
+    def contar_pendientes(self) -> int:
         """Marcados pendientes y todavía no resueltos (resuelto gana sobre
         pendiente, mismo criterio que el listado)."""
         return (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(EstadoDiario.pendiente.is_(True), EstadoDiario.leido.is_(False))
             .with_entities(func.count(EstadoDiario.id))
             .scalar()
         ) or 0
 
     def contar_resueltos(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> int:
         """Resueltos dentro del período, por fecha_leido."""
         return (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(
                 EstadoDiario.leido.is_(True),
                 EstadoDiario.fecha_leido.isnot(None),
@@ -121,10 +108,10 @@ class MetricasRepository:
         ) or 0
 
     def contar_recibidos(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> int:
         return (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(
                 EstadoDiarioOrigen.fecha.isnot(None),
                 EstadoDiarioOrigen.fecha >= desde,
@@ -134,19 +121,19 @@ class MetricasRepository:
             .scalar()
         ) or 0
 
-    def contar_recordatorios_vigentes(self, jurisdicciones: Optional[list[int]]) -> int:
+    def contar_recordatorios_vigentes(self) -> int:
         return (
-            self._q_agendas(jurisdicciones)
+            self._q_agendas()
             .filter(EstadoDiarioAgenda.finalizado.is_(False))
             .with_entities(func.count(EstadoDiarioAgenda.id))
             .scalar()
         ) or 0
 
     def contar_recordatorios_atrasados(
-        self, jurisdicciones: Optional[list[int]], ahora: datetime
+        self, ahora: datetime
     ) -> int:
         return (
-            self._q_agendas(jurisdicciones)
+            self._q_agendas()
             .filter(
                 EstadoDiarioAgenda.finalizado.is_(False),
                 EstadoDiarioAgenda.fecha_hora < ahora,
@@ -157,7 +144,7 @@ class MetricasRepository:
 
     # ── Gráficos ─────────────────────────────────────────────────────────
     def atrasados_por_nivel(
-        self, jurisdicciones: Optional[list[int]], ahora: datetime
+        self, ahora: datetime
     ) -> dict[str, int]:
         """Recordatorios vencidos abiertos, agrupados por urgencia.
 
@@ -166,7 +153,7 @@ class MetricasRepository:
         modelo.
         """
         filas = (
-            self._q_agendas(jurisdicciones)
+            self._q_agendas()
             .filter(
                 EstadoDiarioAgenda.finalizado.is_(False),
                 EstadoDiarioAgenda.fecha_hora < ahora,
@@ -185,7 +172,7 @@ class MetricasRepository:
         return resultado
 
     def recibidos_por_dia(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> dict[date, int]:
         """Estados diarios cuyo archivo tiene esa fecha.
 
@@ -193,7 +180,7 @@ class MetricasRepository:
         subió el miércoles, el trabajo es del lunes.
         """
         filas = (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(
                 EstadoDiarioOrigen.fecha.isnot(None),
                 EstadoDiarioOrigen.fecha >= desde,
@@ -206,11 +193,11 @@ class MetricasRepository:
         return {f: int(t or 0) for f, t in filas}
 
     def resueltos_por_dia(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> dict[date, int]:
         dia = _dia_local(EstadoDiario.fecha_leido)
         filas = (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(
                 EstadoDiario.leido.is_(True),
                 EstadoDiario.fecha_leido.isnot(None),
@@ -224,7 +211,7 @@ class MetricasRepository:
         return {self._a_fecha(f): int(t or 0) for f, t in filas}
 
     def composicion(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> dict[str, int]:
         """No leídos / pendientes / resueltos de los estados diarios recibidos
         en el período, en UNA sola pasada con COUNT(CASE WHEN).
@@ -233,7 +220,7 @@ class MetricasRepository:
         que la dona responda al selector de días como el resto de la página.
         """
         fila = (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(
                 EstadoDiarioOrigen.fecha.isnot(None),
                 EstadoDiarioOrigen.fecha >= desde,
@@ -274,10 +261,10 @@ class MetricasRepository:
         }
 
     def por_tribunal(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date, limite: int = 10
+        self, desde: date, hasta: date, limite: int = 10
     ) -> list[tuple[str, int]]:
         filas = (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .filter(
                 EstadoDiarioOrigen.fecha.isnot(None),
                 EstadoDiarioOrigen.fecha >= desde,
@@ -294,10 +281,10 @@ class MetricasRepository:
         return [(t, int(n or 0)) for t, n in filas]
 
     def por_jurisdiccion(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> list[tuple[str, int]]:
         filas = (
-            self._q_estados(jurisdicciones)
+            self._q_estados()
             .outerjoin(Jurisdiccion, EstadoDiario.jurisdiccion_id == Jurisdiccion.id)
             .filter(
                 EstadoDiarioOrigen.fecha.isnot(None),
@@ -334,21 +321,21 @@ class MetricasRepository:
         )
 
     def promedio_resolucion(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> Optional[float]:
         valor = (
-            self._filtro_resueltos_con_fechas(self._q_estados(jurisdicciones), desde, hasta)
+            self._filtro_resueltos_con_fechas(self._q_estados(), desde, hasta)
             .with_entities(func.avg(self._dias_resolucion()))
             .scalar()
         )
         return round(float(valor), 1) if valor is not None else None
 
     def promedio_resolucion_por_dia(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> dict[date, float]:
         dia = _dia_local(EstadoDiario.fecha_leido)
         filas = (
-            self._filtro_resueltos_con_fechas(self._q_estados(jurisdicciones), desde, hasta)
+            self._filtro_resueltos_con_fechas(self._q_estados(), desde, hasta)
             .with_entities(dia.label("dia"), func.avg(self._dias_resolucion()))
             .group_by(dia)
             .all()
@@ -361,7 +348,7 @@ class MetricasRepository:
 
     # ── Cumplimiento de recordatorios ────────────────────────────────────
     def cumplimiento_recordatorios(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> dict[str, int]:
         """De los recordatorios finalizados en el período, cuántos se cerraron
         antes de su fecha y cuántos después.
@@ -373,7 +360,7 @@ class MetricasRepository:
         dia_fin = _dia_local(EstadoDiarioAgenda.fecha_finalizacion)
         dia_obj = _dia_local(EstadoDiarioAgenda.fecha_hora)
         fila = (
-            self._q_agendas(jurisdicciones)
+            self._q_agendas()
             .filter(
                 EstadoDiarioAgenda.finalizado.is_(True),
                 EstadoDiarioAgenda.fecha_finalizacion.isnot(None),
@@ -393,16 +380,13 @@ class MetricasRepository:
     # compromiso futuro, no trabajo ya ocurrido. Por eso su ventana es
     # [hoy, hoy+dias] y no el período que usan los demás gráficos.
     #
-    # La jurisdicción se lee de `audiencia.jurisdiccion_id` y no del origen: la
-    # audiencia sobrevive al borrado de su archivo (ON DELETE SET NULL), así
-    # que el origen no sirve de fuente.
-    def _q_audiencias(self, jurisdicciones: Optional[list[int]]):
-        return self._acotar(
-            self.db.query(Audiencia), Audiencia.jurisdiccion_id, jurisdicciones
-        )
+    # No se une al origen a propósito: la audiencia sobrevive al borrado de su
+    # archivo (ON DELETE SET NULL), así que el origen no sirve de fuente.
+    def _q_audiencias(self):
+        return self.db.query(Audiencia)
 
     def audiencias_por_dia_materia(
-        self, jurisdicciones: Optional[list[int]], desde: date, hasta: date
+        self, desde: date, hasta: date
     ) -> list[tuple[date, Optional[str], int]]:
         """(día, materia, total) de las audiencias de la ventana.
 
@@ -411,7 +395,7 @@ class MetricasRepository:
         mismo sería pagar tres veces el mismo escaneo.
         """
         filas = (
-            self._q_audiencias(jurisdicciones)
+            self._q_audiencias()
             .filter(
                 Audiencia.fecha_audiencia >= desde,
                 Audiencia.fecha_audiencia <= hasta,
@@ -426,7 +410,7 @@ class MetricasRepository:
         )
         return [(self._a_fecha(f), m, int(n or 0)) for f, m, n in filas]
 
-    def ultima_fecha_audiencia(self, jurisdicciones: Optional[list[int]]) -> Optional[date]:
+    def ultima_fecha_audiencia(self) -> Optional[date]:
         """Hasta qué día alcanzan las audiencias cargadas.
 
         El reporte del PJUD cubre una semana, así que en una ventana de 30 días
@@ -435,7 +419,7 @@ class MetricasRepository:
         tengo el archivo que las trae" se ven idénticos.
         """
         return (
-            self._q_audiencias(jurisdicciones)
+            self._q_audiencias()
             .with_entities(func.max(Audiencia.fecha_audiencia))
             .scalar()
         )

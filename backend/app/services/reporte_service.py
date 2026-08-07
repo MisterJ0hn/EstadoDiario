@@ -8,6 +8,7 @@ plantilla guardada no puede pedir un campo que ya no existe, y agregar un campo
 nuevo es una línea acá y nada más.
 """
 
+import base64
 import io
 import logging
 from datetime import date, datetime
@@ -182,13 +183,11 @@ class ReporteService:
 
     # ── Consulta ──────────────────────────────────────────
 
-    def _consultar(self, fuente: str, filtros: dict, jurisdicciones: Optional[list[int]]):
-        """Filas del informe, ya acotadas a lo que el usuario puede ver.
+    def _consultar(self, fuente: str, filtros: dict):
+        """Filas del informe.
 
-        `jurisdicciones=None` = sin restricción, misma convención que el resto
-        del sistema. Lo sin clasificar entra siempre, igual que en las
-        pantallas: un informe que calla filas que la persona sí ve en el
-        listado sería peor que uno que trae de más.
+        Sin filtro de visibilidad: dentro de un estudio todos ven todo, así
+        que el informe trae lo mismo que las pantallas.
         """
         if fuente == ReportePlantilla.FUENTE_MOVIMIENTOS:
             query = (
@@ -196,13 +195,6 @@ class ReporteService:
                 .join(Movimiento.estado_diario_origen)
                 .options(joinedload(Movimiento.estado_diario_origen))
             )
-            if jurisdicciones is not None:
-                query = query.filter(
-                    or_(
-                        Movimiento.jurisdiccion_id.in_(jurisdicciones),
-                        Movimiento.jurisdiccion_id.is_(None),
-                    )
-                )
             if filtros.get("materia"):
                 query = query.filter(Movimiento.materia == filtros["materia"])
             if filtros.get("estado_causa"):
@@ -218,15 +210,6 @@ class ReporteService:
                     joinedload(EstadoDiarioAgenda.usuario_registro),
                 )
             )
-            if jurisdicciones is not None:
-                # Por la jurisdicción de la CAUSA del recordatorio, igual que
-                # en EstadoDiarioAgendaRepository.
-                query = query.join(EstadoDiarioAgenda.estado_diario).filter(
-                    or_(
-                        EstadoDiario.jurisdiccion_id.in_(jurisdicciones),
-                        EstadoDiario.jurisdiccion_id.is_(None),
-                    )
-                )
             estado = filtros.get("estado")
             if estado == "vigentes":
                 query = query.filter(EstadoDiarioAgenda.finalizado.is_(False))
@@ -250,13 +233,6 @@ class ReporteService:
                 joinedload(EstadoDiario.usuario_pendiente),
             )
         )
-        if jurisdicciones is not None:
-            query = query.filter(
-                or_(
-                    EstadoDiario.jurisdiccion_id.in_(jurisdicciones),
-                    EstadoDiario.jurisdiccion_id.is_(None),
-                )
-            )
 
         estado = filtros.get("estado")
         if estado == "resuelto":
@@ -291,11 +267,11 @@ class ReporteService:
     # ── Excel ─────────────────────────────────────────────
 
     def generar_excel(
-        self, plantilla: ReportePlantilla, jurisdicciones: Optional[list[int]]
+        self, plantilla: ReportePlantilla
     ) -> bytes:
         campos = self.validar(plantilla.fuente, plantilla.lista_campos)
         catalogo = CAMPOS[plantilla.fuente]
-        filas = self._consultar(plantilla.fuente, plantilla.dict_filtros, jurisdicciones)
+        filas = self._consultar(plantilla.fuente, plantilla.dict_filtros)
 
         wb = Workbook()
         ws = wb.active
@@ -340,14 +316,36 @@ class ReporteService:
 
     # ── Generar y enviar ──────────────────────────────────
 
-    def generar_y_enviar(self, plantilla_id: int, current_user) -> dict:
+    @staticmethod
+    def _logo_del_estudio(
+        db_maestra, cliente_id: int
+    ) -> tuple[tuple[bytes, str] | None, str | None]:
+        """(contenido, mime) del logo del cliente y su nombre.
+
+        Devuelve (None, nombre) si no tiene logo o si está corrupto: el informe
+        se envía igual, sin encabezado. Que no se pueda decodificar una imagen
+        no es motivo para que a alguien no le llegue su informe.
+        """
+        from app.repositories.cliente_repository import ClienteRepository
+
+        cliente = ClienteRepository(db_maestra).find_by_id(cliente_id)
+        if cliente is None:
+            return None, None
+        if not cliente.logo or not cliente.logo_mime:
+            return None, cliente.nombre
+        try:
+            return (base64.b64decode(cliente.logo), cliente.logo_mime), cliente.nombre
+        except Exception:
+            logger.warning("El logo del cliente %s no se pudo decodificar", cliente.guid)
+            return None, cliente.nombre
+
+    def generar_y_enviar(self, plantilla_id: int, current_user, cliente_id: int) -> dict:
         from app.repositories.reporte_repository import ReporteRepository
 
-        # Dueño de la plantilla (artefacto personal) y permiso sobre los datos
-        # (jurisdicciones) son dos alcances distintos: ver `_dueno_plantillas`
-        # en app/api/v1/endpoints/reportes.py.
-        dueno = None if current_user.rol == "admin" else current_user.id
-        plantilla = ReporteRepository(self.db).find_by_id(plantilla_id, dueno)
+        # La plantilla sigue siendo un artefacto PERSONAL: cada quien ve las
+        # suyas. Eso no es un permiso sobre las causas —esas las ven todos—,
+        # es que el informe que armó otro no le sirve a nadie más.
+        plantilla = ReporteRepository(self.db).find_by_id(plantilla_id, current_user.id)
         if plantilla is None:
             raise NotFoundException("Informe no encontrado")
 
@@ -360,7 +358,7 @@ class ReporteService:
         from app.services.estado_diario_service import EstadoDiarioService
 
         contenido = self.generar_excel(
-            plantilla, EstadoDiarioService.alcance(self.db, current_user)
+            plantilla
         )
 
         hoy = datetime.now().strftime("%d-%m-%Y")
@@ -377,12 +375,17 @@ class ReporteService:
         # se abre una sesión corta solo para eso y se cierra al terminar.
         db_maestra = SesionMaestra()
         try:
+            # El logo del estudio sale de la base principal, la misma sesión
+            # que ya se abre para la cuenta de envío.
+            logo, nombre_estudio = self._logo_del_estudio(db_maestra, cliente_id)
             SmtpService(db_maestra).enviar_con_adjunto(
                 destinatario=current_user.correo,
                 asunto=f"Informe: {plantilla.nombre} ({hoy})",
                 cuerpo=cuerpo,
                 adjunto=contenido,
                 nombre_adjunto=nombre_archivo,
+                logo=logo,
+                nombre_estudio=nombre_estudio,
             )
         except Exception as e:
             plantilla.ultima_generacion = datetime.now()

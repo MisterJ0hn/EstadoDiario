@@ -1,7 +1,6 @@
 import { inject } from '@angular/core';
 import { Router, Routes, UrlTree } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
-import { adminGuard } from './core/guards/admin.guard';
 import { cambioClaveGuard, claveVigenteGuard } from './core/guards/clave-vigente.guard';
 
 const redirectToTab = (tab: string): UrlTree =>
@@ -94,6 +93,30 @@ export const routes: Routes = [
         ],
       },
       {
+        // Carga del Excel de causas. Va aparte de "Cargar Archivo" porque este
+        // reporte no trae fecha: es una foto de la cartera, no de un día.
+        path: 'causas/cargar',
+        loadComponent: () =>
+          import('./features/causas/cargar-causas.component').then(
+            (m) => m.CargarCausasComponent
+          ),
+      },
+      {
+        // Las causas de corte viven en otra tabla y tienen otras columnas:
+        // pantalla aparte, igual que en Estado Diario y Movimientos.
+        path: 'causas/cortes',
+        loadComponent: () =>
+          import('./features/causas/causas-cortes.component').then(
+            (m) => m.CausasCortesComponent
+          ),
+      },
+      {
+        // Módulo Causas: la cartera del estudio, se haya movido o no.
+        path: 'causas',
+        loadComponent: () =>
+          import('./features/causas/causas.component').then((m) => m.CausasComponent),
+      },
+      {
         // Las causas de corte del reporte viven en otra tabla y tienen otras
         // columnas: pantalla aparte, igual que en Estado Diario.
         path: 'movimientos/cortes',
@@ -160,23 +183,14 @@ export const routes: Routes = [
           // Al estudio le queda la bitácora, y solo a su administrador.
           {
             path: 'correo/log',
-            canActivate: [adminGuard],
             loadComponent: () =>
               import('./features/configuracion/components/correo-log/correo-log.component').then(
                 (m) => m.CorreoLogComponent
               ),
           },
-          {
-            path: 'usuarios',
-            canActivate: [adminGuard],
-            loadComponent: () =>
-              import('./features/configuracion/components/usuarios/usuarios.component').then(
-                (m) => m.UsuariosComponent
-              ),
-          },
           // SMTP, Google Calendar y WhatsApp dejaron de ser del estudio: son
           // servicios del sistema y viven en /admin/configuracion.
-          { path: '', redirectTo: 'usuarios', pathMatch: 'full' },
+          { path: '', redirectTo: 'correo/log', pathMatch: 'full' },
         ],
       },
       // El dashboard es la página de inicio.

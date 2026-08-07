@@ -11,7 +11,6 @@ from app.models.estado_diario_agenda import EstadoDiarioAgenda
 from app.models.api_llamado_estado_diario import ApiLlamadoEstadoDiario
 from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_agenda_repository import EstadoDiarioAgendaRepository
-from app.repositories.usuario_jurisdiccion_repository import UsuarioJurisdiccionRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from app.repositories.api_log_repository import ApiLogRepository
 from app.services.google_calendar_service import GoogleCalendarService
@@ -28,29 +27,6 @@ class EstadoDiarioService:
         self.user_repo = UsuarioRepository(db)
         self.log_repo = ApiLogRepository(db)
         self.google_service = GoogleCalendarService(db)
-
-    @staticmethod
-    def alcance(db: Session, current_user) -> Optional[list[int]]:
-        """Traduce el usuario autenticado al filtro de visibilidad que esperan
-        los repositorios: la lista de jurisdicciones que puede ver, o `None`
-        para "sin restricción".
-
-        Devuelve `None` en dos casos, y los dos significan **ve todas**:
-        - es administrador del estudio;
-        - no tiene ninguna jurisdicción asignada (nadie le restringió nada).
-
-        Único lugar donde se decide esto. Antes el criterio era el dueño del
-        archivo (`usuario_carga_id`); dejó de servir cuando la ingesta pasó a
-        ser una casilla por estudio y todo lo importado quedó a nombre de un
-        solo usuario, con lo que el resto del estudio no veía nada.
-
-        Recibe la sesión por parámetro y no usa `self` a propósito: la mitad de
-        los endpoints la llaman sin construir el servicio.
-        """
-        if current_user.rol == "admin":
-            return None
-        asignadas = UsuarioJurisdiccionRepository(db).ids_de(current_user.id)
-        return asignadas or None
 
     def _create_log(self, endpoint: str, request_data: str = "") -> ApiLlamadoEstadoDiario:
         log = ApiLlamadoEstadoDiario(
@@ -71,7 +47,6 @@ class EstadoDiarioService:
 
     def get_movimientos_no_leidos(
         self,
-        jurisdicciones: Optional[int],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -84,7 +59,7 @@ class EstadoDiarioService:
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdicciones, jurisdiccion_id, fecha_desde, fecha_hasta, rut, None, page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, None, page, limit
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -100,7 +75,6 @@ class EstadoDiarioService:
 
     def get_movimientos_leidos(
         self,
-        jurisdicciones: Optional[int],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -113,7 +87,7 @@ class EstadoDiarioService:
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdicciones, jurisdiccion_id, fecha_desde, fecha_hasta, rut, "resuelto", page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "resuelto", page, limit
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -129,7 +103,6 @@ class EstadoDiarioService:
 
     def get_movimientos_pendientes(
         self,
-        jurisdicciones: Optional[int],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -142,7 +115,7 @@ class EstadoDiarioService:
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdicciones, jurisdiccion_id, fecha_desde, fecha_hasta, rut, "pendiente", page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "pendiente", page, limit
             )
             data = [self._map_movimiento(m, include_pendiente=True) for m in items]
             result = {
@@ -160,16 +133,14 @@ class EstadoDiarioService:
         self,
         estado_diario_id: int,
         usuario_id: Optional[int] = None,
-        jurisdicciones: Optional[int] = None,
         observacion: Optional[str] = None,
     ):
-        """`usuario_id` es quién ejecuta la acción; `jurisdicciones` es el
-        permiso de visibilidad (None = sin restricción). Son cosas distintas:
-        quien resuelve un movimiento queda registrado como autor, sin que eso
-        tenga nada que ver con qué causas puede ver.
+        """`usuario_id` es quién ejecuta la acción: queda registrado como
+        autor de la resolución. No es un permiso — dentro de un estudio todos
+        ven y resuelven todo.
         """
         log = self._create_log("leido")
-        ed = self.repo.find_by_id(estado_diario_id, jurisdicciones)
+        ed = self.repo.find_by_id(estado_diario_id)
         if not ed:
             # Mismo 404 exista o no: si el movimiento es de una jurisdicción
             # que esta persona no puede ver, un 403 confirmaría que existe.
@@ -198,14 +169,13 @@ class EstadoDiarioService:
     def marcar_pendiente(self, estado_diario_id: int, nivel: str, username: Optional[str] = None,
                          mensaje: Optional[str] = None, fecha_hora: Optional[str] = None,
                          notificar_whatsapp: bool = False, whatsapp_telefono: Optional[str] = None,
-                         fecha_hora_whatsapp: Optional[str] = None,
-                         jurisdicciones: Optional[int] = None):
+                         fecha_hora_whatsapp: Optional[str] = None):
         log = self._create_log("pendiente", json.dumps({
             "nivel": nivel, "username": username, "mensaje": mensaje, "fecha_hora": fecha_hora,
             "notificar_whatsapp": notificar_whatsapp,
         }))
 
-        ed = self.repo.find_by_id(estado_diario_id, jurisdicciones)
+        ed = self.repo.find_by_id(estado_diario_id)
         if not ed:
             self._save_log(log, False, error="No encontrado")
             raise NotFoundException("Estado diario no encontrado")
@@ -281,8 +251,7 @@ class EstadoDiarioService:
             "agenda_id": agenda_id, "marcar_resuelto": marcar_resuelto,
         }))
 
-        scope = self.alcance(self.db, current_user)
-        agenda = self.agenda_repo.find_by_id(agenda_id, scope)
+        agenda = self.agenda_repo.find_by_id(agenda_id)
         if not agenda:
             self._save_log(log, False, error="Agenda no encontrada")
             raise NotFoundException("Recordatorio no encontrado")
@@ -296,7 +265,7 @@ class EstadoDiarioService:
         if marcar_resuelto:
             # Mismo comportamiento que el botón "Resuelto" del resto de la
             # app: no se duplica lógica, solo se reutiliza.
-            self.marcar_leido(agenda.estado_diario_id, current_user.id, scope)
+            self.marcar_leido(agenda.estado_diario_id, current_user.id)
 
         # El evento se sincroniza en el calendario de quien lo creó, no en
         # el de quien lo finaliza (puede ser un admin finalizando por otro).
@@ -308,8 +277,7 @@ class EstadoDiarioService:
         return {"exito": True}
 
     def get_calendario(self, current_user):
-        usuario_id = None if current_user.rol == "admin" else current_user.id
-        agendas = self.agenda_repo.find_vigentes(usuario_id)
+        agendas = self.agenda_repo.find_vigentes()
 
         recordatorios = [
             {
@@ -328,12 +296,12 @@ class EstadoDiarioService:
         return {"exito": True, "total": len(recordatorios), "recordatorios": recordatorios}
 
     def crear_agenda(self, estado_diario_id: int, detalle: str, fecha_hora_str: str,
-                     username: Optional[str] = None, jurisdicciones: Optional[int] = None):
+                     username: Optional[str] = None):
         log = self._create_log("agenda", json.dumps({
             "detalle": detalle, "fecha_hora": fecha_hora_str, "username": username
         }))
 
-        ed = self.repo.find_by_id(estado_diario_id, jurisdicciones)
+        ed = self.repo.find_by_id(estado_diario_id)
         if not ed:
             self._save_log(log, False, error="No encontrado")
             raise NotFoundException("Estado diario no encontrado")
@@ -366,8 +334,8 @@ class EstadoDiarioService:
         self._save_log(log, True, json.dumps({"exito": True, "id": agenda.id}))
         return {"exito": True, "id": agenda.id}
 
-    def get_agendas(self, estado_diario_id: int, jurisdicciones: Optional[int] = None):
-        ed = self.repo.find_by_id(estado_diario_id, jurisdicciones)
+    def get_agendas(self, estado_diario_id: int):
+        ed = self.repo.find_by_id(estado_diario_id)
         if not ed:
             raise NotFoundException("Estado diario no encontrado")
 
@@ -536,8 +504,8 @@ class EstadoDiarioService:
             f"(nuevo recordatorio {nueva.id} para {nueva_fecha.isoformat()})"
         )
 
-    def get_movimiento_detalle(self, estado_diario_id: int, jurisdicciones: Optional[int] = None):
-        ed = self.repo.find_by_id(estado_diario_id, jurisdicciones)
+    def get_movimiento_detalle(self, estado_diario_id: int):
+        ed = self.repo.find_by_id(estado_diario_id)
         if not ed:
             raise NotFoundException("Estado diario no encontrado")
         return {"exito": True, "movimiento": self._map_movimiento(ed, include_pendiente=True)}

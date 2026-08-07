@@ -125,6 +125,19 @@ class AdminClienteService:
         cliente = self._cliente_operativo(cliente_id)
         nombre_usuario = datos.username.strip().lower()
 
+        # El CAL es lo contratado: cuántos abogados patrocinadores puede tener
+        # el cliente. Se cuenta contra los ACTIVOS, así que desactivar a
+        # alguien libera el cupo — que es lo que pasa cuando alguien deja el
+        # estudio y entra otro.
+        cupos = cliente.cupos
+        if cupos:
+            activos = self.clientes.total_usuarios(cliente)
+            if activos >= cupos:
+                raise BadRequestException(
+                    f"El cliente tiene {activos} de {cupos} usuarios contratados. "
+                    f"Amplíe el CAL o desactive un usuario para liberar el cupo."
+                )
+
         with sesion_tenant(cliente.guid) as db_tenant:
             repo = UsuarioRepository(db_tenant)
             # Búsquedas por hash: las columnas están cifradas (ver el modelo).
@@ -141,7 +154,6 @@ class AdminClienteService:
                 password_hash=get_password_hash(datos.password),
                 nombre=datos.nombre,
                 apellido=datos.apellido,
-                rol=datos.rol,
                 activo=datos.activo,
                 # La clave la escribió el administrador de la plataforma, no la
                 # persona: entra con ella y la cambia de inmediato.
@@ -178,11 +190,21 @@ class AdminClienteService:
                         f"El cliente ya tiene un usuario con el correo '{datos.email}'"
                     )
 
+            # Renombrar: el id no cambia, así que los registros de quién hizo
+            # qué siguen apuntando a la misma persona. Lo único que hay que
+            # cuidar es que el nombre nuevo no lo tenga otro, porque es con lo
+            # que se inicia sesión.
+            if datos.username:
+                nuevo = datos.username.strip().lower()
+                existente = repo.find_by_usuario(nuevo)
+                if existente and existente.id != usuario.id:
+                    raise ConflictException(f"El cliente ya tiene un usuario '{nuevo}'")
+                usuario.usuario = nuevo
+
             usuario.correo = datos.email
             usuario.nombre = datos.nombre
             usuario.apellido = datos.apellido
             usuario.telefono = datos.telefono
-            usuario.rol = datos.rol
             usuario.activo = datos.activo
 
             if datos.password:

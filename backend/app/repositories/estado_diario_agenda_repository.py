@@ -9,33 +9,15 @@ from app.models.estado_diario_agenda import EstadoDiarioAgenda
 
 
 class EstadoDiarioAgendaRepository:
-    """Recordatorios, acotados por las jurisdicciones que el usuario puede ver.
+    """Recordatorios. Sin filtro de visibilidad: dentro de un estudio todos
+    ven todo.
 
-    El permiso se mira en la **causa** a la que cuelga el recordatorio, no en
-    quién lo creó: si alguien puede ver la causa, puede ver que hay un
-    recordatorio sobre ella. Al revés dejaría a un abogado con una causa
-    visible y sin saber que un colega ya la agendó, que es justo lo que hace
-    que dos personas trabajen lo mismo.
-
-    `usuario_registro_id` sigue existiendo y no es esto: dice a quién se le
-    manda el WhatsApp y quién figura como autor.
+    `usuario_registro_id` sigue existiendo y NO es un permiso: dice a quién se
+    le manda el WhatsApp y quién figura como autor.
     """
 
     def __init__(self, db: Session):
         self.db = db
-
-    @staticmethod
-    def _filtrar_por_jurisdiccion(query, jurisdicciones: Optional[list[int]]):
-        """Acota por la jurisdicción de la causa. Requiere que la consulta ya
-        tenga el JOIN a `EstadoDiario`."""
-        if jurisdicciones is None:
-            return query
-        return query.filter(
-            or_(
-                EstadoDiario.jurisdiccion_id.in_(jurisdicciones),
-                EstadoDiario.jurisdiccion_id.is_(None),
-            )
-        )
 
     def find_by_estado_diario(self, estado_diario_id: int) -> list[EstadoDiarioAgenda]:
         return (
@@ -46,20 +28,16 @@ class EstadoDiarioAgendaRepository:
             .all()
         )
 
-    def find_by_id(
-        self, aid: int, jurisdicciones: Optional[list[int]] = None
-    ) -> Optional[EstadoDiarioAgenda]:
-        """`jurisdicciones=None` = sin restricción. Mismo criterio que
-        find_vigentes: manda la jurisdicción de la causa."""
+    def find_by_id(self, aid: int) -> Optional[EstadoDiarioAgenda]:
         query = (
             self.db.query(EstadoDiarioAgenda)
             .join(EstadoDiarioAgenda.estado_diario)
             .filter(EstadoDiarioAgenda.id == aid)
         )
-        return self._filtrar_por_jurisdiccion(query, jurisdicciones).first()
+        return query.first()
 
-    def find_vigentes(self, jurisdicciones: Optional[list[int]]) -> list[EstadoDiarioAgenda]:
-        """Recordatorios no finalizados. `jurisdicciones=None` = todos."""
+    def find_vigentes(self) -> list[EstadoDiarioAgenda]:
+        """Recordatorios no finalizados."""
         query = (
             self.db.query(EstadoDiarioAgenda)
             .join(EstadoDiarioAgenda.estado_diario)
@@ -69,7 +47,7 @@ class EstadoDiarioAgendaRepository:
             )
             .filter(EstadoDiarioAgenda.finalizado.is_(False))
         )
-        query = self._filtrar_por_jurisdiccion(query, jurisdicciones)
+        query = query
         return query.order_by(EstadoDiarioAgenda.fecha_hora.asc()).all()
 
     def find_by_twilio_sid(self, twilio_sid: str) -> Optional[EstadoDiarioAgenda]:

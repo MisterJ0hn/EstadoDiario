@@ -13,7 +13,8 @@ import logging
 import smtplib
 from datetime import datetime, timezone
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, make_msgid
+from html import escape
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -113,6 +114,35 @@ class SmtpService:
         except Exception:
             pass
 
+    @staticmethod
+    def _html_con_logo(cuerpo: str, cid_logo: str, nombre_estudio: Optional[str]) -> str:
+        """Versión HTML del mensaje, con el logo del estudio arriba.
+
+        El logo va como imagen ADJUNTA referenciada por `cid:` y no como
+        `data:` URI: Gmail y Outlook bloquean las imágenes embebidas en base64,
+        así que un logo puesto de esa forma no se vería en los dos clientes de
+        correo que usa casi todo el mundo.
+
+        El cuerpo se escapa: viene del nombre de la plantilla y del usuario, y
+        un `<` ahí no puede convertirse en etiqueta.
+        """
+        parrafos = "".join(
+            f'<p style="margin:0 0 12px">{escape(bloque)}</p>'
+            for bloque in cuerpo.split("\n\n")
+            if bloque.strip()
+        )
+        alt = escape(nombre_estudio or "")
+        encabezado = (
+            f'<img src="cid:{cid_logo}" alt="{alt}" '
+            f'style="max-height:56px;max-width:220px;margin-bottom:20px">'
+        )
+        return (
+            '<html><body style="font-family:Arial,Helvetica,sans-serif;'
+            'font-size:14px;color:#262626;line-height:1.5">'
+            f"{encabezado}{parrafos}"
+            "</body></html>"
+        )
+
     def enviar_con_adjunto(
         self,
         destinatario: str,
@@ -120,6 +150,8 @@ class SmtpService:
         cuerpo: str,
         adjunto: bytes,
         nombre_adjunto: str,
+        logo: Optional[tuple[bytes, str]] = None,
+        nombre_estudio: Optional[str] = None,
     ) -> None:
         """Despacha el informe. Lanza ErrorEnvio si no se pudo entregar.
 
@@ -147,6 +179,27 @@ class SmtpService:
         mensaje["From"] = formataddr((config.remitente_nombre or "Estado Diario", remitente))
         mensaje["To"] = destinatario
         mensaje.set_content(cuerpo)
+
+        # Con logo el mensaje pasa a ser multiparte: el texto plano queda como
+        # alternativa y se agrega un HTML que referencia la imagen en línea.
+        # Sin logo se queda como estaba, en texto plano y sin partes de más.
+        if logo is not None:
+            contenido_logo, mime_logo = logo
+            cid = make_msgid(domain="estadodiario")
+            mensaje.add_alternative(
+                # cid[1:-1]: make_msgid devuelve <...> y en el src del <img> va
+                # sin los ángulos. Ponerlos deja la imagen rota, en silencio.
+                self._html_con_logo(cuerpo, cid[1:-1], nombre_estudio),
+                subtype="html",
+            )
+            subtipo = mime_logo.split("/", 1)[-1] if "/" in mime_logo else "png"
+            # La imagen se cuelga de la parte HTML, no del mensaje: colgada del
+            # mensaje sería un adjunto más y el cliente de correo la mostraría
+            # junto al Excel en vez de dentro del texto.
+            mensaje.get_payload()[-1].add_related(
+                contenido_logo, maintype="image", subtype=subtipo, cid=cid
+            )
+
         mensaje.add_attachment(
             adjunto,
             maintype="application",

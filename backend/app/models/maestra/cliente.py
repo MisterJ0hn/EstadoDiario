@@ -74,6 +74,58 @@ class Cliente(BaseMaestra):
     )
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # ── Qué clase de contratante es ──
+    # Un ESTUDIO tiene varios abogados patrocinadores; un PATROCINADOR es un
+    # abogado solo, y ahí la ficha del cliente y la de su único usuario son la
+    # misma persona.
+    #
+    # El default es `estudio` porque todos los clientes anteriores a esta
+    # distinción lo son: se les creó más de un usuario.
+    TIPO_ESTUDIO = "estudio"
+    TIPO_PATROCINADOR = "patrocinador"
+
+    tipo: Mapped[str] = mapped_column(
+        String(20), default=TIPO_ESTUDIO, server_default=TIPO_ESTUDIO
+    )
+
+    # CAL = cantidad de abogados patrocinadores contratados, o sea de usuarios
+    # que puede tener el estudio. Nulo en los patrocinadores, donde siempre es
+    # uno y preguntarlo no tendría sentido.
+    #
+    # Es un TOPE, no un conteo: si el estudio suspende a alguien, el cupo se
+    # libera. Se compara contra los usuarios ACTIVOS.
+    cal: Mapped[Optional[int]] = mapped_column(Integer)
+
+    @property
+    def es_patrocinador(self) -> bool:
+        return self.tipo == self.TIPO_PATROCINADOR
+
+    @property
+    def cupos(self) -> int:
+        """Cuántos usuarios admite. Un patrocinador es siempre uno."""
+        if self.es_patrocinador:
+            return 1
+        return self.cal or 0
+
+    # ── Logo del estudio ──
+    # Se guarda en la BASE y no en disco a propósito: el backend corre en
+    # contenedores sin volumen compartido, así que un archivo escrito por una
+    # réplica no lo ve la otra. Además viaja con el respaldo de la base, que es
+    # lo que uno espera de un dato del cliente.
+    #
+    # `logo` es el contenido en base64 (sin el prefijo `data:`) y `logo_mime`
+    # su tipo. Van separados para poder armar el `data:` URI sin adivinar el
+    # formato y para poder adjuntarlo a un correo, donde el prefijo estorba.
+    logo: Mapped[Optional[str]] = mapped_column(Text)
+    logo_mime: Mapped[Optional[str]] = mapped_column(String(100))
+
+    @property
+    def logo_data_uri(self) -> Optional[str]:
+        """El logo listo para un `<img src>`. `None` si no tiene."""
+        if not self.logo or not self.logo_mime:
+            return None
+        return f"data:{self.logo_mime};base64,{self.logo}"
+
     # ── Acceso en claro a los campos cifrados ──
 
     @property

@@ -21,6 +21,7 @@ class EstadoDiarioOrigen(BaseTenant):
     TIPO_ESTADO_DIARIO = "estado_diario"
     TIPO_MOVIMIENTOS = "movimientos"
     TIPO_AUDIENCIAS = "audiencias"
+    TIPO_CAUSAS = "causas"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     usuario_carga_id: Mapped[Optional[int]] = mapped_column(
@@ -59,6 +60,14 @@ class EstadoDiarioOrigen(BaseTenant):
     )
     cortes_movimiento: Mapped[List["MovimientoCorte"]] = relationship(
         "MovimientoCorte", back_populates="estado_diario_origen", cascade="all, delete-orphan"
+    )
+    # La cartera de causas y sus hojas de corte. Misma cascada por el mismo
+    # motivo que arriba.
+    causas: Mapped[List["Causa"]] = relationship(
+        "Causa", back_populates="estado_diario_origen", cascade="all, delete-orphan"
+    )
+    causas_corte: Mapped[List["CausaCorte"]] = relationship(
+        "CausaCorte", back_populates="estado_diario_origen", cascade="all, delete-orphan"
     )
     # Sin delete-orphan, a diferencia de los otros dos: una audiencia sobrevive
     # a sus archivos porque se deduplica entre cargas traslapadas y

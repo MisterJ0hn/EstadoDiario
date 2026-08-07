@@ -1,5 +1,3 @@
-export type RolUsuario = 'admin' | 'usuario';
-
 export interface Usuario {
   id: number;
   username: string;
@@ -7,7 +5,6 @@ export interface Usuario {
   nombre: string | null;
   apellido: string | null;
   telefono: string | null;
-  rol: RolUsuario;
   activo: boolean;
   fecha_creacion: string;
 }
@@ -21,6 +18,12 @@ export interface UsuarioListResponse {
 // ── Alta y edición ───────────────────────────────────────────────────────
 // Las usa SOLO la consola de la plataforma (`admin-cliente.service.ts`): dar
 // de alta a alguien es de quien contrata el servicio, no del estudio.
+//
+// No hay `rol`: dentro de un estudio todos hacen de todo.
+//
+// `nombre` y `apellido` son de UNA palabra cada uno. El backend lo rechaza si
+// llegan con espacios (`validar_palabra_unica`), y el formulario lo avisa antes
+// para no perder lo escrito.
 
 export interface UsuarioCreate {
   username: string;
@@ -29,43 +32,17 @@ export interface UsuarioCreate {
   nombre: string | null;
   apellido: string | null;
   telefono?: string | null;
-  rol: RolUsuario;
   activo: boolean;
 }
 
 export interface UsuarioUpdate {
+  /** Se puede cambiar. El id no cambia, así que el historial se conserva. */
+  username: string;
   email: string;
   /** Vacío = conservar la contraseña actual */
   password?: string | null;
   nombre: string | null;
   apellido: string | null;
   telefono?: string | null;
-  rol: RolUsuario;
   activo: boolean;
-}
-
-// ── Permisos de visibilidad ──────────────────────────────────────────────
-// Lo único que el administrador del estudio decide sobre su gente: qué ven.
-
-export interface JurisdiccionOpcion {
-  id: number;
-  nombre: string;
-}
-
-export interface PermisosUsuario {
-  usuario_id: number;
-  username: string;
-  nombre_completo: string;
-  rol: RolUsuario;
-  activo: boolean;
-  /** Ids de las jurisdicciones que puede ver. **Vacío = ve todas.** */
-  jurisdicciones: number[];
-}
-
-export interface PermisosUsuarioListResponse {
-  exito: boolean;
-  total: number;
-  /** Catálogo para armar la pantalla; viene en la misma respuesta. */
-  jurisdicciones: JurisdiccionOpcion[];
-  usuarios: PermisosUsuario[];
 }

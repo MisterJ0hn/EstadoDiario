@@ -8,9 +8,7 @@ El default del listado es "de hoy en adelante": el módulo se llama "Próximas
 audiencias" y esa es la pregunta que responde. Para ver el histórico hay que
 mandar `desde` explícitamente.
 
-La visibilidad se resuelve con EstadoDiarioService.alcance(), el mismo criterio
-del resto de la app: cada usuario ve las audiencias de las jurisdicciones que
-tiene asignadas; el administrador del estudio y quien no tenga ninguna
+Sin filtro de visibilidad: dentro de un estudio todos ven todo.
 asignada, todas.
 """
 
@@ -80,7 +78,6 @@ def listar_audiencias(
 
     repo = AudienciaRepository(db)
     items, total, current_page, total_pages = repo.find_filtered(
-        jurisdicciones=EstadoDiarioService.alcance(db, current_user),
         materia=materia,
         tipo_audiencia=tipo_audiencia,
         tribunal=tribunal,
@@ -126,9 +123,7 @@ def resumen(
         desde = date.today()
 
     repo = AudienciaRepository(db)
-    alcance = EstadoDiarioService.alcance(db, current_user)
     conteos = repo.contar_por_materia(
-        jurisdicciones=alcance,
         tipo_audiencia=tipo_audiencia,
         tribunal=tribunal,
         busqueda=busqueda,
@@ -140,7 +135,7 @@ def resumen(
     return AudienciaResumenResponse(
         total=sum(c for _, c in conteos),
         por_materia=[ConteoMateriaAudiencia(materia=m, total=c) for m, c in conteos],
-        tipos_audiencia=repo.listar_tipos_audiencia(jurisdicciones=alcance),
+        tipos_audiencia=repo.listar_tipos_audiencia(),
     )
 
 
@@ -163,7 +158,6 @@ def calendario(
     """
     repo = AudienciaRepository(db)
     items = repo.find_para_calendario(
-        jurisdicciones=EstadoDiarioService.alcance(db, current_user),
         desde=desde,
         hasta=hasta,
     )
@@ -185,7 +179,6 @@ def listar_archivos(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = AudienciaRepository(db)
-    alcance = EstadoDiarioService.alcance(db, current_user)
     # Los archivos son del estudio y no se filtran; lo que se acota por
     # jurisdicción es su contenido, que es lo que cuenta `count_filtered`.
     items, total, current_page, total_pages = repo.find_origenes_paginados(

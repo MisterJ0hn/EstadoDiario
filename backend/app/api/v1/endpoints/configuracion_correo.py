@@ -9,7 +9,6 @@ from app.core.deps import (
     get_db_tenant,
     get_tenant_actual,
     get_usuario_actual,
-    require_admin_cliente,
 )
 from app.models.usuario import Usuario
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
@@ -35,11 +34,7 @@ logger = logging.getLogger(__name__)
 # ingesta: la configuración en modo lectura, forzar una revisión y la bitácora.
 # Todo eso exige ser administrador DEL ESTUDIO — quién recibe las causas y con
 # qué credencial no es información de cualquiera.
-router = APIRouter(
-    prefix="/configuracion-correo",
-    tags=["Configuración de Correo"],
-    dependencies=[Depends(require_admin_cliente)],
-)
+router = APIRouter(prefix="/configuracion-correo", tags=["Configuración de Correo"])
 
 
 def _a_response(config) -> ConfiguracionCorreoResponse:

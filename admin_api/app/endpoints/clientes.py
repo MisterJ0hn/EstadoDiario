@@ -20,6 +20,7 @@ from admin_api.app.schemas.cliente import (
     ClienteInboxUpdate,
     ClienteListResponse,
     ClienteResponse,
+    ClienteLogoUpdate,
     ClienteUpdate,
     OperacionResponse,
     ProbarInboxRequest,
@@ -92,10 +93,28 @@ def actualizar_cliente(
     datos: ClienteUpdate,
     db: Session = Depends(get_db_maestra),
 ):
-    """Edita nombre, correo y si el cliente está activo. **No** cambia el RUT,
-    el guid ni la base de datos: el RUT es la credencial de acceso del estudio
-    y el guid identifica su base."""
+    """Edita nombre, RUT, correo y si el cliente está activo.
+
+    **No** cambia el guid ni la base de datos: identifican dónde están las
+    causas del cliente y tocarlos las dejaría inalcanzables. El RUT sí, aunque
+    es la credencial con la que entra el estudio: ver `ClienteUpdate`.
+    """
     return ClienteService(db).actualizar(cliente_id, datos)
+
+
+@router.put(
+    "/{cliente_id}/logo",
+    response_model=ClienteResponse,
+    summary="Cambiar o quitar el logo del estudio",
+)
+def guardar_logo(
+    cliente_id: int,
+    datos: ClienteLogoUpdate,
+    db: Session = Depends(get_db_maestra),
+):
+    """Guarda el logo que el estudio ve en su barra lateral y sale en los
+    correos que le envía el sistema. Mandar `logo` vacío lo quita."""
+    return ClienteService(db).guardar_logo(cliente_id, datos)
 
 
 # ── Aprovisionamiento de su base de datos ─────────────────

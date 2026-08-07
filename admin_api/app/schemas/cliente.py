@@ -12,7 +12,7 @@ separan.
 from datetime import date, datetime, time
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Estado de la base de datos del cliente. `en_cola` y `creando` existen porque
 # crear una base toma segundos: hasta que llega a `listo` el cliente aparece en
@@ -20,28 +20,141 @@ from pydantic import BaseModel, Field
 EstadoAprovisionamiento = Literal["en_cola", "creando", "listo", "error"]
 
 
-class ClienteCreate(BaseModel):
-    """Alta de un cliente. El guid y la base de datos los genera el backend: no
-    se aceptan por parámetro para que nadie pueda apuntar a una base que ya
-    existe.
+TipoCliente = Literal["estudio", "patrocinador"]
 
-    No incluye el primer usuario: los usuarios se crean después, desde la ficha
-    del cliente, y solo cuando su base esté lista.
+
+class UsuarioInicial(BaseModel):
+    """Un usuario a crear junto con el cliente.
+
+    Es el mismo contrato que `UsuarioAdminCreate` del backend, repetido acá
+    porque este viaja ANIDADO en el alta del cliente y no como cuerpo propio.
+    """
+
+    username: str = Field(..., min_length=3, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
+    password: str = Field(..., min_length=8, max_length=128)
+    email: str | None = Field(default=None, max_length=255)
+    # Una sola palabra cada uno; lo valida el backend al construir el Usuario.
+    nombre: str | None = Field(default=None, max_length=200)
+    apellido: str | None = Field(default=None, max_length=200)
+    telefono: str | None = Field(default=None, max_length=30)
+
+
+class ClienteCreate(BaseModel):
+    """Alta de un cliente **con sus usuarios, en una sola llamada**.
+
+    Antes el cliente se creaba vacío y los usuarios se agregaban después desde
+    su ficha. El problema era que un alta a medias —cliente creado, usuarios
+    no— se veía igual que una completa, y nadie podía entrar a ese estudio.
+    Ahora la consola junta todo y lo manda junto.
+
+    El guid y la base de datos los genera el backend: no se aceptan por
+    parámetro para que nadie pueda apuntar a una base que ya existe.
+
+    **Las dos formas del alta:**
+
+    - `estudio`: `cal` es la cantidad de abogados patrocinadores contratados, y
+      tienen que venir exactamente esos usuarios.
+    - `patrocinador`: un abogado solo. `cal` no aplica (se ignora) y va
+      exactamente un usuario, que es la misma persona de la ficha.
     """
 
     nombre: str = Field(..., min_length=2, max_length=255)
     rut: str = Field(..., min_length=3, max_length=20, examples=["76.543.210-K"])
     correo: str | None = Field(default=None, max_length=255)
+    tipo: TipoCliente = "estudio"
+    # Solo para `estudio`. Es el tope de usuarios del cliente.
+    cal: int | None = Field(default=None, ge=1, le=500)
+    usuarios: list[UsuarioInicial] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validar_cupos(self) -> "ClienteCreate":
+        """La cantidad de usuarios tiene que calzar con lo contratado.
+
+        Se valida acá y no en el servicio para que el error salga como 422 con
+        el campo señalado, antes de crear nada. Un cliente creado y después
+        rechazado por la cantidad de usuarios sería justamente el alta a medias
+        que este endpoint viene a evitar.
+        """
+        if self.tipo == "patrocinador":
+            # `cal` se ignora en vez de rechazarse: la consola no lo muestra
+            # para este tipo, y un valor viejo arrastrado en el formulario no
+            # tiene por qué frenar el alta.
+            self.cal = None
+            if len(self.usuarios) != 1:
+                raise ValueError(
+                    "Un patrocinador es un abogado solo: debe indicar exactamente "
+                    "un usuario."
+                )
+            return self
+
+        if not self.cal:
+            raise ValueError("Indique el CAL: cuántos abogados patrocinadores contrata.")
+        if len(self.usuarios) != self.cal:
+            raise ValueError(
+                f"El CAL es {self.cal}, así que debe crear {self.cal} "
+                f"usuario(s); vinieron {len(self.usuarios)}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validar_usuarios_distintos(self) -> "ClienteCreate":
+        """Nombres de usuario y correos repetidos DENTRO del alta.
+
+        El backend los rechaza uno por uno contra la base, pero acá ya se
+        habría creado el cliente y los primeros usuarios. Detectarlo antes deja
+        el alta entera sin efecto.
+        """
+        nombres = [u.username.strip().lower() for u in self.usuarios]
+        repetido = next((n for n in nombres if nombres.count(n) > 1), None)
+        if repetido:
+            raise ValueError(f"El nombre de usuario '{repetido}' está repetido.")
+
+        correos = [u.email.strip().lower() for u in self.usuarios if u.email]
+        repetido = next((c for c in correos if correos.count(c) > 1), None)
+        if repetido:
+            raise ValueError(f"El correo '{repetido}' está repetido.")
+        return self
 
 
 class ClienteUpdate(BaseModel):
-    """Edición de la ficha. No incluye guid, base de datos ni RUT: el guid y la
-    base identifican la base de datos (cambiarlos la dejaría inalcanzable) y el
-    RUT es la credencial con la que el estudio inicia sesión."""
+    """Edición de la ficha.
+
+    **El RUT sí se puede corregir.** Es la credencial con la que el estudio
+    inicia sesión, así que cambiarlo obliga a todos sus usuarios a entrar con
+    el nuevo desde ese momento — pero un RUT mal tipeado en el alta no tiene
+    otra salida, y dejarlo fijo obligaba a crear el cliente de nuevo.
+
+    Lo que NO se toca es `guid` ni `base_datos`: identifican la base de datos
+    del cliente, y cambiarlos la dejaría inalcanzable con todas sus causas
+    adentro. Por eso no están acá y no es un olvido.
+    """
 
     nombre: str = Field(..., min_length=2, max_length=255)
+    # Ausente = conservar el actual.
+    rut: str | None = Field(default=None, min_length=3, max_length=20)
     correo: str | None = Field(default=None, max_length=255)
+    # Ampliar o reducir lo contratado. Reducirlo por debajo de los usuarios
+    # activos se rechaza: habría que decidir a quién desactivar, y eso no lo
+    # puede adivinar el sistema.
+    cal: int | None = Field(default=None, ge=1, le=500)
     activo: bool = True
+
+
+class ClienteLogoUpdate(BaseModel):
+    """Logo del estudio, en base64.
+
+    Llega por JSON y no como multipart a propósito: la consola ya lo lee con
+    FileReader para previsualizarlo, así que mandarlo como texto evita un
+    segundo camino de subida de archivos en el único endpoint que lo tendría.
+
+    `logo` vacío o nulo = QUITAR el logo. Es la única forma de volver al nombre
+    del estudio en texto, y por eso no se confunde con "no lo cambies": este
+    endpoint es solo del logo, no hay otro campo que preservar.
+    """
+
+    # Sin el prefijo `data:...;base64,`. La consola lo saca antes de enviar.
+    logo: str | None = None
+    logo_mime: str | None = Field(default=None, max_length=100)
 
 
 class ClienteResponse(BaseModel):
@@ -59,6 +172,16 @@ class ClienteResponse(BaseModel):
     # Qué falló, cuando `aprovisionamiento` es `error`.
     aprovisionamiento_detalle: str | None = None
     total_usuarios: int = 0
+    tipo: TipoCliente = "estudio"
+    # Tope de usuarios contratado. Null en los patrocinadores, donde es 1.
+    cal: int | None = None
+    # `data:<mime>;base64,<...>` listo para un <img src>. Null = sin logo.
+    logo: str | None = None
+    # Solo en la respuesta del ALTA: qué pasó con los usuarios que venían.
+    # Null cuando no se pidió crear ninguno (no es lo mismo que "ninguno se
+    # creó").
+    usuarios_creados: int | None = None
+    usuarios_con_error: list[str] = []
 
 
 class ClienteListResponse(BaseModel):

@@ -45,6 +45,7 @@ from app.utils.nombre_archivo import extraer_rut_y_fechas
 # formato) porque el formato es justamente lo que cambia.
 _PREFIJOS = (
     (EstadoDiarioOrigen.TIPO_AUDIENCIAS, re.compile(r"audiencia", re.IGNORECASE)),
+    (EstadoDiarioOrigen.TIPO_CAUSAS, re.compile(r"^causas?", re.IGNORECASE)),
     (EstadoDiarioOrigen.TIPO_MOVIMIENTOS, re.compile(r"movimiento", re.IGNORECASE)),
     (EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, re.compile(r"estado\s*_?diario", re.IGNORECASE)),
 )
@@ -68,6 +69,7 @@ ETIQUETAS = {
     EstadoDiarioOrigen.TIPO_ESTADO_DIARIO: "estado diario",
     EstadoDiarioOrigen.TIPO_MOVIMIENTOS: "movimientos",
     EstadoDiarioOrigen.TIPO_AUDIENCIAS: "audiencias",
+    EstadoDiarioOrigen.TIPO_CAUSAS: "causas",
 }
 
 

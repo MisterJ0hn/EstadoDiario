@@ -44,7 +44,6 @@ class TenantContexto:
     guid: str
     cliente_id: int
     usuario_id: int
-    rol: str
 
 
 def _payload(credentials: HTTPAuthorizationCredentials) -> dict:
@@ -116,7 +115,6 @@ def get_tenant_actual(
         guid=guid,
         cliente_id=int(cliente_id),
         usuario_id=int(payload.get("sub", 0)),
-        rol=payload.get("rol", "usuario"),
     )
 
 
@@ -146,12 +144,3 @@ def get_usuario_actual(
     return usuario
 
 
-def require_admin_cliente(usuario: Usuario = Depends(get_usuario_actual)) -> Usuario:
-    """Administrador DEL CLIENTE (ve todo lo del estudio). No tiene ninguna
-    relación con el administrador del sistema."""
-    if usuario.rol != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso denegado: se requiere rol admin",
-        )
-    return usuario

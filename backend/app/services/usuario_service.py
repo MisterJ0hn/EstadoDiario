@@ -2,8 +2,8 @@
 
 **El alta y la edición ya no viven acá**: las hace la plataforma, en
 `AdminClienteService` (`/api/v1/admin/clientes/{id}/usuarios`). Quien contrata
-el servicio decide cuántas cuentas hay y quién las tiene; el administrador del
-estudio decide qué ve cada una (`UsuarioJurisdiccionRepository`).
+el servicio decide cuántas cuentas hay y quién las tiene. Dentro del estudio no
+hay roles ni permisos: todos ven y hacen todo.
 
 Nunca existió borrado y sigue sin existir: las tablas operativas referencian
 usuario.id (quién subió el archivo, quién marcó leído o pendiente), así que un
@@ -41,7 +41,6 @@ class UsuarioService:
             nombre=usuario.nombre,
             apellido=usuario.apellido,
             telefono=usuario.telefono,
-            rol=usuario.rol,
             activo=usuario.activo,
             debe_cambiar_password=usuario.debe_cambiar_password,
             fecha_creacion=usuario.fecha_creacion,

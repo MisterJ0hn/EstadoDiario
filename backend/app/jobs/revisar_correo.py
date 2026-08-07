@@ -77,11 +77,16 @@ def corresponde_ejecutar(db_tenant, config, usuario_destino_id) -> tuple[bool, s
     return True, "Corresponde ejecutar"
 
 
-def _primer_admin(db_tenant) -> int | None:
+def _primer_usuario(db_tenant) -> int | None:
     """Usuario a nombre de quien queda lo importado cuando la casilla no fija
-    uno: el primer administrador del cliente."""
+    uno: el primero activo del cliente.
+
+    Antes era "el primer administrador". Al eliminarse los roles ya no hay a
+    quién preferir, y quién figura como autor de una importación automática no
+    cambia lo que nadie ve: dentro del estudio todos ven todo.
+    """
     for usuario in UsuarioRepository(db_tenant).find_all():
-        if usuario.rol == "admin" and usuario.activo:
+        if usuario.activo:
             return usuario.id
     return None
 
@@ -129,7 +134,7 @@ def main() -> int:
             # pueden impedir que se revisen las demás.
             try:
                 with sesion_tenant(cliente.guid) as db_tenant:
-                    usuario_destino = config.usuario_destino_id or _primer_admin(db_tenant)
+                    usuario_destino = config.usuario_destino_id or _primer_usuario(db_tenant)
                     if usuario_destino is None:
                         logger.warning(
                             "Casilla del cliente %s sin usuario destino; se omite", cliente.guid

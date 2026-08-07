@@ -9,41 +9,19 @@ from app.models.estado_diario_origen import EstadoDiarioOrigen
 
 
 class EstadoDiarioRepository:
-    """Todas las lecturas exigen `jurisdicciones`: la lista de jurisdicciones
-    que el usuario tiene permitido ver. `None` significa "sin restricción" y lo
-    devuelve `EstadoDiarioService.alcance()` para el administrador del estudio
-    y para quien no tenga ninguna asignada.
+    """Lecturas de estado diario.
 
-    El parámetro es OBLIGATORIO a propósito (sin valor por defecto): si un
-    llamador nuevo se olvida de pasarlo, revienta con TypeError en vez de
-    devolver silenciosamente causas que esa persona no debería ver.
-
-    Ojo con el nombre: antes este parámetro era `usuario_id` y filtraba por el
-    dueño del archivo. No es lo mismo y no se puede pasar uno donde va el otro.
+    **Sin filtro de visibilidad**: dentro de un estudio todos ven todo. Hubo
+    dos intentos de acotar (primero por dueño del archivo, después por
+    jurisdicción) y los dos se eliminaron. Si alguna vez vuelve un permiso,
+    va acá y en `_aplicar_filtros_comunes`, que es por donde pasan todas las
+    consultas de esta clase.
     """
 
     def __init__(self, db: Session):
         self.db = db
 
-    @staticmethod
-    def _filtrar_por_jurisdiccion(query, jurisdicciones: Optional[list[int]]):
-        """Restringe a las jurisdicciones permitidas.
-
-        Las causas **sin jurisdicción** (el parser no la pudo determinar) las ve
-        todo el mundo. Excluirlas sería más estricto, pero las haría
-        desaparecer sin que nadie se entere: nadie echa de menos una causa que
-        no sabe que existe. Prefiero que sobre y se vea, a que falte y no.
-        """
-        if jurisdicciones is None:
-            return query
-        return query.filter(
-            or_(
-                EstadoDiario.jurisdiccion_id.in_(jurisdicciones),
-                EstadoDiario.jurisdiccion_id.is_(None),
-            )
-        )
-
-    def find_by_id(self, eid: int, jurisdicciones: Optional[list[int]]) -> Optional[EstadoDiario]:
+    def find_by_id(self, eid: int) -> Optional[EstadoDiario]:
         query = (
             self.db.query(EstadoDiario)
             .join(EstadoDiario.estado_diario_origen)
@@ -54,10 +32,10 @@ class EstadoDiarioRepository:
             )
             .filter(EstadoDiario.id == eid)
         )
-        return self._filtrar_por_jurisdiccion(query, jurisdicciones).first()
+        return query.first()
 
     def find_by_origen(
-        self, origen_id: int, jurisdicciones: Optional[list[int]]
+        self, origen_id: int
     ) -> list[EstadoDiario]:
         query = (
             self.db.query(EstadoDiario)
@@ -65,7 +43,7 @@ class EstadoDiarioRepository:
             .options(joinedload(EstadoDiario.jurisdiccion))
             .filter(EstadoDiario.estado_diario_origen_id == origen_id)
         )
-        return self._filtrar_por_jurisdiccion(query, jurisdicciones).all()
+        return query.all()
 
     @classmethod
     def _aplicar_filtros_comunes(
@@ -76,13 +54,12 @@ class EstadoDiarioRepository:
         fecha_hasta: Optional[str],
         rut: Optional[str],
         status_filter: Optional[str],
-        jurisdicciones: Optional[list[int]],
     ):
         # Permiso de visibilidad. Va primero porque es la restricción que no
         # puede faltar nunca; los demás filtros son opcionales del usuario.
         # `jurisdiccion_id` (singular) es otra cosa: el filtro que la persona
         # elige en pantalla, dentro de lo que ya tiene permitido.
-        query = cls._filtrar_por_jurisdiccion(query, jurisdicciones)
+        query = query
 
         if status_filter == "resuelto":
             query = query.filter(EstadoDiario.leido == True)
@@ -112,7 +89,6 @@ class EstadoDiarioRepository:
 
     def _build_filtered_query(
         self,
-        jurisdicciones: Optional[list[int]],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -129,12 +105,11 @@ class EstadoDiarioRepository:
             )
         )
         return self._aplicar_filtros_comunes(
-            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter, jurisdicciones
+            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
         )
 
     def count_filtered(
         self,
-        jurisdicciones: Optional[list[int]],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -146,13 +121,12 @@ class EstadoDiarioRepository:
             .join(EstadoDiario.estado_diario_origen)
         )
         query = self._aplicar_filtros_comunes(
-            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter, jurisdicciones
+            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
         )
         return query.scalar()
 
     def find_filtered(
         self,
-        jurisdicciones: Optional[list[int]],
         jurisdiccion_id: Optional[int] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
@@ -162,10 +136,10 @@ class EstadoDiarioRepository:
         limit: Optional[int] = None,
     ):
         query = self._build_filtered_query(
-            jurisdicciones, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+            jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
         )
         total = self.count_filtered(
-            jurisdicciones, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+            jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
         )
 
         total_pages = 1

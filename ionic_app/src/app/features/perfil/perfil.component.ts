@@ -37,7 +37,6 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
             </div>
             <div>
               <span class="text-xs text-neutral-500 uppercase">Rol</span>
-              <p class="font-medium">{{ auth.user()?.rol === 'admin' ? 'Administrador' : 'Usuario' }}</p>
             </div>
           </div>
 

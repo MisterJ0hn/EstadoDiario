@@ -2,8 +2,7 @@
 
 Solo lectura + carga: no hay acciones sobre un movimiento (leído, pendiente,
 agenda) porque este reporte es de consulta. La visibilidad se resuelve con
-EstadoDiarioService.alcance(), el mismo criterio del resto de la app: cada
-usuario ve los movimientos de las jurisdicciones que tiene asignadas.
+Sin filtro de visibilidad: dentro de un estudio todos ven todo.
 """
 
 import logging
@@ -62,7 +61,6 @@ def listar_movimientos(
 ):
     repo = MovimientoRepository(db)
     items, total, current_page, total_pages = repo.find_filtered(
-        jurisdicciones=EstadoDiarioService.alcance(db, current_user),
         materia=materia,
         estado_causa=estado_causa,
         tribunal=tribunal,
@@ -101,9 +99,7 @@ def resumen(
     """Alimenta las pestañas por materia y el combo de estado de causa. La
     agregación la hace la base de datos (GROUP BY / DISTINCT)."""
     repo = MovimientoRepository(db)
-    alcance = EstadoDiarioService.alcance(db, current_user)
     conteos = repo.contar_por_materia(
-        jurisdicciones=alcance,
         estado_causa=estado_causa,
         tribunal=tribunal,
         busqueda=busqueda,
@@ -115,7 +111,7 @@ def resumen(
     return MovimientoResumenResponse(
         total=sum(c for _, c in conteos),
         por_materia=[ConteoMateria(materia=m, total=c) for m, c in conteos],
-        estados_causa=repo.listar_estados_causa(jurisdicciones=alcance),
+        estados_causa=repo.listar_estados_causa(),
     )
 
 
@@ -131,7 +127,6 @@ def listar_archivos(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = MovimientoRepository(db)
-    alcance = EstadoDiarioService.alcance(db, current_user)
     # Los archivos son del estudio y no se filtran; lo que se acota por
     # jurisdicción es su contenido, que es lo que cuenta `count_filtered`.
     items, total, current_page, total_pages = repo.find_origenes_paginados(
@@ -150,7 +145,7 @@ def listar_archivos(
                 fecha_carga=o.fecha_carga,
                 usuario_carga=o.usuario_carga.usuario if o.usuario_carga else None,
                 total_movimientos=repo.count_filtered(
-                    jurisdicciones=alcance, origen_id=o.id
+                    origen_id=o.id
                 ),
             )
             for o in items
@@ -257,10 +252,8 @@ def listar_cortes(
     acotan con el mismo permiso por jurisdicción que el resto del sistema.
     """
     repo = MovimientoCorteRepository(db)
-    alcance = EstadoDiarioService.alcance(db, current_user)
 
     items, total, pagina, total_pages = repo.find_filtered(
-        jurisdicciones=alcance,
         tipo=tipo,
         busqueda=busqueda,
         corte=corte,
@@ -291,5 +284,5 @@ def listar_cortes(
             )
             for c in items
         ],
-        cortes_disponibles=repo.listar_cortes(alcance),
+        cortes_disponibles=repo.listar_cortes(),
     )

@@ -14,6 +14,8 @@ relaciones expresadas como string, porque esas clases todavía no se cargaron.
 from app.models import (  # noqa: F401
     api_llamado_estado_diario,
     audiencia,
+    causa,
+    causa_corte,
     correo_log,
     estado_diario,
     estado_diario_agenda,
@@ -26,5 +28,4 @@ from app.models import (  # noqa: F401
     movimiento_corte,
     reporte_plantilla,
     usuario,
-    usuario_jurisdiccion,
 )

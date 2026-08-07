@@ -52,7 +52,7 @@ def listar_origenes(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = EstadoDiarioOrigenRepository(db)
-    # Sin alcance: los archivos son del estudio. Lo que se acota por
+    # Los archivos son del estudio. Lo que se acota por
     # jurisdicción es su contenido, al abrirlos.
     items, total, total_pages = repo.find_all_paginated(tipo, page, per_page)
     origenes = []
@@ -84,7 +84,7 @@ def movimientos_por_origen(
 ):
     from app.repositories.estado_diario_repository import EstadoDiarioRepository
     repo = EstadoDiarioRepository(db)
-    items = repo.find_by_origen(origen_id, EstadoDiarioService.alcance(db, current_user))
+    items = repo.find_by_origen(origen_id)
     service = EstadoDiarioService(db)
     data = [service._map_movimiento(m, include_pendiente=True) for m in items]
     return {"exito": True, "total": len(data), "movimientos": data}
@@ -233,7 +233,7 @@ def no_leidos(
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_no_leidos(
-        service.alcance(db, current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
     )
 
 
@@ -254,7 +254,7 @@ def leidos(
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_leidos(
-        service.alcance(db, current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
     )
 
 
@@ -275,7 +275,7 @@ def pendientes(
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_pendientes(
-        service.alcance(db, current_user), jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
     )
 
 
@@ -321,10 +321,8 @@ def listar_cortes(
     acotan con el mismo permiso por jurisdicción que el resto del sistema.
     """
     repo = EstadoDiarioCorteRepository(db)
-    alcance = EstadoDiarioService.alcance(db, current_user)
 
     items, total, pagina, total_pages = repo.find_filtered(
-        jurisdicciones=alcance,
         tipo=tipo,
         busqueda=busqueda,
         corte=corte,
@@ -353,7 +351,7 @@ def listar_cortes(
             )
             for c in items
         ],
-        cortes_disponibles=repo.listar_cortes(alcance),
+        cortes_disponibles=repo.listar_cortes(),
     )
 
 
@@ -367,7 +365,7 @@ def detalle_movimiento(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimiento_detalle(estado_diario_id, service.alcance(db, current_user))
+    return service.get_movimiento_detalle(estado_diario_id)
 
 
 # ── Acciones ──────────────────────────────────────────────
@@ -389,7 +387,6 @@ def marcar_leido(
     return service.marcar_leido(
         estado_diario_id,
         current_user.id,
-        service.alcance(db, current_user),
         body.observacion if body else None,
     )
 
@@ -408,7 +405,6 @@ def marcar_pendiente(
     return service.marcar_pendiente(
         estado_diario_id, body.nivel, body.username, body.mensaje, body.fecha_hora,
         body.notificar_whatsapp, body.whatsapp_telefono, body.fecha_hora_whatsapp,
-        service.alcance(db, current_user),
     )
 
 
@@ -425,7 +421,7 @@ def listar_agendas(
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
-    return service.get_agendas(estado_diario_id, service.alcance(db, current_user))
+    return service.get_agendas(estado_diario_id)
 
 
 @router.post(
@@ -441,7 +437,6 @@ def crear_agenda(
     service = EstadoDiarioService(db)
     return service.crear_agenda(
         estado_diario_id, body.detalle, body.fecha_hora, body.username,
-        service.alcance(db, current_user),
     )
 
 

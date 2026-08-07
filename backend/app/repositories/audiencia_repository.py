@@ -1,8 +1,7 @@
 """Consultas del módulo Audiencias.
 
-La visibilidad se controla con `jurisdicciones` (`None` = sin restricción),
-igual que en el resto de la app, y no necesita JOIN: `audiencia.jurisdiccion_id`
-está en la propia fila. Solo se une a `estado_diario_origen` cuando el filtro es
+Sin filtro de visibilidad: dentro de un estudio todos ven todo. Hubo un
+permiso por jurisdiccion (usuario_jurisdiccion) y se elimino.
 del archivo (RUT).
 
 **`audiencia.usuario_id` es otra cosa** y sigue existiendo: es el dueño
@@ -104,7 +103,6 @@ class AudienciaRepository:
     @staticmethod
     def _aplicar_filtros(
         query,
-        jurisdicciones: Optional[list[int]],
         materia: Optional[str],
         tipo_audiencia: Optional[str],
         tribunal: Optional[str],
@@ -116,13 +114,6 @@ class AudienciaRepository:
     ):
         # Permiso de visibilidad. None = sin restricción. Las audiencias sin
         # jurisdicción las ve todo el mundo, igual que las causas.
-        if jurisdicciones is not None:
-            query = query.filter(
-                or_(
-                    Audiencia.jurisdiccion_id.in_(jurisdicciones),
-                    Audiencia.jurisdiccion_id.is_(None),
-                )
-            )
 
         if materia:
             query = query.filter(Audiencia.materia == materia)
@@ -159,7 +150,6 @@ class AudienciaRepository:
 
     def count_filtered(
         self,
-        jurisdicciones: Optional[list[int]] = None,
         materia: Optional[str] = None,
         tipo_audiencia: Optional[str] = None,
         tribunal: Optional[str] = None,
@@ -171,14 +161,13 @@ class AudienciaRepository:
     ) -> int:
         query = self.db.query(func.count(Audiencia.id))
         query = self._aplicar_filtros(
-            query, jurisdicciones, materia, tipo_audiencia, tribunal, busqueda,
+            query, materia, tipo_audiencia, tribunal, busqueda,
             rut, origen_id, desde, hasta,
         )
         return query.scalar() or 0
 
     def find_filtered(
         self,
-        jurisdicciones: Optional[list[int]] = None,
         materia: Optional[str] = None,
         tipo_audiencia: Optional[str] = None,
         tribunal: Optional[str] = None,
@@ -197,7 +186,7 @@ class AudienciaRepository:
         Movimientos, que muestra lo más reciente primero.
         """
         total = self.count_filtered(
-            jurisdicciones, materia, tipo_audiencia, tribunal, busqueda,
+            materia, tipo_audiencia, tribunal, busqueda,
             rut, origen_id, desde, hasta,
         )
 
@@ -205,7 +194,7 @@ class AudienciaRepository:
             joinedload(Audiencia.estado_diario_origen)
         )
         query = self._aplicar_filtros(
-            query, jurisdicciones, materia, tipo_audiencia, tribunal, busqueda,
+            query, materia, tipo_audiencia, tribunal, busqueda,
             rut, origen_id, desde, hasta,
         ).order_by(
             Audiencia.fecha_audiencia.asc(),
@@ -224,7 +213,6 @@ class AudienciaRepository:
 
     def find_para_calendario(
         self,
-        jurisdicciones: Optional[list[int]],
         desde: date,
         hasta: date,
     ) -> list[Audiencia]:
@@ -237,13 +225,6 @@ class AudienciaRepository:
             Audiencia.fecha_audiencia >= desde,
             Audiencia.fecha_audiencia <= hasta,
         )
-        if jurisdicciones is not None:
-            query = query.filter(
-                or_(
-                    Audiencia.jurisdiccion_id.in_(jurisdicciones),
-                    Audiencia.jurisdiccion_id.is_(None),
-                )
-            )
         return query.order_by(
             Audiencia.fecha_audiencia.asc(),
             nulls_last(Audiencia.hora.asc()),
@@ -273,7 +254,6 @@ class AudienciaRepository:
 
     def contar_por_materia(
         self,
-        jurisdicciones: Optional[list[int]] = None,
         tipo_audiencia: Optional[str] = None,
         tribunal: Optional[str] = None,
         busqueda: Optional[str] = None,
@@ -286,7 +266,7 @@ class AudienciaRepository:
         total de cada pestaña, incluidas las no seleccionadas."""
         query = self.db.query(Audiencia.materia, func.count(Audiencia.id))
         query = self._aplicar_filtros(
-            query, jurisdicciones, None, tipo_audiencia, tribunal, busqueda,
+            query, None, tipo_audiencia, tribunal, busqueda,
             rut, origen_id, desde, hasta,
         )
         return query.group_by(Audiencia.materia).order_by(Audiencia.materia).all()
@@ -311,13 +291,12 @@ class AudienciaRepository:
 
     def listar_tipos_audiencia(
         self,
-        jurisdicciones: Optional[list[int]] = None,
         materia: Optional[str] = None,
     ) -> list[str]:
         """Valores distintos de "Tipo Audiencia" visibles para el usuario."""
         query = self.db.query(Audiencia.tipo_audiencia)
         query = self._aplicar_filtros(
-            query, jurisdicciones, materia, None, None, None, None, None, None, None
+            query, materia, None, None, None, None, None, None, None
         )
         filas = (
             query.filter(Audiencia.tipo_audiencia.isnot(None))

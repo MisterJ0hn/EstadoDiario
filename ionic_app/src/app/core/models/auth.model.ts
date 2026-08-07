@@ -20,16 +20,6 @@ export interface TokenResponse {
   expires_in: number;
 }
 
-/**
- * `rol`:
- * - `superadmin`: administra la plataforma. **No inicia sesión acá**: su
- *   consola es otra aplicación (`admin_app/`). El tipo se conserva porque el
- *   backend puede seguir devolviendo ese rol en un token viejo.
- *   del sistema). No tiene causas ni movimientos.
- * - `admin` / `usuario`: viven dentro de un cliente.
- */
-export type RolSesion = 'superadmin' | 'admin' | 'usuario';
-
 export interface UserInfo {
   id: number;
   username: string;
@@ -37,12 +27,13 @@ export interface UserInfo {
   nombre: string | null;
   apellido: string | null;
   telefono: string | null;
-  rol: string;
   activo: boolean;
   /** Nulos cuando la sesión es del administrador de la plataforma. */
   cliente_id?: number | null;
   cliente_nombre?: string | null;
   cliente_rut?: string | null;
+  /** Logo del estudio como `data:` URI, listo para un <img src>. */
+  cliente_logo?: string | null;
   /** Identifica la base de datos del cliente. Viaja en cada petición como
    *  cabecera `X-Cliente-Guid`, para verificación cruzada con el token. */
   cliente_guid?: string | null;

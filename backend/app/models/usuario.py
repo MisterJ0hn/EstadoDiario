@@ -50,9 +50,6 @@ class Usuario(BaseTenant):
     nombre: Mapped[Optional[str]] = mapped_column(String(200))
     apellido: Mapped[Optional[str]] = mapped_column(String(200))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
-    # admin = administrador DEL CLIENTE (ve todo lo del estudio). No tiene nada
-    # que ver con el administrador del sistema, que vive en la base principal.
-    rol: Mapped[str] = mapped_column(String(50), default="usuario")
 
     # Clave provisoria: la pone quien crea el usuario o le resetea la clave.
     # Mientras esté puesta el usuario entra, pero el frontend lo manda derecho

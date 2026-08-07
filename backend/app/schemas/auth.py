@@ -80,9 +80,6 @@ class UserInfo(BaseModel):
     nombre: str | None = None
     apellido: str | None = None
     telefono: str | None = None
-    # 'superadmin' para el administrador de la plataforma; 'admin' o 'usuario'
-    # dentro de un cliente.
-    rol: str
     activo: bool
     # La sesión vale, pero el backend rechaza el resto hasta que se cambie.
     debe_cambiar_password: bool = False
@@ -90,10 +87,15 @@ class UserInfo(BaseModel):
     cliente_id: int | None = None
     cliente_nombre: str | None = None
     cliente_rut: str | None = None
+    # Logo del estudio como `data:<mime>;base64,<...>`, listo para un <img src>.
+    # Viaja en la sesión y no por un endpoint aparte porque un <img> no puede
+    # mandar el header Authorization, y el logo es de un cliente concreto: no
+    # puede quedar en una URL pública.
+    cliente_logo: str | None = None
     cliente_guid: str | None = None
 
 
 class ActualizarPerfilRequest(BaseModel):
-    """Autoservicio: solo el propio teléfono, no correo/rol/password."""
+    """Autoservicio: solo el propio teléfono, no correo ni contraseña."""
 
     telefono: str | None = Field(default=None, max_length=30)

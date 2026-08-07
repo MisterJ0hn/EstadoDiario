@@ -1,15 +1,32 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Subscription, switchMap, timer } from 'rxjs';
 
-import { Cliente } from '@core/models/admin.model';
+import { Cliente, TipoCliente } from '@core/models/admin.model';
 import { NotificationService } from '@core/services/notification.service';
 import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
 import { AdminClienteService } from '../services/admin-cliente.service';
 
-type PasoAlta = 'datos' | 'confirmar';
+type PasoAlta = 'datos' | 'usuarios' | 'confirmar';
+
+/** Un usuario mientras se arma el alta. Vive solo en memoria: nada llega al
+ *  servidor hasta el botón del último paso. */
+interface UsuarioBorrador {
+  username: string;
+  email: string;
+  password: string;
+  nombre: string;
+  apellido: string;
+  telefono: string;
+  /**
+   * true = el nombre de usuario lo escribió una persona, así que deja de
+   * sugerirse solo. Sin esto, corregir un apellido pisaría un usuario elegido
+   * a propósito.
+   */
+  usernameManual: boolean;
+}
 
 @Component({
   selector: 'app-clientes-list',
@@ -238,7 +255,8 @@ type PasoAlta = 'datos' | 'confirmar';
              aria-labelledby="titulo-alta" (keydown.escape)="cerrarAlta()" tabindex="-1">
           <div class="modal-header">
             <h3 id="titulo-alta" class="text-lg font-semibold">
-              {{ paso() === 'datos' ? 'Nuevo cliente' : 'Confirmar la creación' }}
+              {{ tituloPaso() }}
+              <span class="ml-2 text-xs font-normal text-neutral-500">Paso {{ numeroPaso() }} de 3</span>
             </h3>
             <button type="button" (click)="cerrarAlta()" class="text-neutral-400 hover:text-neutral-600"
                     aria-label="Cerrar">&times;</button>
@@ -246,13 +264,52 @@ type PasoAlta = 'datos' | 'confirmar';
 
           @if (paso() === 'datos') {
             <div class="modal-body space-y-4">
+              <!-- El tipo va PRIMERO: cambia qué se pregunta más abajo y
+                   cuántos usuarios pide el paso siguiente. -->
+              <div>
+                <span class="form-label">Tipo de cliente <span class="text-danger-600">*</span></span>
+                <div class="grid grid-cols-2 gap-2 mt-1">
+                  @for (t of tipos; track t.valor) {
+                    <button
+                      type="button"
+                      (click)="elegirTipo(t.valor)"
+                      class="rounded-lg border px-3 py-2 text-left transition-colors"
+                      [class]="
+                        modelo.tipo === t.valor
+                          ? 'border-primary-600 bg-primary-50 text-primary-800'
+                          : 'border-neutral-200 hover:border-neutral-300 text-neutral-700'
+                      "
+                    >
+                      <span class="block text-sm font-medium">{{ t.etiqueta }}</span>
+                      <span class="block text-xs text-neutral-500 mt-0.5">{{ t.detalle }}</span>
+                    </button>
+                  }
+                </div>
+              </div>
+
               <div>
                 <label class="form-label" for="nuevo-nombre">
-                  Nombre del estudio <span class="text-danger-600">*</span>
+                  {{ esPatrocinador() ? 'Nombre del abogado' : 'Nombre del estudio' }}
+                  <span class="text-danger-600">*</span>
                 </label>
                 <input id="nuevo-nombre" type="text" class="form-input" [(ngModel)]="modelo.nombre"
-                       placeholder="Estudio Jurídico Alfaro y Cía." autocomplete="off" />
+                       [placeholder]="esPatrocinador() ? 'Juan Pérez González' : 'Estudio Jurídico Alfaro y Cía.'"
+                       autocomplete="off" />
               </div>
+
+              @if (!esPatrocinador()) {
+                <div>
+                  <label class="form-label" for="nuevo-cal">
+                    CAL <span class="text-danger-600">*</span>
+                  </label>
+                  <input id="nuevo-cal" type="number" min="1" max="500" class="form-input"
+                         [(ngModel)]="modelo.cal" aria-describedby="ayuda-cal" />
+                  <p id="ayuda-cal" class="text-xs text-neutral-500 mt-1">
+                    Cuántos abogados patrocinadores contrata. En el paso siguiente tendrá que
+                    crear esa misma cantidad de usuarios.
+                  </p>
+                </div>
+              }
 
               <div>
                 <label class="form-label" for="nuevo-rut">RUT <span class="text-danger-600">*</span></label>
@@ -260,7 +317,8 @@ type PasoAlta = 'datos' | 'confirmar';
                        (ngModelChange)="alEscribirRut($event)" placeholder="12.345.678-9" autocomplete="off"
                        aria-describedby="ayuda-nuevo-rut" />
                 <p id="ayuda-nuevo-rut" class="text-xs text-neutral-500 mt-1">
-                  Con este RUT ingresan todos los usuarios del estudio. No se puede cambiar después.
+                  Con este RUT ingresan todos los usuarios del cliente. Se puede corregir
+                  después desde su ficha.
                 </p>
               </div>
 
@@ -283,6 +341,104 @@ type PasoAlta = 'datos' | 'confirmar';
 
             <div class="modal-footer">
               <button type="button" class="btn-secondary" (click)="cerrarAlta()">Cancelar</button>
+              <button type="button" class="btn-primary" (click)="irAUsuarios()">Continuar</button>
+            </div>
+          } @else if (paso() === 'usuarios') {
+            <!-- Paso 2. Nada se crea todavía: los usuarios viven en memoria
+                 hasta el botón del paso 3. Así un alta abandonada a la mitad
+                 no deja nada a medio hacer. -->
+            <div class="modal-body space-y-4">
+              @if (esPatrocinador()) {
+                <div class="alert-info">
+                  Es un abogado solo, así que se crea <strong>un</strong> usuario: el suyo. El
+                  nombre y el correo vienen de lo que indicó en el paso anterior; puede
+                  corregirlos.
+                </div>
+              } @else {
+                <div class="alert-info">
+                  Contrató <strong>{{ modelo.cal }}</strong>
+                  {{ modelo.cal === 1 ? 'abogado patrocinador' : 'abogados patrocinadores' }},
+                  así que hay que crear esa misma cantidad de usuarios.
+                </div>
+              }
+
+              @for (u of usuarios(); track $index) {
+                <div class="rounded-lg border border-neutral-200 p-4 space-y-3">
+                  <p class="text-sm font-semibold text-neutral-700">
+                    {{ esPatrocinador() ? 'Datos de acceso' : 'Abogado ' + ($index + 1) }}
+                  </p>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label class="form-label" [attr.for]="'u-nombre-' + $index">Nombre</label>
+                      <input [id]="'u-nombre-' + $index" type="text" class="form-input"
+                             [ngModel]="u.nombre"
+                             (ngModelChange)="alEscribirNombre(u, 'nombre', $event)"
+                             placeholder="Juan" autocomplete="off" />
+                      <p class="text-xs text-neutral-500 mt-1">Solo el primer nombre.</p>
+                    </div>
+                    <div>
+                      <label class="form-label" [attr.for]="'u-apellido-' + $index">Apellido</label>
+                      <input [id]="'u-apellido-' + $index" type="text" class="form-input"
+                             [ngModel]="u.apellido"
+                             (ngModelChange)="alEscribirNombre(u, 'apellido', $event)"
+                             placeholder="Pérez" autocomplete="off" />
+                      <p class="text-xs text-neutral-500 mt-1">Solo el primer apellido.</p>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label class="form-label" [attr.for]="'u-username-' + $index">
+                        Nombre de usuario <span class="text-danger-600">*</span>
+                      </label>
+                      <input [id]="'u-username-' + $index" type="text" class="form-input"
+                             [ngModel]="u.username"
+                             (ngModelChange)="alEscribirUsername(u, $event)"
+                             placeholder="Se propone al escribir el nombre" autocomplete="off" />
+                      <p class="text-xs text-neutral-500 mt-1">
+                        Se sugiere como nombre.apellido; puede cambiarlo.
+                      </p>
+                    </div>
+                    <div>
+                      <label class="form-label" [attr.for]="'u-email-' + $index">
+                        Correo <span class="text-danger-600">*</span>
+                      </label>
+                      <input [id]="'u-email-' + $index" type="email" class="form-input"
+                             [(ngModel)]="u.email" placeholder="jperez@estudio.cl" autocomplete="off" />
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label class="form-label" [attr.for]="'u-password-' + $index">
+                        Contraseña inicial <span class="text-danger-600">*</span>
+                      </label>
+                      <input [id]="'u-password-' + $index" type="text" class="form-input"
+                             [(ngModel)]="u.password" placeholder="Mínimo 8 caracteres"
+                             autocomplete="off" />
+                      <p class="text-xs text-neutral-500 mt-1">
+                        Se la exige cambiar al entrar por primera vez.
+                      </p>
+                    </div>
+                    <div>
+                      <label class="form-label" [attr.for]="'u-telefono-' + $index">
+                        Teléfono (opcional)
+                      </label>
+                      <input [id]="'u-telefono-' + $index" type="text" class="form-input"
+                             [(ngModel)]="u.telefono" placeholder="+56912345678" autocomplete="off" />
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (errorAlta()) {
+                <div class="alert-danger">{{ errorAlta() }}</div>
+              }
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" class="btn-secondary" (click)="paso.set('datos')">Volver</button>
               <button type="button" class="btn-primary" (click)="irAConfirmar()">Continuar</button>
             </div>
           } @else {
@@ -304,9 +460,23 @@ type PasoAlta = 'datos' | 'confirmar';
 
               <dl class="rounded-lg border border-neutral-200 divide-y divide-neutral-200 text-sm">
                 <div class="flex justify-between gap-4 px-4 py-2">
-                  <dt class="text-neutral-500">Estudio</dt>
+                  <dt class="text-neutral-500">Tipo</dt>
+                  <dd class="font-medium text-neutral-800 text-right">
+                    {{ esPatrocinador() ? 'Abogado patrocinador' : 'Estudio' }}
+                  </dd>
+                </div>
+                <div class="flex justify-between gap-4 px-4 py-2">
+                  <dt class="text-neutral-500">{{ esPatrocinador() ? 'Abogado' : 'Estudio' }}</dt>
                   <dd class="font-medium text-neutral-800 text-right">{{ modelo.nombre }}</dd>
                 </div>
+                @if (!esPatrocinador()) {
+                  <div class="flex justify-between gap-4 px-4 py-2">
+                    <dt class="text-neutral-500">CAL</dt>
+                    <dd class="font-medium text-neutral-800 text-right">
+                      {{ modelo.cal }} abogado(s)
+                    </dd>
+                  </div>
+                }
                 <div class="flex justify-between gap-4 px-4 py-2">
                   <dt class="text-neutral-500">RUT</dt>
                   <dd class="font-medium text-neutral-800 tabular-nums">{{ modelo.rut }}</dd>
@@ -321,17 +491,33 @@ type PasoAlta = 'datos' | 'confirmar';
                 </div>
               </dl>
 
+              <div>
+                <p class="text-sm font-semibold text-neutral-700 mb-2">
+                  Usuarios que se crearán ({{ usuarios().length }})
+                </p>
+                <ul class="rounded-lg border border-neutral-200 divide-y divide-neutral-200 text-sm">
+                  @for (u of usuarios(); track $index) {
+                    <li class="flex flex-wrap justify-between gap-2 px-4 py-2">
+                      <span class="font-medium text-neutral-800">{{ u.username }}</span>
+                      <span class="text-neutral-500 text-right break-all">
+                        {{ (u.nombre || '') + ' ' + (u.apellido || '') }} · {{ u.email }}
+                      </span>
+                    </li>
+                  }
+                </ul>
+              </div>
+
               @if (errorAlta()) {
                 <div class="alert-danger">{{ errorAlta() }}</div>
               }
             </div>
 
             <div class="modal-footer">
-              <button type="button" class="btn-secondary" (click)="paso.set('datos')" [disabled]="guardando()">
+              <button type="button" class="btn-secondary" (click)="paso.set('usuarios')" [disabled]="guardando()">
                 Volver
               </button>
               <button type="button" class="btn-primary" (click)="crear()" [disabled]="guardando()">
-                {{ guardando() ? 'Creando...' : 'Crear cliente y su base de datos' }}
+                {{ guardando() ? 'Creando...' : 'Crear cliente y sus usuarios' }}
               </button>
             </div>
           }
@@ -395,7 +581,106 @@ export class ClientesListComponent implements OnInit, OnDestroy {
   paso = signal<PasoAlta>('datos');
   guardando = signal(false);
   errorAlta = signal('');
-  modelo = { nombre: '', rut: '', correo: '' };
+  modelo: { nombre: string; rut: string; correo: string; tipo: TipoCliente; cal: number | null } = {
+    nombre: '', rut: '', correo: '', tipo: 'estudio', cal: 1,
+  };
+
+  /**
+   * Los usuarios del alta, en memoria. El servidor no ve nada hasta `crear()`:
+   * un alta abandonada a la mitad no deja ni cliente ni usuarios sueltos.
+   */
+  usuarios = signal<UsuarioBorrador[]>([]);
+
+  readonly tipos: { valor: TipoCliente; etiqueta: string; detalle: string }[] = [
+    { valor: 'estudio', etiqueta: 'Estudio', detalle: 'Varios abogados patrocinadores' },
+    { valor: 'patrocinador', etiqueta: 'Abogado patrocinador', detalle: 'Un abogado solo' },
+  ];
+
+  // Los tres son MÉTODOS y no `computed()` a propósito: dependen de `modelo`,
+  // que es un objeto plano y no una señal. Un `computed` que lee un objeto
+  // plano se evalúa una vez y no vuelve a recalcular nunca — el síntoma era
+  // que al elegir "Abogado patrocinador" el botón se marcaba (el template lee
+  // `modelo.tipo` directo) pero el campo CAL seguía visible.
+  //
+  // Un método se reevalúa en cada ciclo de detección de cambios, que es lo que
+  // hace falta acá. Son comparaciones triviales, así que no cuesta nada.
+  esPatrocinador(): boolean {
+    return this.modelo.tipo === 'patrocinador';
+  }
+
+  tituloPaso(): string {
+    switch (this.paso()) {
+      case 'datos':
+        return 'Nuevo cliente';
+      case 'usuarios':
+        return this.esPatrocinador() ? 'Datos de acceso' : 'Usuarios del estudio';
+      default:
+        return 'Confirmar la creación';
+    }
+  }
+
+  numeroPaso(): number {
+    switch (this.paso()) {
+      case 'datos':
+        return 1;
+      case 'usuarios':
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
+  /**
+   * Quita los espacios mientras se escribe: `nombre` y `apellido` son de UNA
+   * palabra y el backend rechaza los compuestos.
+   *
+   * Se impide al teclear y no solo al validar porque escribir "Juan Carlos" y
+   * enterarse recién al apretar Continuar obliga a volver a buscar el campo.
+   * Acá simplemente no entra el espacio.
+   */
+  alEscribirNombre(usuario: UsuarioBorrador, campo: 'nombre' | 'apellido', valor: string): void {
+    usuario[campo] = valor.replace(/\s+/g, '');
+    this.sugerirUsername(usuario);
+  }
+
+  /**
+   * Propone `nombre.apellido` como nombre de usuario.
+   *
+   * Solo mientras nadie lo haya escrito a mano (`usernameManual`): la
+   * sugerencia es una comodidad, no puede pisar una decisión.
+   *
+   * Se limpian tildes y ñ ("José Muñoz" -> "jose.munoz") porque el campo solo
+   * admite `[A-Za-z0-9._-]`; dejarlo con acentos generaría un usuario que el
+   * backend rechaza.
+   */
+  private sugerirUsername(usuario: UsuarioBorrador): void {
+    if (usuario.usernameManual) return;
+
+    const limpiar = (v: string) =>
+      v
+        .normalize('NFD')
+        // Marcas diacríticas: la ñ se descompone en n + tilde y queda "n".
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+
+    const nombre = limpiar(usuario.nombre);
+    const apellido = limpiar(usuario.apellido);
+    usuario.username = nombre && apellido ? `${nombre}.${apellido}` : nombre || apellido;
+  }
+
+  /**
+   * El campo de usuario escrito a mano.
+   *
+   * Vaciarlo vuelve a habilitar la sugerencia: es la forma natural de decir
+   * "mejor propone tú", y si no, quien borra el campo queda con él vacío para
+   * siempre.
+   */
+  alEscribirUsername(usuario: UsuarioBorrador, valor: string): void {
+    usuario.username = valor.replace(/\s+/g, '');
+    usuario.usernameManual = usuario.username.length > 0;
+    if (!usuario.usernameManual) this.sugerirUsername(usuario);
+  }
 
   /** Cliente recién creado, mientras su base de datos se está armando. */
   enAlta = signal<Cliente | null>(null);
@@ -403,7 +688,13 @@ export class ClientesListComponent implements OnInit, OnDestroy {
 
   private polling?: Subscription;
 
-  hayFiltro = computed(() => !!this.buscar.trim() || !!this.estado);
+  /** Método y no `computed`: `buscar` y `estado` son campos planos de
+   *  [(ngModel)], no señales. Un computed sobre ellos queda congelado en el
+   *  valor inicial (false) y el listado vacío mostraría el mensaje de "todavía
+   *  no hay clientes" en vez del de "ninguno coincide". */
+  hayFiltro(): boolean {
+    return !!this.buscar.trim() || !!this.estado;
+  }
 
   ngOnInit(): void {
     this.cargar(1);
@@ -462,10 +753,77 @@ export class ClientesListComponent implements OnInit, OnDestroy {
   // ── Alta ───────────────────────────────────────────────────────────────
 
   abrirAlta(): void {
-    this.modelo = { nombre: '', rut: '', correo: '' };
+    this.modelo = { nombre: '', rut: '', correo: '', tipo: 'estudio', cal: 1 };
+    this.usuarios.set([]);
     this.paso.set('datos');
     this.errorAlta.set('');
     this.modalAlta.set(true);
+  }
+
+  elegirTipo(tipo: TipoCliente): void {
+    this.modelo.tipo = tipo;
+    // Un patrocinador es siempre uno; el CAL no se le pregunta.
+    if (tipo === 'patrocinador') this.modelo.cal = 1;
+  }
+
+  /**
+   * Deja la lista de usuarios con tantos formularios como cupos contratados,
+   * conservando lo ya escrito.
+   *
+   * Se recalcula al pasar de paso y no al escribir el CAL: reconstruirla en
+   * cada tecla borraría lo escrito mientras alguien corrige un "3" por un "2"
+   * pasando por el vacío.
+   */
+  private prepararUsuarios(): void {
+    const cupos = this.esPatrocinador() ? 1 : this.modelo.cal || 1;
+    const actuales = this.usuarios();
+    const lista: UsuarioBorrador[] = [];
+
+    for (let i = 0; i < cupos; i++) {
+      lista.push(actuales[i] ?? this.usuarioVacio(i));
+    }
+    this.usuarios.set(lista);
+  }
+
+  private usuarioVacio(indice: number): UsuarioBorrador {
+    // En un patrocinador, la ficha del cliente y la de su único usuario son la
+    // misma persona: se precargan el nombre y el correo ya escritos para no
+    // pedirlos dos veces.
+    if (this.esPatrocinador() && indice === 0) {
+      const partes = this.modelo.nombre.trim().split(/\s+/);
+      const borrador: UsuarioBorrador = {
+        username: '',
+        email: this.modelo.correo.trim(),
+        password: '',
+        nombre: partes[0] ?? '',
+        apellido: partes[1] ?? '',
+        telefono: '',
+        usernameManual: false,
+      };
+      // Con el nombre ya cargado, el usuario se propone de una vez.
+      this.sugerirUsername(borrador);
+      return borrador;
+    }
+    return {
+      username: '',
+      email: '',
+      password: '',
+      nombre: '',
+      apellido: '',
+      telefono: '',
+      usernameManual: false,
+    };
+  }
+
+  irAUsuarios(): void {
+    const invalido = this.validar();
+    if (invalido) {
+      this.errorAlta.set(invalido);
+      return;
+    }
+    this.errorAlta.set('');
+    this.prepararUsuarios();
+    this.paso.set('usuarios');
   }
 
   cerrarAlta(): void {
@@ -478,13 +836,46 @@ export class ClientesListComponent implements OnInit, OnDestroy {
   }
 
   irAConfirmar(): void {
-    const invalido = this.validar();
+    const invalido = this.validarUsuarios();
     if (invalido) {
       this.errorAlta.set(invalido);
       return;
     }
     this.errorAlta.set('');
     this.paso.set('confirmar');
+  }
+
+  /** Se valida acá y no solo en el servidor para no perder todo lo escrito:
+   *  el alta manda cliente y usuarios juntos, y un 422 vuelve sin nada. */
+  private validarUsuarios(): string | null {
+    const lista = this.usuarios();
+    const vistos = new Set<string>();
+    const correos = new Set<string>();
+
+    for (let i = 0; i < lista.length; i++) {
+      const u = lista[i];
+      const donde = this.esPatrocinador() ? 'El usuario' : `El abogado ${i + 1}`;
+
+      const usuario = u.username.trim().toLowerCase();
+      if (usuario.length < 3) return `${donde}: el nombre de usuario debe tener al menos 3 caracteres`;
+      if (!/^[A-Za-z0-9._-]+$/.test(usuario)) {
+        return `${donde}: el nombre de usuario solo admite letras, números, punto, guion y guion bajo`;
+      }
+      if (vistos.has(usuario)) return `El nombre de usuario '${usuario}' está repetido`;
+      vistos.add(usuario);
+
+      const correo = u.email.trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return `${donde}: indique un correo válido`;
+      if (correos.has(correo)) return `El correo '${correo}' está repetido`;
+      correos.add(correo);
+
+      if (u.password.length < 8) return `${donde}: la contraseña debe tener al menos 8 caracteres`;
+
+      // Una sola palabra: el backend lo rechaza igual y acá se pierde menos.
+      if (/\s/.test(u.nombre.trim())) return `${donde}: el nombre debe ser una sola palabra`;
+      if (/\s/.test(u.apellido.trim())) return `${donde}: el apellido debe ser una sola palabra`;
+    }
+    return null;
   }
 
   private validar(): string | null {
@@ -505,13 +896,37 @@ export class ClientesListComponent implements OnInit, OnDestroy {
         nombre: this.modelo.nombre.trim(),
         rut: rutPlano(this.modelo.rut),
         correo: this.modelo.correo.trim(),
+        tipo: this.modelo.tipo,
+        cal: this.esPatrocinador() ? null : this.modelo.cal,
+        usuarios: this.usuarios().map((u) => ({
+          username: u.username.trim().toLowerCase(),
+          email: u.email.trim(),
+          password: u.password,
+          nombre: u.nombre.trim() || null,
+          apellido: u.apellido.trim() || null,
+          telefono: u.telefono.trim() || null,
+        })),
       })
       .subscribe({
         next: (cliente) => {
           this.guardando.set(false);
           this.modalAlta.set(false);
           this.enAlta.set(cliente);
-          this.notification.success(`Cliente ${cliente.nombre} creado. Se está armando su base de datos.`);
+
+          // Los usuarios se crean con el cliente, pero cada uno puede fallar
+          // por su lado (un correo ya usado). Decirlo es lo único que permite
+          // arreglarlo: el cliente ya quedó creado.
+          const fallidos = cliente.usuarios_con_error ?? [];
+          if (fallidos.length) {
+            this.notification.warning(
+              `Cliente ${cliente.nombre} creado, pero ${fallidos.length} usuario(s) no: ` +
+                fallidos.join(' | ')
+            );
+          } else {
+            this.notification.success(
+              `Cliente ${cliente.nombre} creado con ${cliente.usuarios_creados ?? 0} usuario(s).`
+            );
+          }
           this.cargar(1);
           this.seguirAprovisionamiento(cliente);
         },

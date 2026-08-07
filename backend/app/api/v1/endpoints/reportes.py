@@ -15,7 +15,12 @@ from sqlalchemy.orm import Session
 
 from app.core.crypto import cifrar
 from app.core.database import get_db_maestra
-from app.core.deps import get_db_tenant, get_usuario_actual, require_admin_cliente
+from app.core.deps import (
+    TenantContexto,
+    get_db_tenant,
+    get_tenant_actual,
+    get_usuario_actual,
+)
 from app.core.exceptions import NotFoundException
 from app.models.reporte_plantilla import ReportePlantilla
 from app.models.usuario import Usuario
@@ -38,17 +43,14 @@ router = APIRouter(prefix="/reportes", tags=["Reportes"])
 
 
 def _dueno_plantillas(current_user: Usuario):
-    """Dueño de las PLANTILLAS de informe. `None` = admin (las ve todas).
+    """Dueño de las PLANTILLAS de informe: cada quien ve las suyas.
 
-    Ojo: esto **no** es el permiso de visibilidad de los datos. Una plantilla
-    es un artefacto personal —el informe que alguien armó y programó— y sigue
-    siendo de quien la creó. Qué filas trae al ejecutarla es otra cosa, y la
-    decide `EstadoDiarioService.alcance()` según sus jurisdicciones.
-
-    Son dos alcances distintos sobre la misma pantalla y confundirlos deja a
-    alguien viendo causas ajenas o sin sus propios informes.
+    Esto **no** es un permiso sobre las causas —esas las ven todos los del
+    estudio—. Una plantilla es un artefacto personal: el informe que alguien
+    armó y programó, que a otro no le sirve. Por eso sigue acotada al dueño
+    aunque ya no existan roles.
     """
-    return None if current_user.rol == "admin" else current_user.id
+    return current_user.id
 
 
 # ── Catálogo de campos ────────────────────────────────────
@@ -171,6 +173,7 @@ def enviar(
     plantilla_id: int,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
+    tenant: TenantContexto = Depends(get_tenant_actual),
 ):
     """Genera el Excel y lo despacha al correo del usuario autenticado.
 
@@ -179,7 +182,9 @@ def enviar(
     relay para mandar datos de causas a cualquier dirección.
     """
     return GenerarReporteResponse(
-        **ReporteService(db).generar_y_enviar(plantilla_id, current_user)
+        **ReporteService(db).generar_y_enviar(
+            plantilla_id, current_user, tenant.cliente_id
+        )
     )
 
 
@@ -203,10 +208,7 @@ def descargar(
     if plantilla is None:
         raise NotFoundException("Informe no encontrado")
 
-    # El contenido se acota por jurisdicción, no por dueño de la plantilla.
-    contenido = servicio.generar_excel(
-        plantilla, EstadoDiarioService.alcance(db, current_user)
-    )
+    contenido = servicio.generar_excel(plantilla)
     nombre = f"{plantilla.nombre.replace(' ', '_')}.xlsx"
     return StreamingResponse(
         io.BytesIO(contenido),

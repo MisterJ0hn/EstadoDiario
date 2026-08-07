@@ -45,6 +45,15 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     ("configuracion_smtp", "cliente_id", "INTEGER"),
     ("configuracion_google", "cliente_id", "INTEGER"),
     ("configuracion_whatsapp", "cliente_id", "INTEGER"),
+    # Logo del estudio: base64 y su tipo MIME. TEXT porque un PNG de 100 KB
+    # son ~137 KB en base64 y VARCHAR obligaría a elegir un límite arbitrario.
+    # Estudio o patrocinador, y cuántos abogados contrató. Las filas
+    # anteriores son estudios (se les creó más de un usuario), de ahí el
+    # DEFAULT; `cal` queda nulo y se interpreta como "sin tope declarado".
+    ("cliente", "tipo", "VARCHAR(20) DEFAULT 'estudio'"),
+    ("cliente", "cal", "INTEGER"),
+    ("cliente", "logo", "TEXT"),
+    ("cliente", "logo_mime", "VARCHAR(100)"),
 ]
 
 COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
@@ -52,6 +61,27 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # clave definitiva, así que el DEFAULT correcto es FALSE.
     ("usuario", "debe_cambiar_password", "BOOLEAN DEFAULT FALSE"),
 ]
+
+# Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`
+# es NOT NULL sin default de servidor, así que si el modelo deja de escribirla
+# y la columna sigue ahí, el primer INSERT de un usuario revienta con
+# NotNullViolation en toda base que ya exista.
+#
+# Se borra en vez de dejarla: una columna `rol` viva en la base, sin nada que
+# la lea, es una trampa para el que venga después.
+COLUMNAS_A_BORRAR_TENANT: list[tuple[str, str]] = [
+    # Dentro de un estudio ya no hay roles: todos hacen de todo.
+    ("usuario", "rol"),
+]
+COLUMNAS_A_BORRAR_MAESTRA: list[tuple[str, str]] = []
+
+# Tablas que se eliminan. Misma idea: dejarlas invita a creer que el permiso
+# sigue vigente.
+TABLAS_A_BORRAR_TENANT: list[str] = [
+    # Permiso de visibilidad por jurisdicción, eliminado con los roles.
+    "usuario_jurisdiccion",
+]
+TABLAS_A_BORRAR_MAESTRA: list[str] = []
 
 # (nombre del índice, tabla, columnas). create_all() tampoco crea índices sobre
 # columnas agregadas a tablas que ya existían.
@@ -69,13 +99,15 @@ INDICES_UNICOS_MAESTRA: list[tuple[str, str, str]] = [
 INDICES_UNICOS_TENANT: list[tuple[str, str, str]] = []
 
 
-# Las 15 tablas que debe tener la base de un cliente. Es una verificación, no
+# Las 16 tablas que debe tener la base de un cliente. Es una verificación, no
 # la fuente: las crea BaseTenant.metadata. Si alguien declara un modelo con la
 # Base equivocada, la base del cliente queda incompleta y esto lo delata al
 # aprovisionar en vez de a las semanas, con un "relation does not exist".
 TABLAS_TENANT = (
     "api_llamado_estado_diario",
     "audiencia",
+    "causa",
+    "causa_corte",
     "correo_log",
     "estado_diario",
     "estado_diario_agenda",
@@ -88,7 +120,6 @@ TABLAS_TENANT = (
     "movimiento_corte",
     "reporte_plantilla",
     "usuario",
-    "usuario_jurisdiccion",
 )
 
 
@@ -111,8 +142,36 @@ def indice_existe(conn, nombre: str) -> bool:
     return fila is not None
 
 
-def _aplicar(engine: Engine, columnas, indices, indices_unicos) -> None:
+def tabla_existe(conn, tabla: str) -> bool:
+    fila = conn.execute(
+        text("SELECT 1 FROM information_schema.tables WHERE table_name = :tabla"),
+        {"tabla": tabla},
+    ).first()
+    return fila is not None
+
+
+def _aplicar(
+    engine: Engine, columnas, indices, indices_unicos, columnas_a_borrar=(), tablas_a_borrar=()
+) -> None:
     with engine.begin() as conn:
+        # Primero las tablas que se van: pueden tener FK hacia columnas que
+        # también se borran más abajo.
+        for tabla in tablas_a_borrar:
+            try:
+                if tabla_existe(conn, tabla):
+                    conn.execute(text(f"DROP TABLE {tabla}"))
+                    logger.info("Tabla %s eliminada", tabla)
+            except Exception as e:
+                logger.error("No se pudo eliminar la tabla %s: %s", tabla, e)
+
+        for tabla, columna in columnas_a_borrar:
+            try:
+                if columna_existe(conn, tabla, columna):
+                    conn.execute(text(f"ALTER TABLE {tabla} DROP COLUMN {columna}"))
+                    logger.info("Columna %s.%s eliminada", tabla, columna)
+            except Exception as e:
+                logger.error("No se pudo eliminar %s.%s: %s", tabla, columna, e)
+
         for tabla, columna, tipo_sql in columnas:
             try:
                 if not columna_existe(conn, tabla, columna):
@@ -140,7 +199,14 @@ def _aplicar(engine: Engine, columnas, indices, indices_unicos) -> None:
 def aplicar_esquema_maestra(engine: Engine) -> None:
     """Crea/actualiza el esquema de la base principal. Idempotente."""
     BaseMaestra.metadata.create_all(bind=engine)
-    _aplicar(engine, COLUMNAS_NUEVAS_MAESTRA, INDICES_NUEVOS_MAESTRA, INDICES_UNICOS_MAESTRA)
+    _aplicar(
+        engine,
+        COLUMNAS_NUEVAS_MAESTRA,
+        INDICES_NUEVOS_MAESTRA,
+        INDICES_UNICOS_MAESTRA,
+        COLUMNAS_A_BORRAR_MAESTRA,
+        TABLAS_A_BORRAR_MAESTRA,
+    )
 
 
 def aplicar_esquema_tenant(engine: Engine) -> None:
@@ -148,7 +214,14 @@ def aplicar_esquema_tenant(engine: Engine) -> None:
     corre al crear el cliente y también al desplegar una versión con columnas
     nuevas, sobre cada base existente."""
     BaseTenant.metadata.create_all(bind=engine)
-    _aplicar(engine, COLUMNAS_NUEVAS_TENANT, INDICES_NUEVOS_TENANT, INDICES_UNICOS_TENANT)
+    _aplicar(
+        engine,
+        COLUMNAS_NUEVAS_TENANT,
+        INDICES_NUEVOS_TENANT,
+        INDICES_UNICOS_TENANT,
+        COLUMNAS_A_BORRAR_TENANT,
+        TABLAS_A_BORRAR_TENANT,
+    )
 
     faltantes = set(TABLAS_TENANT) - set(BaseTenant.metadata.tables)
     if faltantes:

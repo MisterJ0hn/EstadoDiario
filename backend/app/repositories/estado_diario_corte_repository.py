@@ -1,8 +1,7 @@
 """Consultas de las causas de corte.
 
-Mismo contrato de visibilidad que el resto del sistema: `jurisdicciones` es la
-lista de jurisdicciones que el usuario puede ver, `None` = sin restricción, y
-lo sin clasificar se ve siempre. Ver `EstadoDiarioService.alcance()`.
+Sin filtro de visibilidad: dentro de un estudio todos ven todo. Hubo un
+permiso por jurisdiccion (usuario_jurisdiccion) y se elimino.
 """
 
 import math
@@ -19,29 +18,17 @@ class EstadoDiarioCorteRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    @staticmethod
-    def _filtrar_por_jurisdiccion(query, jurisdicciones: Optional[list[int]]):
-        if jurisdicciones is None:
-            return query
-        return query.filter(
-            or_(
-                EstadoDiarioCorte.jurisdiccion_id.in_(jurisdicciones),
-                EstadoDiarioCorte.jurisdiccion_id.is_(None),
-            )
-        )
-
     @classmethod
     def _aplicar_filtros(
         cls,
         query,
-        jurisdicciones: Optional[list[int]],
         tipo: Optional[str],
         busqueda: Optional[str],
         corte: Optional[str],
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
     ):
-        query = cls._filtrar_por_jurisdiccion(query, jurisdicciones)
+        query = query
 
         if tipo:
             query = query.filter(EstadoDiarioCorte.tipo == tipo)
@@ -68,7 +55,6 @@ class EstadoDiarioCorteRepository:
 
     def find_filtered(
         self,
-        jurisdicciones: Optional[list[int]],
         tipo: Optional[str] = None,
         busqueda: Optional[str] = None,
         corte: Optional[str] = None,
@@ -82,7 +68,7 @@ class EstadoDiarioCorteRepository:
             EstadoDiarioCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
         )
         base = self._aplicar_filtros(
-            base, jurisdicciones, tipo, busqueda, corte, fecha_desde, fecha_hasta
+            base, tipo, busqueda, corte, fecha_desde, fecha_hasta
         )
 
         conteo = self.db.query(func.count(EstadoDiarioCorte.id)).join(
@@ -90,7 +76,7 @@ class EstadoDiarioCorteRepository:
             EstadoDiarioCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
         )
         total = self._aplicar_filtros(
-            conteo, jurisdicciones, tipo, busqueda, corte, fecha_desde, fecha_hasta
+            conteo, tipo, busqueda, corte, fecha_desde, fecha_hasta
         ).scalar() or 0
 
         query = base.options(joinedload(EstadoDiarioCorte.estado_diario_origen))
@@ -111,10 +97,10 @@ class EstadoDiarioCorteRepository:
 
         return query.all(), total, pagina_actual, total_pages
 
-    def listar_cortes(self, jurisdicciones: Optional[list[int]]) -> list[str]:
+    def listar_cortes(self) -> list[str]:
         """Nombres de corte presentes, para el combo del filtro."""
         query = self.db.query(EstadoDiarioCorte.corte).filter(
             EstadoDiarioCorte.corte.isnot(None)
         )
-        query = self._filtrar_por_jurisdiccion(query, jurisdicciones)
+        query = query
         return sorted({fila[0] for fila in query.distinct().all() if fila[0]})

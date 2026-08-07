@@ -53,6 +53,20 @@ export class AdminClienteService {
     return this.http.put<Cliente>(`${this.apiUrl}/${id}`, datos);
   }
 
+  /**
+   * Guarda o quita el logo del estudio.
+   *
+   * `logo` va SIN el prefijo `data:...;base64,` — el backend guarda el base64
+   * puro para poder adjuntarlo a un correo, donde el prefijo estorba.
+   * Mandar `null` lo quita.
+   */
+  guardarLogo(id: number, logo: string | null, mime: string | null): Observable<Cliente> {
+    return this.http.put<Cliente>(`${this.apiUrl}/${id}/logo`, {
+      logo,
+      logo_mime: mime,
+    });
+  }
+
   /** Polling del alta. Liviano a propósito: se llama cada pocos segundos. */
   estadoAprovisionamiento(id: number): Observable<AprovisionamientoEstado> {
     return this.http.get<AprovisionamientoEstado>(`${this.apiUrl}/${id}/aprovisionamiento`);
