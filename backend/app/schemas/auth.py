@@ -81,6 +81,14 @@ class UserInfo(BaseModel):
     apellido: str | None = None
     telefono: str | None = None
     activo: bool
+    # A QUÉ aplicación pertenece la sesión, no un rol dentro del estudio: los
+    # usuarios de un estudio no tienen roles, todos hacen lo mismo.
+    #
+    # Existe porque las dos apps comparten este contrato y la consola necesita
+    # distinguir su propia sesión. Antes se deducía de `rol == "superadmin"`;
+    # al eliminarse los roles eso quedó siempre en falso y la consola entró en
+    # un bucle de redirecciones que colgaba el navegador.
+    es_admin_plataforma: bool = False
     # La sesión vale, pero el backend rechaza el resto hasta que se cambie.
     debe_cambiar_password: bool = False
 

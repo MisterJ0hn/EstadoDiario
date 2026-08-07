@@ -50,7 +50,7 @@ def perfil_admin(admin) -> UserInfo:
         nombre=admin.nombre,
         apellido=None,
         telefono=None,
-        rol=ROL_SUPERADMIN,
+        es_admin_plataforma=True,
         activo=admin.activo,
         debe_cambiar_password=admin.debe_cambiar_password,
     )

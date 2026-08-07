@@ -20,14 +20,6 @@ export interface TokenResponse {
   expires_in: number;
 }
 
-/**
- * `rol`:
- * - `superadmin`: administra la plataforma (clientes, usuarios y configuración
- *   del sistema). No tiene causas ni movimientos.
- * - `admin` / `usuario`: viven dentro de un cliente.
- */
-export type RolSesion = 'superadmin' | 'admin' | 'usuario';
-
 export interface UserInfo {
   id: number;
   username: string;
@@ -35,8 +27,15 @@ export interface UserInfo {
   nombre: string | null;
   apellido: string | null;
   telefono: string | null;
-  rol: string;
   activo: boolean;
+  /**
+   * true = esta sesión es de la consola de plataforma.
+   *
+   * Lo dice el backend, no se deduce de un rol: los usuarios de un estudio ya
+   * no tienen roles. Es el campo del que depende `adminPlataformaGuard`, así
+   * que si deja de venir la consola no deja entrar a nadie.
+   */
+  es_admin_plataforma: boolean;
   /** Nulos cuando la sesión es del administrador de la plataforma. */
   cliente_id?: number | null;
   cliente_nombre?: string | null;

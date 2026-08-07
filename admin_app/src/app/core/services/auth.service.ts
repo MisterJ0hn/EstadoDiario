@@ -24,9 +24,10 @@ export class AuthService {
   private _user = signal<UserInfo | null>(this.loadUser());
   readonly user = this._user.asReadonly();
   readonly isAuthenticated = computed(() => !!this._user());
-  readonly isAdmin = computed(() => this._user()?.rol === 'admin');
   /** Administrador de la plataforma: ve clientes, no causas. */
-  readonly esAdminPlataforma = computed(() => this._user()?.rol === 'superadmin');
+  /** Sesión de ESTA consola. Sale del backend (`es_admin_plataforma`) y no de
+   *  un rol: los usuarios de un estudio ya no tienen roles. */
+  readonly esAdminPlataforma = computed(() => !!this._user()?.es_admin_plataforma);
 
   constructor(
     private http: HttpClient,
