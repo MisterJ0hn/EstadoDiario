@@ -4,16 +4,12 @@ import { RecaptchaService } from '@core/services/recaptcha.service';
 /**
  * Aviso de atribución de reCAPTCHA.
  *
- * No es decorativo: los términos de Google permiten **ocultar el badge
- * flotante solo si** se muestra este texto con los enlaces a su Política de
- * Privacidad y sus Términos. La regla que esconde el badge está en
- * `styles.css`; si este componente se borra de una pantalla, hay que devolver
- * el badge ahí.
- *
- * El badge se oculta por dos razones de esta aplicación, no de estética: en una
- * SPA su iframe queda en el DOM después de navegar, así que quedaría flotando
- * sobre el dashboard y los listados toda la sesión sin ningún hook que lo
- * saque; y en la vista móvil choca con el armazón de Ionic.
+ * Los términos de Google dan a elegir: se muestra el badge flotante, o se
+ * muestra este texto con los enlaces a su Política de Privacidad y sus
+ * Términos. Acá se hacen **las dos cosas** —el badge queda visible (ver
+ * `styles.css`) y este aviso también—, que es de más pero nunca es una
+ * infracción, y deja el aviso en su lugar por si el badge se acota o se
+ * esconde más adelante.
  *
  * El `@if` es lo que mantiene la promesa de "apagado por defecto" también en la
  * interfaz: sin llaves configuradas en el servidor, acá no aparece nada.
