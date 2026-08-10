@@ -92,9 +92,9 @@ import { AdminSistemaService } from '../services/admin-sistema.service';
                 </dd>
               </div>
               <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
-                <dt class="text-neutral-500">Última purga</dt>
+                <dt class="text-neutral-500">Última Limpieza</dt>
                 <dd class="text-neutral-800">
-                  {{ c.ultima_purga ? (c.ultima_purga | date: 'dd-MM-yyyy HH:mm') : 'Nunca se ha purgado' }}
+                  {{ c.ultima_purga ? (c.ultima_purga | date: 'dd-MM-yyyy HH:mm') : 'Nunca se ha limpiado' }}
                 </dd>
               </div>
             </dl>
@@ -106,7 +106,7 @@ import { AdminSistemaService } from '../services/admin-sistema.service';
             <div class="flex flex-wrap items-center justify-end gap-3 pt-2">
               <button type="button" class="btn-secondary mr-auto" (click)="confirmarPurga.set(true)"
                       [disabled]="ocupado() || c.registros_a_purgar === 0">
-                Purgar ahora
+                Limpiar ahora
               </button>
               <button type="button" class="btn-primary" (click)="guardar()" [disabled]="ocupado()">
                 {{ guardando() ? 'Guardando...' : 'Guardar' }}
@@ -124,7 +124,7 @@ import { AdminSistemaService } from '../services/admin-sistema.service';
         <div class="modal-content" (click)="$event.stopPropagation()" role="dialog" aria-modal="true"
              aria-labelledby="titulo-purga" (keydown.escape)="confirmarPurga.set(false)" tabindex="-1">
           <div class="modal-header">
-            <h3 id="titulo-purga" class="text-lg font-semibold">Purgar el log de actividades</h3>
+            <h3 id="titulo-purga" class="text-lg font-semibold">Limpiar el log de actividades</h3>
             <button type="button" (click)="confirmarPurga.set(false)"
                     class="text-neutral-400 hover:text-neutral-600" aria-label="Cerrar">&times;</button>
           </div>
@@ -142,7 +142,7 @@ import { AdminSistemaService } from '../services/admin-sistema.service';
             <button type="button" class="btn-secondary" (click)="confirmarPurga.set(false)"
                     [disabled]="purgando()">Cancelar</button>
             <button type="button" class="btn-danger" (click)="purgar()" [disabled]="purgando()">
-              {{ purgando() ? 'Purgando...' : 'Eliminar los registros' }}
+              {{ purgando() ? 'Limpiando...' : 'Eliminar los registros' }}
             </button>
           </div>
         </div>

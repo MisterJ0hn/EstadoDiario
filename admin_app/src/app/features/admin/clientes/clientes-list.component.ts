@@ -154,7 +154,7 @@ interface UsuarioBorrador {
                       <th scope="col">Cliente</th>
                       <th scope="col">RUT</th>
                       <th scope="col">Casilla de ingesta</th>
-                      <th scope="col">Usuarios</th>
+                      <th scope="col">CAL</th>
                       <th scope="col">Creado</th>
                       <th scope="col">Estado</th>
                       <th scope="col">Acciones</th>
