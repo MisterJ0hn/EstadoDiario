@@ -21,7 +21,8 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR
-from app.core.deps import get_db_tenant, get_usuario_actual
+from app.core.database import get_db_maestra
+from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.audiencia_repository import AudienciaRepository
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
@@ -220,10 +221,15 @@ def upload_audiencias(
     rut: str | None = Form(default=None),
     fecha: str | None = Form(default=None),
     db: Session = Depends(get_db_tenant),
+    db_maestra: Session = Depends(get_db_maestra),
+    tenant: TenantContexto = Depends(get_tenant_actual),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
-    """El archivo queda a nombre del usuario que lo sube: él es su dueño y nadie
-    más (salvo el admin) verá esas audiencias."""
+    """El archivo queda a nombre del usuario que lo sube, como dato de auditoría.
+
+    Recibe las DOS sesiones: las audiencias van a la base del cliente, pero el
+    RUT de respaldo sale de la casilla de ingesta, que vive en la principal.
+    """
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in (".xls", ".xlsx", ".xlsm"):
         return AudienciaUploadResponse(
@@ -247,9 +253,20 @@ def upload_audiencias(
     # temprana). Se prefiere el respaldo de la casilla del usuario antes que
     # dejar el RUT nulo.
     rut_archivo, desde_archivo, _hasta = parse_nombre_archivo(file.filename or "")
-    config = ConfiguracionCorreoRepository(db).get_or_create(current_user.id)
 
-    rut_final = rut or rut_archivo or (config.rut.strip() if config.rut else None)
+    # La casilla de ingesta está en la base PRINCIPAL y es una por CLIENTE (ver
+    # el docstring del repositorio). Acá se leía con la sesión del tenant y con
+    # el id del usuario en lugar del cliente —resto de cuando la configuración
+    # era por usuario y todo vivía en una sola base—, y por eso toda subida
+    # manual de audiencias moría con UndefinedTable.
+    #
+    # `get_by_cliente` y no `get_or_create`: esto es solo un respaldo para el
+    # RUT, y subir un archivo no tiene por qué escribir una casilla vacía en la
+    # base principal. Si no hay casilla configurada, no hay respaldo y ya.
+    config = ConfiguracionCorreoRepository(db_maestra).get_by_cliente(tenant.cliente_id)
+
+    rut_config = config.rut.strip() if config and config.rut else None
+    rut_final = rut or rut_archivo or rut_config
     fecha_final = fecha_date or desde_archivo
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
