@@ -1,9 +1,14 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
 import { NotificationService } from '@core/services/notification.service';
+import {
+  NOTA_HISTORIAL_PASSWORD,
+  passwordCumplePolitica,
+  reglasPassword,
+} from '@core/utils/password';
 import { GoogleCalendarService } from '../configuracion/services/google-calendar.service';
 
 @Component({
@@ -35,9 +40,8 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
               <span class="text-xs text-neutral-500 uppercase">Nombre</span>
               <p class="font-medium">{{ auth.user()?.nombre }} {{ auth.user()?.apellido }}</p>
             </div>
-            <div>
-              <span class="text-xs text-neutral-500 uppercase">Rol</span>
-            </div>
+            <!-- Acá iba "Rol", que quedó sin valor cuando se eliminaron los
+                 roles dentro de un estudio: mostraba la etiqueta sola. -->
           </div>
 
           <hr class="border-neutral-200" />
@@ -53,6 +57,94 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
           <div class="flex justify-end">
             <button (click)="guardarTelefono()" class="btn-primary" [disabled]="guardandoTelefono()">
               {{ guardandoTelefono() ? 'Guardando...' : 'Guardar teléfono' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cambio voluntario de contraseña. La pantalla /cambiar-clave cubre el
+           otro caso —clave provisoria, sin salida hasta reemplazarla—; acá la
+           clave ya es definitiva, así que se exige la actual. -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="text-lg font-semibold">Contraseña</h3>
+        </div>
+        <div class="card-body space-y-4">
+          <div>
+            <label class="form-label" for="clave-actual">Contraseña actual</label>
+            <input
+              id="clave-actual"
+              type="password"
+              class="form-input"
+              [ngModel]="claveActual()"
+              (ngModelChange)="claveActual.set($event)"
+              autocomplete="current-password"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="form-label" for="clave-nueva">Contraseña nueva</label>
+              <input
+                id="clave-nueva"
+                type="password"
+                class="form-input"
+                [ngModel]="claveNueva()"
+                (ngModelChange)="claveNueva.set($event)"
+                autocomplete="new-password"
+                aria-describedby="reglas-clave-perfil"
+              />
+            </div>
+            <div>
+              <label class="form-label" for="clave-confirmacion">Repita la nueva</label>
+              <input
+                id="clave-confirmacion"
+                type="password"
+                class="form-input"
+                [ngModel]="claveConfirmacion()"
+                (ngModelChange)="claveConfirmacion.set($event)"
+                autocomplete="new-password"
+              />
+            </div>
+          </div>
+
+          <!-- Las reglas se ven antes de escribir y se van cumpliendo a la
+               vista: nadie descubre el requisito recién al mandar. El estado no
+               depende solo del color, cada regla lleva su marca y su texto. -->
+          <ul id="reglas-clave-perfil" class="space-y-1.5 text-sm">
+            @for (r of reglasClave(); track r.texto) {
+              <li class="flex items-start gap-2"
+                  [class]="r.cumple ? 'text-accent-700' : 'text-neutral-600'">
+                @if (r.cumple) {
+                  <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span class="sr-only">Cumple:</span>
+                } @else {
+                  <svg class="w-4 h-4 mt-0.5 shrink-0 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="8" stroke-width="2" />
+                  </svg>
+                  <span class="sr-only">Falta:</span>
+                }
+                <span>{{ r.texto }}</span>
+              </li>
+            }
+          </ul>
+          <p class="text-xs text-neutral-500 -mt-2">{{ notaHistorial }}</p>
+
+          @if (errorClave()) {
+            <div class="alert-danger" role="alert">{{ errorClave() }}</div>
+          }
+
+          <div class="flex justify-end">
+            <button (click)="cambiarClave()" class="btn-primary" [disabled]="guardandoClave()">
+              @if (guardandoClave()) {
+                <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              }
+              {{ guardandoClave() ? 'Guardando...' : 'Cambiar contraseña' }}
             </button>
           </div>
         </div>
@@ -105,6 +197,24 @@ export class PerfilComponent implements OnInit {
   telefono = '';
   guardandoTelefono = signal(false);
 
+  readonly notaHistorial = NOTA_HISTORIAL_PASSWORD;
+  claveActual = signal('');
+  claveNueva = signal('');
+  claveConfirmacion = signal('');
+  guardandoClave = signal(false);
+  errorClave = signal('');
+
+  /** Las reglas que el navegador puede comprobar. Las otras dos —que la actual
+   *  sea correcta y que la nueva no repita las últimas— solo las sabe el
+   *  servidor, y llegan como mensaje de error. */
+  reglasClave = computed(() => [
+    ...reglasPassword(this.claveNueva()),
+    {
+      texto: 'Las dos contraseñas coinciden',
+      cumple: this.claveNueva().length > 0 && this.claveNueva() === this.claveConfirmacion(),
+    },
+  ]);
+
   cargandoEstado = signal(true);
   conectado = signal(false);
   googleEmail = signal<string | null>(null);
@@ -141,6 +251,57 @@ export class PerfilComponent implements OnInit {
         this.notification.error('No se pudo guardar el teléfono');
       },
     });
+  }
+
+  cambiarClave(): void {
+    if (!this.claveActual()) {
+      this.errorClave.set('Escriba su contraseña actual');
+      return;
+    }
+    if (!passwordCumplePolitica(this.claveNueva())) {
+      this.errorClave.set('La contraseña nueva no cumple los requisitos indicados abajo');
+      return;
+    }
+    if (this.claveNueva() !== this.claveConfirmacion()) {
+      this.errorClave.set('Las dos contraseñas no coinciden. Vuelva a escribirlas.');
+      return;
+    }
+
+    this.errorClave.set('');
+    this.guardandoClave.set(true);
+
+    this.auth
+      .cambiarPassword({
+        password_actual: this.claveActual(),
+        password_nueva: this.claveNueva(),
+      })
+      .subscribe({
+        next: (res) => {
+          this.guardandoClave.set(false);
+          // Los tres campos se vacían: dejarlos escritos deja la contraseña
+          // nueva a la vista de quien pase por el computador.
+          this.claveActual.set('');
+          this.claveNueva.set('');
+          this.claveConfirmacion.set('');
+          this.notification.success(res.mensaje || 'Contraseña actualizada');
+        },
+        error: (err) => {
+          this.guardandoClave.set(false);
+          this.errorClave.set(this.mensajeErrorClave(err));
+        },
+      });
+  }
+
+  /** El backend manda el motivo real —clave actual incorrecta, política no
+   *  cumplida, contraseña repetida— y se muestra tal cual. */
+  private mensajeErrorClave(err: unknown): string {
+    const detail = (err as { error?: { detail?: unknown } })?.error?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      const primero = detail[0] as { msg?: string };
+      if (primero?.msg) return primero.msg;
+    }
+    return 'No se pudo cambiar la contraseña. Intente de nuevo.';
   }
 
   private cargarEstadoGoogle(): void {

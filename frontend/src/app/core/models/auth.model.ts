@@ -47,6 +47,13 @@ export interface UserInfo {
 
 export interface CambiarPasswordRequest {
   password_nueva: string;
+  /**
+   * Obligatoria en el cambio VOLUNTARIO (desde el perfil), opcional cuando la
+   * clave es provisoria: ahí la persona acaba de escribirla para entrar y
+   * pedírsela de nuevo es fricción sin ganancia. Quien lo exige es el
+   * servidor; acá va opcional porque el mismo contrato sirve a los dos casos.
+   */
+  password_actual?: string;
 }
 
 /** Paso 1 de la recuperación: el RUT dice en qué base buscar el correo. */

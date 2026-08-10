@@ -75,6 +75,19 @@ export class AuthService {
   }
 
   /**
+   * Cambio VOLUNTARIO de contraseña, desde el perfil.
+   *
+   * Distinto de `cambiarPasswordObligatorio`: acá la clave ya era definitiva,
+   * así que el servidor exige también la actual —sin eso, una sesión olvidada
+   * abierta en un computador ajeno alcanzaría para quedarse con la cuenta— y
+   * no hace falta recargar el perfil, porque `debe_cambiar_password` ya venía
+   * en falso y no cambia.
+   */
+  cambiarPassword(datos: CambiarPasswordRequest): Observable<OperacionResponse> {
+    return this.http.post<OperacionResponse>(`${this.apiUrl}/cambiar-password`, datos);
+  }
+
+  /**
    * Paso 1 de "olvidé mi contraseña": pide el correo con el enlace.
    *
    * El backend responde lo mismo exista o no la cuenta, así que el mensaje que
