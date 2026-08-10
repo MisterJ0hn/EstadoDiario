@@ -14,31 +14,64 @@ import { CausaService } from './services/causa.service';
  * audiencias— porque este reporte se comporta distinto: **no trae fecha**, ni
  * en el nombre ni adentro. Es una foto de la cartera al momento de emitirlo,
  * así que la fecha la pone quien carga y por defecto es hoy.
+ *
+ * La pantalla es deliberadamente igual a la de "Cargar Archivo": misma tarjeta
+ * centrada y la misma zona de arrastre. Son dos cargas de Excel y no había
+ * ninguna razón para que se vieran distinto; la única diferencia real es que
+ * acá no se elige el tipo, porque solo hay uno.
  */
 @Component({
   selector: 'app-cargar-causas',
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="space-y-6 max-w-2xl">
+    <div class="max-w-2xl mx-auto space-y-6">
       <div>
         <h1 class="text-2xl font-bold text-neutral-800">Cargar Causas</h1>
         <p class="text-neutral-500 mt-1">
           Importa la cartera completa del estudio desde el Excel del PJUD
+        </p>
+        <p class="text-xs text-neutral-400 mt-1">
+          El RUT se extrae del nombre del archivo (Ej: {{ EJEMPLO_NOMBRE }})
         </p>
       </div>
 
       <div class="card">
         <div class="card-body space-y-5">
           <div>
-            <label class="form-label" for="archivo">Archivo</label>
-            <input
-              id="archivo"
-              type="file"
-              class="form-input"
-              accept=".xls,.xlsx,.xlsm"
-              (change)="elegirArchivo($event)"
-            />
+            <label class="form-label">Archivo (XLS/XLSX)</label>
+            <div
+              class="mt-1 border-2 border-dashed border-neutral-300 rounded-lg p-8 text-center hover:border-primary-400 transition-colors cursor-pointer"
+              (click)="fileInput.click()"
+              (dragover)="$event.preventDefault()"
+              (drop)="alSoltar($event)"
+            >
+              <!-- Van los tipos MIME además de las extensiones: el selector de
+                   archivos de Android filtra por MIME y, con solo la extensión,
+                   deja todo en gris y no se puede elegir ningún archivo. -->
+              <input
+                #fileInput
+                type="file"
+                accept=".xls,.xlsx,.xlsm,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12"
+                (change)="elegirArchivo($event)"
+                class="hidden"
+              />
+              @if (archivo()) {
+                <div class="text-primary-600">
+                  <svg class="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p class="font-medium">{{ archivo()!.name }}</p>
+                  <p class="text-sm text-neutral-500 mt-1">{{ (archivo()!.size / 1024).toFixed(1) }} KB</p>
+                </div>
+              } @else {
+                <svg class="w-10 h-10 mx-auto mb-2 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <p class="text-neutral-500">Haga clic o arrastre un archivo aquí</p>
+                <p class="text-sm text-neutral-400 mt-1">Formato: {{ EJEMPLO_NOMBRE }}</p>
+              }
+            </div>
             <p class="text-xs text-neutral-500 mt-1">
               El archivo que entrega el PJUD, con las hojas Civil, Laboral, Penal, Cobranza,
               Familia y las dos de Corte.
@@ -66,6 +99,12 @@ import { CausaService } from './services/causa.service';
           <div class="flex items-center gap-3">
             <button type="button" class="btn-primary" [disabled]="!archivo() || cargando()"
                     (click)="cargar()">
+              @if (cargando()) {
+                <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              }
               {{ cargando() ? 'Importando...' : 'Importar causas' }}
             </button>
             @if (cargando()) {
@@ -108,6 +147,9 @@ export class CargarCausasComponent {
   private notification = inject(NotificationService);
   private router = inject(Router);
 
+  /** Nombre de ejemplo, del que el servidor saca el RUT si no se indica. */
+  readonly EJEMPLO_NOMBRE = 'Causas_16952077.xlsx';
+
   archivo = signal<File | null>(null);
   cargando = signal(false);
   resultado = signal<CargarCausasResponse | null>(null);
@@ -117,7 +159,19 @@ export class CargarCausasComponent {
 
   elegirArchivo(evento: Event): void {
     const input = evento.target as HTMLInputElement;
-    this.archivo.set(input.files?.[0] ?? null);
+    if (input.files?.length) {
+      this.ponerArchivo(input.files[0]);
+    }
+  }
+
+  alSoltar(evento: DragEvent): void {
+    evento.preventDefault();
+    const archivo = evento.dataTransfer?.files?.[0];
+    if (archivo) this.ponerArchivo(archivo);
+  }
+
+  private ponerArchivo(archivo: File): void {
+    this.archivo.set(archivo);
     // Un resultado anterior junto a un archivo nuevo se lee como si fuera de
     // ese archivo.
     this.resultado.set(null);
