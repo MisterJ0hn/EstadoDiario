@@ -209,3 +209,17 @@
     @apply flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200;
   }
 }
+
+/* El badge flotante de reCAPTCHA se oculta porque en una SPA su iframe queda
+ * en el DOM después de navegar: quedaría flotando sobre todas las pantallas de
+ * la consola durante toda la sesión, y no hay ruta ni hook que lo saque.
+ *
+ * Los términos de Google lo permiten SOLO si el aviso de atribución se muestra
+ * en el formulario. Ese aviso es shared/components/recaptcha-aviso.component.ts:
+ * si se borra del login, hay que borrar también esta regla.
+ *
+ * Va fuera de @layer components a propósito: es una clase de un tercero, no
+ * parte del design system. */
+.grecaptcha-badge {
+  visibility: hidden;
+}

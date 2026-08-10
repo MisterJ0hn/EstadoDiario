@@ -17,7 +17,7 @@ Qué hace, en orden:
    `create_all()` no altera una tabla que ya existe, así que dejarlas en su
    lugar haría que la base principal arrancara con columnas faltantes.
 2. Crea el esquema de la base principal ya con la forma nueva.
-3. Da de alta el cliente y **crea su base de datos** con las 13 tablas.
+3. Da de alta el cliente y **crea su base de datos** con las 17 tablas.
 4. Copia a esa base los usuarios (cifrando `usuario`, `correo` y `telefono`, y
    calculando sus hash de búsqueda) y las 10 tablas operativas, **conservando
    los id** para que las referencias entre ellas sigan apuntando a lo mismo.
@@ -286,13 +286,18 @@ def _migrar_usuarios(engine_tenant: Engine, ensayo: bool) -> int:
             correo = (fila["email"] or "").strip() or None
             telefono = (fila.get("telefono") or "").strip() or None
 
+            # El `rol` del esquema viejo NO se copia: dentro de un estudio ya
+            # no hay roles y `core/esquema.py` borra esa columna de la base del
+            # cliente (COLUMNAS_A_BORRAR_TENANT). Insertarla fallaba con
+            # UndefinedColumn recién en este paso, con el renombre y la base
+            # del cliente ya hechos.
             conn.execute(
                 text(
                     "INSERT INTO usuario (id, usuario, usuario_hash, correo, correo_hash, "
-                    "telefono, password_hash, nombre, apellido, activo, rol, "
+                    "telefono, password_hash, nombre, apellido, activo, "
                     "debe_cambiar_password, fecha_creacion) "
                     "VALUES (:id, :usuario, :usuario_hash, :correo, :correo_hash, "
-                    ":telefono, :password_hash, :nombre, :apellido, :activo, :rol, "
+                    ":telefono, :password_hash, :nombre, :apellido, :activo, "
                     "FALSE, :fecha_creacion)"
                 ),
                 {
@@ -306,9 +311,11 @@ def _migrar_usuarios(engine_tenant: Engine, ensayo: bool) -> int:
                     "nombre": fila["nombre"],
                     "apellido": fila["apellido"],
                     "activo": fila["activo"],
-                    "rol": fila["rol"],
                     # La clave es la que la persona ya venía usando: no hay
                     # ningún motivo para obligarla a cambiarla por la mudanza.
+                    # Tampoco se le siembra historial: su clave vigente queda
+                    # vetada igual, porque sale del usuario y no del historial
+                    # (ver app/services/password_service.py).
                     "fecha_creacion": fila["fecha_creacion"],
                 },
             )

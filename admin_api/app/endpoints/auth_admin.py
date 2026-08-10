@@ -18,13 +18,17 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
+from app.core import recaptcha
 from app.core.database import get_db_maestra
-from app.core.exceptions import BadRequestException, UnauthorizedException
-from app.core.security import get_password_hash, verify_password
+from app.core.exceptions import UnauthorizedException
+from app.core.password_policy import DESCRIPCION as POLITICA_PASSWORD
+from app.models.maestra.password_historial_admin import PasswordHistorialAdmin
 from app.models.maestra.usuario_admin import UsuarioAdmin
+from app.services import password_service
 from app.schemas.auth import (
     CambiarPasswordRequest,
     LoginAdminRequest,
+    RecaptchaConfigResponse,
     RefreshTokenRequest,
     TokenResponse,
     UserInfo,
@@ -43,11 +47,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Autenticación (plataforma)"])
 
 
+@router.get(
+    "/recaptcha",
+    response_model=RecaptchaConfigResponse,
+    summary="Si reCAPTCHA está activo y con qué site key",
+)
+def config_recaptcha():
+    """Gemelo del endpoint del backend de estudios, y a propósito: la consola
+    habla con ESTE servicio, así que necesita preguntárselo a él. Las llaves
+    tienen que ser las mismas en los dos (van en el `.env` compartido), por el
+    mismo motivo que `BACKEND_SECRET_KEY`."""
+    return RecaptchaConfigResponse(**recaptcha.configuracion_publica())
+
+
 @router.post(
     "/admin/login",
     response_model=TokenResponse,
     summary="Iniciar sesión (administrador de la plataforma)",
-    responses={401: {"description": "Credenciales inválidas"}},
+    # La cuenta más poderosa del sistema: da de alta clientes y crea sus bases.
+    dependencies=[Depends(recaptcha.verificado(recaptcha.ACCION_LOGIN_ADMIN))],
+    responses={
+        400: {"description": "No se pudo verificar el reCAPTCHA"},
+        401: {"description": "Credenciales inválidas"},
+    },
 )
 def login(body: LoginAdminRequest, db: Session = Depends(get_db_maestra)):
     """Login de DOS campos: usuario y contraseña, contra la base principal.
@@ -105,7 +127,11 @@ def me_admin(admin: UsuarioAdmin = Depends(get_admin_actual)):
     "/cambiar-password",
     response_model=OperacionResponse,
     summary="Cambiar la propia contraseña",
-    responses={401: {"description": "La contraseña actual no es correcta"}},
+    description=f"Política de contraseñas: {POLITICA_PASSWORD}",
+    responses={
+        400: {"description": "La contraseña nueva no cumple la política"},
+        401: {"description": "La contraseña actual no es correcta"},
+    },
 )
 def cambiar_password(
     body: CambiarPasswordRequest,
@@ -131,20 +157,20 @@ def cambiar_password(
     if not admin or not admin.activo:
         raise UnauthorizedException("Usuario no encontrado o desactivado")
 
-    if not admin.debe_cambiar_password:
-        # Cambio voluntario: se exige la clave actual. Sin esto, una sesión
-        # olvidada abierta permite quedarse con la cuenta.
-        if not body.password_actual:
-            raise BadRequestException("Debe indicar su contraseña actual")
-        if not verify_password(body.password_actual, admin.password_hash):
-            raise UnauthorizedException("La contraseña actual no es correcta")
-
-    if verify_password(body.password_nueva, admin.password_hash):
-        raise BadRequestException("La contraseña nueva debe ser distinta de la actual")
-
-    admin.password_hash = get_password_hash(body.password_nueva)
-    admin.debe_cambiar_password = False
-    db.commit()
+    # Misma política y mismo historial que los usuarios de un estudio: es una
+    # regla del sistema, no de la pantalla. El historial del administrador vive
+    # en la base principal (`PasswordHistorialAdmin`).
+    password_service.aplicar(
+        db,
+        admin,
+        body.password_nueva,
+        PasswordHistorialAdmin,
+        provisoria=False,
+        password_actual=body.password_actual,
+        # Con la clave provisoria puesta no se pide la anterior: el
+        # administrador acaba de escribirla para entrar.
+        exigir_actual=not admin.debe_cambiar_password,
+    )
 
     logger.info("El administrador '%s' cambió su contraseña", admin.usuario)
     return OperacionResponse(exito=True, mensaje="Contraseña actualizada")

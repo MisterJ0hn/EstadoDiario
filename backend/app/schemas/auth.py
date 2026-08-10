@@ -10,6 +10,9 @@ se hace en un solo lugar, en los mapeadores de `app/api/v1/endpoints/auth.py` y
 
 from pydantic import BaseModel, Field
 
+from app.core.password_policy import DESCRIPCION as POLITICA_PASSWORD
+from app.core.password_policy import LARGO_MAXIMO, LARGO_MINIMO
+
 
 class LoginClienteRequest(BaseModel):
     """Login del usuario de un cliente: TRES campos.
@@ -54,10 +57,36 @@ class CambiarPasswordRequest(BaseModel):
     de nuevo es fricción sin ganancia. En un cambio voluntario —la clave ya es
     definitiva— sí se exige, porque ahí el riesgo es otro: una sesión olvidada
     abierta en un computador ajeno.
+
+    El `min_length` es solo el corte barato: la política completa (mayúscula,
+    minúscula, número y no repetir las últimas) la aplica el servicio, que es
+    el único que puede consultar el historial. Ver `app/core/password_policy.py`.
     """
 
-    password_nueva: str = Field(..., min_length=8, max_length=100)
+    password_nueva: str = Field(
+        ..., min_length=LARGO_MINIMO, max_length=LARGO_MAXIMO, description=POLITICA_PASSWORD
+    )
     password_actual: str | None = Field(default=None, min_length=1)
+
+
+class RecuperarPasswordRequest(BaseModel):
+    """Paso 1 de la recuperación por correo.
+
+    El RUT va por lo mismo que en el login: dice en qué base de datos buscar.
+    El correo es el del usuario, no el del estudio.
+    """
+
+    rut: str = Field(..., min_length=3, examples=["76.543.210-K"])
+    email: str = Field(..., min_length=3, max_length=255, examples=["jperez@estudio.cl"])
+
+
+class RestablecerPasswordRequest(BaseModel):
+    """Paso 2: el token que venía en el enlace del correo, y la clave nueva."""
+
+    token: str = Field(..., min_length=10)
+    password_nueva: str = Field(
+        ..., min_length=LARGO_MINIMO, max_length=LARGO_MAXIMO, description=POLITICA_PASSWORD
+    )
 
 
 class UserInfo(BaseModel):
@@ -101,6 +130,23 @@ class UserInfo(BaseModel):
     # puede quedar en una URL pública.
     cliente_logo: str | None = None
     cliente_guid: str | None = None
+
+
+class RecaptchaConfigResponse(BaseModel):
+    """Lo que el frontend necesita saber de reCAPTCHA, antes de tener sesión.
+
+    La site key es pública por definición —va en el HTML de cualquier sitio que
+    use reCAPTCHA—, pero se sirve desde acá en vez de compilarla en los
+    `environment.ts` de las tres apps: la site key y el secret son un par, y
+    tenerlos en repositorios con ciclos de despliegue distintos garantiza que
+    algún día no coincidan. Un par desincronizado falla el 100% de las
+    verificaciones con un error que no apunta a su causa.
+
+    El secret NO sale de acá jamás.
+    """
+
+    activo: bool
+    site_key: str | None = None
 
 
 class ActualizarPerfilRequest(BaseModel):

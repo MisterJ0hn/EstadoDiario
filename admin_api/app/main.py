@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.core import recaptcha
 from app.core.config import settings
 from app.core.database import SesionMaestra, cerrar_engines_tenant, engine_maestro
 from app.core.esquema import aplicar_esquema_maestra
@@ -131,6 +132,7 @@ def on_startup():
     logger.info("Creando/actualizando el esquema de la base principal...")
     aplicar_esquema_maestra(engine_maestro)
     _sembrar_administrador_inicial()
+    recaptcha.advertir_configuracion_incompleta()
     logger.info("API de administración iniciada - Ambiente: %s", settings.APP_ENV)
 
 

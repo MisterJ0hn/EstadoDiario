@@ -142,11 +142,14 @@ backend/
 │   │   ├── crypto.py               # Cifrado reversible (Fernet)
 │   │   ├── hash_busqueda.py        # HMAC para buscar sobre campos cifrados
 │   │   ├── security.py             # JWT, bcrypt
+│   │   ├── password_policy.py      # Formato exigido a una contraseña
+│   │   ├── recaptcha.py            # Verificación v3 de los formularios públicos
 │   │   ├── deps.py                 # Ruteo por tenant y autenticación
 │   │   ├── exceptions.py
 │   │   └── logging_config.py
 │   ├── models/                     # Tablas de la base del CLIENTE (BaseTenant)
 │   │   ├── usuario.py              #   campos cifrados + hash de búsqueda
+│   │   ├── password_historial.py   #   últimas contraseñas, para no repetirlas
 │   │   ├── jurisdiccion.py
 │   │   ├── estado_diario_origen.py
 │   │   ├── estado_diario.py
@@ -157,12 +160,15 @@ backend/
 │   │   └── maestra/                # Tablas de la base PRINCIPAL (BaseMaestra)
 │   │       ├── cliente.py
 │   │       ├── usuario_admin.py    #   administrador de la plataforma
+│   │       ├── password_historial_admin.py  # su historial de contraseñas
 │   │       ├── configuracion_sistema.py
 │   │       └── configuracion_*.py  #   correo, smtp, google, whatsapp
 │   ├── schemas/                    # Pydantic DTOs
 │   ├── repositories/               # Acceso a datos
 │   ├── services/
 │   │   ├── auth_service.py         # Dos flujos: admin y cliente
+│   │   ├── password_service.py     # Cambio de clave + historial (los dos)
+│   │   ├── password_reset_service.py     # Recuperación por correo
 │   │   ├── cliente_service.py      # Alta y ficha del cliente
 │   │   ├── aprovisionamiento_service.py  # CREATE DATABASE + 13 tablas
 │   │   ├── admin_cliente_service.py      # Operar SOBRE un cliente
@@ -226,6 +232,137 @@ Con `debe_cambiar_password` puesto, el administrador entra pero **ningún
 endpoint de administración responde** hasta que cambie la clave: con una clave
 provisoria conocida, cualquiera que la adivine podría crear clientes.
 
+### Política de contraseñas
+
+Mínimo 8 caracteres, con al menos una mayúscula, una minúscula y un número, y
+**sin repetir ninguna de las últimas 4** (la vigente y las tres anteriores).
+
+La regla es del sistema y no de la pantalla: vale igual para el usuario de un
+estudio y para el administrador de la plataforma, y se aplica por los cuatro
+caminos por los que puede cambiar una clave —cambio voluntario, cambio de la
+provisoria, alta o reseteo hecho por la plataforma, y restablecimiento por
+correo—. El formato está en `app/core/password_policy.py` y el historial en
+`app/services/password_service.py`; todo lo demás llama ahí.
+
+El historial vive en `usuario_password_historial`, una tabla por base
+(`PasswordHistorial` en la del cliente, `PasswordHistorialAdmin` en la
+principal), y guarda **hashes bcrypt**, no contraseñas: comprobar es un
+`checkpw` contra cada fila, igual que el login. Solo se conservan las últimas 4
+por usuario; el resto se poda al cambiar.
+
+Las cuentas anteriores a esta funcionalidad no tienen ninguna fila y no por eso
+quedan sin regla: la clave vigente se veta siempre, porque sale del propio
+usuario y no del historial.
+
+El frontend repite las comprobaciones de formato (`core/utils/password.ts`)
+para poder mostrarlas mientras la persona escribe. Es una copia, no la
+política: si acá cambia el largo o se agrega una regla, allá hay que
+actualizarlo a mano.
+
+### Recuperación de contraseña por correo
+
+Solo para el usuario de un estudio. El administrador de la plataforma no la
+tiene: su clave se la resetea otro administrador desde la consola.
+
+```
+POST /api/v1/auth/recuperar-password     rut + correo
+  → correo con  <PUBLIC_BASE_URL>/restablecer-clave?token=<jwt>
+POST /api/v1/auth/restablecer-password   token + clave nueva
+```
+
+El RUT va por lo mismo que en el login: dice en qué base buscar. El correo es
+la credencial de este flujo, y por eso `usuario.correo` es UNIQUE.
+
+Tres decisiones que sostienen el flujo:
+
+**El enlace no abre sesión.** El token lleva `type: reset_password`, que el
+validador de sesiones rechaza: sirve para cambiar la clave y para nada más.
+
+**Vale una sola vez, sin tabla de tokens.** El token lleva una huella
+(SHA-256 truncado) del hash de la contraseña vigente al emitirlo. Cambiada la
+clave el hash es otro, la huella deja de calzar y todos los enlaces anteriores
+mueren juntos. Una tabla de tokens haría lo mismo con una fila que hay que
+crear, buscar, marcar y purgar.
+
+**El paso 1 responde siempre igual**, exista o no la cuenta: contestar distinto
+lo convertiría en una forma de averiguar qué correos son usuarios del sistema.
+La excepción es que el correo no se pueda enviar; ahí se devuelve el error,
+porque la alternativa es dejar a alguien esperando para siempre un correo que
+nadie mandó.
+
+El correo sale por la cuenta SMTP global del sistema (la misma de los
+informes), que vive en la base principal. Sin ella configurada y activa, el
+flujo responde que no se pudo enviar.
+
+### reCAPTCHA v3 en los formularios públicos
+
+Son cuatro y no tienen límite de intentos: los dos logins,
+`recuperar-password` —que además manda un correo de verdad en cada llamada— y
+`restablecer-password`. `app/core/recaptcha.py` los cubre, y lo comparten los
+dos servicios igual que `password_policy.py`.
+
+**Apagado mientras no haya llaves.** `activo()` exige las DOS
+(`RECAPTCHA_SITE_KEY` y `RECAPTCHA_SECRET_KEY`), y sin ellas no sale ni una
+petición a Google. Media configuración cuenta como apagado y se avisa al
+arrancar: con solo el secret nadie podría entrar, con solo la site key la
+verificación sería teatro.
+
+Se engancha como dependencia de la ruta, no dentro del handler:
+
+```python
+dependencies=[Depends(recaptcha.verificado(recaptcha.ACCION_LOGIN))]
+```
+
+Así corta antes de que el handler abra la sesión maestra, resuelva el tenant y
+corra un bcrypt de ~300 ms — que es justo el costo que el captcha existe para
+evitar—, y queda declarado en la firma, donde se ve en el diff. **La función de
+la dependencia es `def` y no `async def`**: los endpoints son sincrónicos, así
+que FastAPI la corre en el threadpool; declarada `async`, el `requests.post`
+bloquearía el event loop y cada login congelaría el servidor mientras Google
+tarde.
+
+El token viaja en el header `X-Recaptcha-Token`, no en el cuerpo: así los
+cuatro schemas, el OpenAPI y los modelos TypeScript quedan intactos.
+
+Tres decisiones que sostienen esto:
+
+**Lo que Google opina se respeta; lo que no alcanzó a opinar se deja pasar.**
+Es la única distinción del módulo. Un puntaje bajo, una acción que no calza o
+un token reusado son rechazos. Un timeout, un 500 o un secret mal pegado **no**:
+se aprueba y se grita en el log. Fail-closed cambiaría una caída de Google por
+una caída total del producto, en la que ni el administrador puede entrar a
+arreglarla, y lo que se pierde mientras tanto es volver al nivel de protección
+que el sistema tenía antes de esto. `RECAPTCHA_FALLA_ABIERTA=false` lo invierte
+para estar bajo ataque.
+
+**Se valida la `action`.** Va firmada dentro del token y cada endpoint declara
+la suya. Sin esto, un atacante abre `restablecer-clave` —pública, carga sin
+credenciales—, deja que le acuñen un token con puntaje de humano y lo reusa
+contra el login para su fuerza bruta: misma llave, mismo dominio, mismo
+puntaje, indistinguible salvo por ese campo.
+
+**La site key la sirve el backend** (`GET /auth/recaptcha`, público) en vez de
+compilarse en los siete `environment.ts`. La site key y el secret son un par:
+separarlos en repositorios con ciclos de despliegue distintos garantiza que
+algún día no coincidan, y un par desincronizado falla el 100% de las
+verificaciones con un error que no apunta a su causa. Además encender o apagar
+pasa a ser una variable de entorno en vez de reconstruir tres imágenes Angular.
+
+En el frontend el token lo pide **el interceptor**, no los componentes: se
+acuña milisegundos antes del POST, y con eso la vida útil de dos minutos del
+token deja de importar. El cliente nunca falla abierto — ante cualquier
+problema manda la petición sin token y decide el servidor, que es el único lado
+donde la decisión no se puede falsificar.
+
+**El APK queda fuera.** Su WebView corre desde `https://localhost`, origen que
+no está registrado en la consola de Google, así que el servicio ni carga el
+script en nativo (`Capacitor.isNativePlatform()`) y la petición sale sin token.
+Con el rechazo encendido, **el APK no puede iniciar sesión**. No hay forma
+segura de eximirlo: cualquier marca que la app enviara la copia un atacante, y
+eximir por esa marca es apagar el captcha para todos. Por eso se estrena en
+modo monitor (`RECAPTCHA_SOLO_REGISTRAR`), que mide cuánto tráfico legítimo
+llega sin token antes de bloquear nada — ver DEPLOY.md.
+
 ## Frontend - Angular 19
 
 ```
@@ -241,10 +378,15 @@ frontend/src/app/
 │   ├── services/
 │   │   ├── auth.service.ts         # Autenticación, signals
 │   │   └── notification.service.ts # Alertas con signals
+│   ├── utils/
+│   │   └── password.ts             # Copia de la política, para mostrarla
 │   └── models/                     # Interfaces TypeScript
 ├── features/
 │   ├── auth/
-│   │   └── login.component.ts      # Login page
+│   │   ├── login.component.ts      # Login page
+│   │   ├── cambiar-clave.component.ts     # Cambio obligatorio (provisoria)
+│   │   ├── recuperar-clave.component.ts   # "Olvidé mi contraseña" (paso 1)
+│   │   └── restablecer-clave.component.ts # Destino del enlace (paso 2)
 │   ├── layout/
 │   │   └── layout.component.ts     # Sidebar + topbar + outlet
 │   └── estado-diario/

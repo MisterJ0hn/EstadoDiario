@@ -1,14 +1,16 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
+import { RecaptchaService } from '@core/services/recaptcha.service';
+import { RecaptchaAvisoComponent } from '@shared/components/recaptcha-aviso.component';
 import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink, RecaptchaAvisoComponent],
   template: `
     <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-900 px-4 py-8">
       <div class="card w-full max-w-md">
@@ -79,6 +81,18 @@ import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
               {{ loading() ? 'Ingresando...' : 'Ingresar' }}
             </button>
           </form>
+
+          <!-- Debajo del botón y no al lado del campo: es la salida cuando el
+               ingreso ya falló, no una opción que compita con entrar. -->
+          <div class="mt-6 text-center">
+            <a routerLink="/recuperar-clave"
+               class="text-sm text-neutral-500 hover:text-primary-700 hover:underline
+                      focus:outline-none focus:ring-2 focus:ring-primary-200 rounded px-2 py-1">
+              ¿Olvidó su contraseña?
+            </a>
+          </div>
+
+          <app-recaptcha-aviso />
         </div>
       </div>
     </div>
@@ -87,6 +101,12 @@ import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
 export class LoginComponent {
   private auth = inject(AuthService);
   private router = inject(Router);
+
+  constructor() {
+    // Se adelanta la configuración y el script mientras la persona escribe el
+    // RUT: para cuando apriete "Ingresar" no queda latencia que pagar.
+    inject(RecaptchaService).precargar();
+  }
 
   rut = signal('');
   username = '';

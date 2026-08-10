@@ -137,6 +137,10 @@ def test_la_base_principal_no_lleva_datos_operativos():
         "configuracion_smtp",
         "configuracion_whatsapp",
         "usuario",
+        # Contraseñas anteriores del administrador de la plataforma. No es dato
+        # operativo de ningún cliente: los de ellos van en su propia base, en
+        # la tabla homónima de BaseTenant.
+        "usuario_password_historial",
     ]
 
 

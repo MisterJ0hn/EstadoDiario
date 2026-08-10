@@ -3,6 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
+import {
+  NOTA_HISTORIAL_PASSWORD,
+  passwordCumplePolitica,
+  reglasPassword,
+} from '@core/utils/password';
 
 /**
  * Cambio de contraseña obligatorio.
@@ -94,10 +99,7 @@ import { AuthService } from '@core/services/auth.service';
                 </li>
               }
             </ul>
-            <p class="text-xs text-neutral-500 -mt-2">
-              Además tiene que ser distinta de la clave provisoria; el sistema lo verifica al
-              guardar.
-            </p>
+            <p class="text-xs text-neutral-500 -mt-2">{{ notaHistorial }}</p>
 
             <button type="submit" class="btn-primary w-full" [disabled]="guardando()">
               @if (guardando()) {
@@ -133,10 +135,12 @@ export class CambiarClaveComponent {
   guardando = signal(false);
   errorMsg = signal('');
 
+  readonly notaHistorial = NOTA_HISTORIAL_PASSWORD;
+
   /** Solo las reglas que el navegador puede comprobar de verdad. La de "no
-   *  repetir la provisoria" se verifica en el servidor y se dice como nota. */
+   *  repetir las últimas" se verifica en el servidor y se dice como nota. */
   reglas = computed(() => [
-    { texto: 'Al menos 8 caracteres', cumple: this.nueva().length >= 8 },
+    ...reglasPassword(this.nueva()),
     {
       texto: 'Las dos contraseñas coinciden',
       cumple: this.nueva().length > 0 && this.nueva() === this.confirmacion(),
@@ -144,8 +148,8 @@ export class CambiarClaveComponent {
   ]);
 
   guardar(): void {
-    if (this.nueva().length < 8) {
-      this.errorMsg.set('La contraseña nueva debe tener al menos 8 caracteres');
+    if (!passwordCumplePolitica(this.nueva())) {
+      this.errorMsg.set('La contraseña nueva no cumple los requisitos indicados abajo');
       return;
     }
     if (this.nueva() !== this.confirmacion()) {

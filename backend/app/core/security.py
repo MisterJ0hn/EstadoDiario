@@ -44,6 +44,19 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
+def create_reset_token(data: dict, expires_delta: timedelta) -> str:
+    """Token del enlace de recuperación de contraseña que va por correo.
+
+    Lleva su propio `type` para que no sirva como access token: quien
+    intercepte el correo puede cambiar la clave —para eso está el enlace— pero
+    no puede usarlo como sesión ni consultar nada.
+    """
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + expires_delta
+    to_encode.update({"exp": expire, "type": "reset_password"})
+    return jwt.encode(to_encode, settings.BACKEND_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
 def create_state_token(data: dict, expires_delta: timedelta) -> str:
     """Token corto para el parámetro `state` de un flujo OAuth de terceros
     (ej. Google Calendar). No es un access/refresh token: lleva su propio

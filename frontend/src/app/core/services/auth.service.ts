@@ -7,6 +7,9 @@ import {
   ActualizarPerfilRequest,
   CambiarPasswordRequest,
   LoginRequest,
+  OperacionResponse,
+  RecuperarPasswordRequest,
+  RestablecerPasswordRequest,
   TokenResponse,
   UserInfo,
 } from '../models/auth.model';
@@ -69,6 +72,26 @@ export class AuthService {
     return this.http
       .post<unknown>(`${this.apiUrl}/cambiar-password`, datos)
       .pipe(switchMap(() => this.cargarPerfil()));
+  }
+
+  /**
+   * Paso 1 de "olvidé mi contraseña": pide el correo con el enlace.
+   *
+   * El backend responde lo mismo exista o no la cuenta, así que el mensaje que
+   * vuelve se muestra tal cual: inventar acá uno más específico delataría qué
+   * correos son usuarios del sistema.
+   */
+  recuperarPassword(datos: RecuperarPasswordRequest): Observable<OperacionResponse> {
+    return this.http.post<OperacionResponse>(`${this.apiUrl}/recuperar-password`, datos);
+  }
+
+  /**
+   * Paso 2: fija la contraseña con el token del enlace. No deja sesión
+   * iniciada —el token del correo no sirve para eso— así que después hay que
+   * pasar por el login.
+   */
+  restablecerPassword(datos: RestablecerPasswordRequest): Observable<OperacionResponse> {
+    return this.http.post<OperacionResponse>(`${this.apiUrl}/restablecer-password`, datos);
   }
 
   /** Adónde mandar al usuario recién autenticado según su tipo de sesión. */

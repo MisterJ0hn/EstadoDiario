@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.core import recaptcha
 from app.core.config import settings
 from app.core.database import SesionMaestra, cerrar_engines_tenant, engine_maestro
 from app.core.esquema import aplicar_esquema_maestra
@@ -97,6 +98,7 @@ def on_startup():
     aplicar_esquema_maestra(engine_maestro)
     if settings.APLICAR_ESQUEMA_TENANTS_AL_ARRANCAR:
         _actualizar_esquema_de_los_clientes()
+    recaptcha.advertir_configuracion_incompleta()
     logger.info("Aplicación iniciada - Ambiente: %s", settings.APP_ENV)
 
 

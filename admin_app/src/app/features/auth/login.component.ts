@@ -3,11 +3,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
+import { RecaptchaService } from '@core/services/recaptcha.service';
+import { RecaptchaAvisoComponent } from '@shared/components/recaptcha-aviso.component';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RecaptchaAvisoComponent],
   template: `
     <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-600 to-primary-900 px-4 py-8">
       <div class="card w-full max-w-md">
@@ -53,6 +55,7 @@ import { AuthService } from '@core/services/auth.service';
             </button>
           </form>
 
+          <app-recaptcha-aviso />
         </div>
       </div>
     </div>
@@ -61,6 +64,12 @@ import { AuthService } from '@core/services/auth.service';
 export class LoginComponent {
   private auth = inject(AuthService);
   private router = inject(Router);
+
+  constructor() {
+    // Se adelanta la configuración y el script mientras se escriben las
+    // credenciales: para cuando apriete "Ingresar" no queda latencia que pagar.
+    inject(RecaptchaService).precargar();
+  }
 
   username = '';
   password = '';

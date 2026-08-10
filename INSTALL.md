@@ -248,6 +248,35 @@ llegaron a su fecha/hora de envío:
 Requiere una cuenta Twilio con WhatsApp Business aprobado y una plantilla de
 mensaje ya aprobada (Content SID), pegados en **Administración → WhatsApp**.
 
+## reCAPTCHA (opcional)
+
+Protege de bots los cuatro formularios que se pueden usar sin sesión: los dos
+inicios de sesión, la recuperación de contraseña y el restablecimiento.
+
+**Viene apagado y el sistema funciona igual sin él.** Mientras las llaves estén
+vacías no se llama a Google y no cambia nada; no hace falta tocarlo para
+instalar ni para desarrollar.
+
+Para encenderlo, crear un par de llaves **v3** (no v2) en
+<https://www.google.com/recaptcha/admin>, registrar el dominio del sitio, y
+ponerlas en el `.env`:
+
+```env
+RECAPTCHA_SITE_KEY=<la site key>
+RECAPTCHA_SECRET_KEY=<el secret>
+```
+
+Van a los dos servicios y tienen que ser las mismas; `docker-compose.yml` ya se
+encarga. No hay que recompilar las aplicaciones Angular: la site key la
+entregan `GET /api/v1/auth/recaptcha` de cada API.
+
+En producción **hay que estrenarlo en modo monitor** antes de bloquear a
+nadie, y la app Android queda fuera. El procedimiento completo y por qué está
+en `DEPLOY.md`, sección "Encender reCAPTCHA".
+
+Para desarrollo conviene un par de llaves aparte con `localhost` registrado:
+meter `localhost` en la llave de producción degrada los puntajes reales.
+
 ## Purga de la Bitácora
 
 `log_actividades` registra una fila por acción y crece rápido. La política de

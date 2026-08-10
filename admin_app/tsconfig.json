@@ -6,6 +6,9 @@
     "baseUrl": "./",
     "paths": {
       "@core/*": ["src/app/core/*"],
+      // Mismo alias que en ionic_app y frontend, para que los componentes que
+      // se comparten entre las tres apps sean copias idénticas.
+      "@shared/*": ["src/app/shared/*"],
       "@env/*": ["src/environments/*"],
       "@env/environment": ["src/environments/environment"]
     },

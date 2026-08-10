@@ -49,6 +49,24 @@ export interface CambiarPasswordRequest {
   password_nueva: string;
 }
 
+/** Paso 1 de la recuperación: el RUT dice en qué base buscar el correo. */
+export interface RecuperarPasswordRequest {
+  rut: string;
+  email: string;
+}
+
+/** Paso 2: el token venía en el enlace del correo, como `?token=`. */
+export interface RestablecerPasswordRequest {
+  token: string;
+  password_nueva: string;
+}
+
+/** Respuesta estándar de la API: `exito`/`mensaje`, no success/message. */
+export interface OperacionResponse {
+  exito: boolean;
+  mensaje: string;
+}
+
 export interface ActualizarPerfilRequest {
   telefono: string | null;
 }

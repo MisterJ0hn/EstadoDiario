@@ -36,6 +36,11 @@ BACKEND_REFRESH_TOKEN_EXPIRE_DAYS=7
 
 # Logging
 BACKEND_LOG_LEVEL=WARNING
+
+# reCAPTCHA v3 — opcional; ver "Encender reCAPTCHA" más abajo.
+# Vacías = apagado, y los formularios se comportan como si no existiera.
+RECAPTCHA_SITE_KEY=
+RECAPTCHA_SECRET_KEY=
 ```
 
 ### 2. Construir y Desplegar
@@ -183,6 +188,70 @@ docker-compose logs -f --tail=100
 # Uso de recursos
 docker stats
 ```
+
+## Encender reCAPTCHA
+
+Protege los cuatro formularios que se pueden usar sin sesión: los dos logins,
+`recuperar-password` y `restablecer-password`. Es **opcional**: mientras las
+llaves estén vacías el sistema no llama a Google y todo funciona como si no
+existiera.
+
+Se estrena en dos etapas, y saltarse la primera es la forma conocida de dejar
+gente afuera.
+
+**Etapa 1 — medir sin bloquear.** Crear un par de llaves **v3** en
+<https://www.google.com/recaptcha/admin>, registrando el dominio que sirve las
+SPA. Después:
+
+```env
+RECAPTCHA_SITE_KEY=<la site key>
+RECAPTCHA_SECRET_KEY=<el secret>
+RECAPTCHA_SOLO_REGISTRAR=true
+```
+
+Las mismas llaves van a `backend` y a `admin_api` — `docker-compose.yml` ya las
+pasa a los dos desde el `.env`. Un par distinto en cada uno haría fallar el
+100% de los ingresos.
+
+En este modo se verifica y se registra, pero **no se rechaza a nadie**. Hay que
+dejarlo así una semana y contar dos cosas en el log:
+
+```bash
+docker-compose logs backend | grep "reCAPTCHA rechazó" | grep -c "motivo=sin_token"
+docker-compose logs backend | grep "reCAPTCHA rechazó" | grep -c "motivo=puntaje_bajo"
+```
+
+`sin_token` es tráfico legítimo que se quedaría afuera al encender: la app
+Android, los bloqueadores de contenido y los proxies corporativos, que en
+estudios jurídicos son frecuentes. `puntaje_bajo` dice si el umbral está bien
+para la gente real.
+
+**Etapa 2 — encender.** Con esos números a la vista se ajusta el umbral y se
+saca el modo monitor:
+
+```env
+RECAPTCHA_SCORE_MINIMO=0.5
+RECAPTCHA_SOLO_REGISTRAR=false
+```
+
+`docker-compose up -d` y listo; no hay que reconstruir ninguna imagen de
+Angular, porque la site key la sirve el backend en `GET /api/v1/auth/recaptcha`.
+
+**Lo que hay que saber antes de encender:**
+
+- **La app Android deja de poder iniciar sesión.** Su WebView corre desde el
+  origen `https://localhost`, que no está registrado en la consola, así que no
+  puede acuñar tokens. Si el conteo de `sin_token` de la etapa 1 muestra
+  tráfico de APK, hay que resolver eso primero.
+- **Si Google no responde, se deja pasar.** Es deliberado: lo contrario cambia
+  una caída de Google por una caída total del producto, en la que ni el
+  administrador puede entrar a arreglarla. Se ve en el log como
+  `no concluyente ... DEJA PASAR`. Para invertirlo mientras dure un ataque:
+  `RECAPTCHA_FALLA_ABIERTA=false`.
+- **El umbral no se puede calibrar en desarrollo**: en localhost Google
+  devuelve casi siempre 0.9.
+
+**Apagar** es vaciar las dos llaves y reiniciar. No hay estado que limpiar.
 
 ## Consideraciones de Seguridad
 

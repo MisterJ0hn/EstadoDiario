@@ -142,6 +142,10 @@ def test_todas_las_tablas_del_tenant_se_copian_o_se_justifican():
     #   madre (se reimportan al cargar el archivo siguiente).
     # - `causa` / `causa_corte`: el reporte de Causas es posterior a la
     #   migración; una instalación vieja nunca lo importó.
+    # - `usuario_password_historial`: el historial de contraseñas es posterior
+    #   y no hay nada que copiar. Que nazca vacío no abre un hueco: la clave
+    #   vigente se veta igual, porque sale del propio usuario y no del
+    #   historial (ver `_hashes_vetados` en app/services/password_service.py).
     aparte = {
         "usuario",
         "log_actividades",
@@ -149,6 +153,7 @@ def test_todas_las_tablas_del_tenant_se_copian_o_se_justifican():
         "movimiento_corte",
         "causa",
         "causa_corte",
+        "usuario_password_historial",
     }
     sin_cubrir = set(BaseTenant.metadata.tables) - set(TABLAS_A_COPIAR) - aparte
     assert not sin_cubrir, (

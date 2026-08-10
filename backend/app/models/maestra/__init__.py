@@ -14,5 +14,6 @@ from app.models.maestra import (  # noqa: F401
     configuracion_sistema,
     configuracion_smtp,
     configuracion_whatsapp,
+    password_historial_admin,
     usuario_admin,
 )

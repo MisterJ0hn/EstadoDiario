@@ -143,21 +143,12 @@ class SmtpService:
             "</body></html>"
         )
 
-    def enviar_con_adjunto(
-        self,
-        destinatario: str,
-        asunto: str,
-        cuerpo: str,
-        adjunto: bytes,
-        nombre_adjunto: str,
-        logo: Optional[tuple[bytes, str]] = None,
-        nombre_estudio: Optional[str] = None,
-    ) -> None:
-        """Despacha el informe. Lanza ErrorEnvio si no se pudo entregar.
+    def _config_operativa(self, destinatario: str) -> ConfiguracionSmtp:
+        """La cuenta de envío, verificando que se pueda usar de verdad.
 
-        No se traga los errores: si el correo no salió, el usuario tiene que
-        enterarse. Un informe que dice "enviado" y nunca llega es peor que uno
-        que falla a la vista.
+        Se comprueba antes de armar el mensaje: si la cuenta está apagada o a
+        medio configurar, el error dice qué falta en vez de fallar más adelante
+        con un mensaje de smtplib.
         """
         config = self.get_config()
 
@@ -171,14 +162,66 @@ class SmtpService:
         if not destinatario:
             raise ErrorEnvio("El usuario no tiene un correo registrado al cual enviar")
 
-        password = self._password(config, None)
+        return config
 
+    def _sobre(self, config: ConfiguracionSmtp, destinatario: str, asunto: str, cuerpo: str):
         mensaje = EmailMessage()
         mensaje["Subject"] = asunto
         remitente = config.remitente_email or config.usuario
         mensaje["From"] = formataddr((config.remitente_nombre or "Estado Diario", remitente))
         mensaje["To"] = destinatario
         mensaje.set_content(cuerpo)
+        return mensaje
+
+    def _despachar(self, config: ConfiguracionSmtp, mensaje, destinatario: str) -> None:
+        """Conecta, envía y deja anotado el resultado en la configuración.
+
+        No se traga los errores: si el correo no salió, quien lo pidió tiene
+        que enterarse. Un envío que dice "enviado" y nunca llega es peor que
+        uno que falla a la vista.
+        """
+        password = self._password(config, None)
+
+        cliente = None
+        try:
+            cliente = self._conectar(config, password)
+            cliente.send_message(mensaje)
+            config.ultimo_envio = datetime.now(timezone.utc)
+            config.ultimo_resultado = f"Enviado a {destinatario}"
+            self.db.commit()
+            logger.info("Correo enviado a %s", destinatario)
+        except Exception as e:
+            logger.exception("Fallo al enviar el correo a %s", destinatario)
+            config.ultimo_envio = datetime.now(timezone.utc)
+            config.ultimo_resultado = f"Error: {e}"
+            self.db.commit()
+            raise ErrorEnvio(f"No se pudo enviar el correo: {e}") from e
+        finally:
+            self._cerrar(cliente)
+
+    def enviar(self, destinatario: str, asunto: str, cuerpo: str) -> None:
+        """Correo de texto plano, sin adjunto ni logo.
+
+        Lo usa la recuperación de contraseña: ahí el mensaje sale ANTES de que
+        haya sesión, así que no se sabe de qué estudio es el logo, y el enlace
+        tiene que poder leerse en cualquier cliente de correo.
+        """
+        config = self._config_operativa(destinatario)
+        self._despachar(config, self._sobre(config, destinatario, asunto, cuerpo), destinatario)
+
+    def enviar_con_adjunto(
+        self,
+        destinatario: str,
+        asunto: str,
+        cuerpo: str,
+        adjunto: bytes,
+        nombre_adjunto: str,
+        logo: Optional[tuple[bytes, str]] = None,
+        nombre_estudio: Optional[str] = None,
+    ) -> None:
+        """Despacha el informe. Lanza ErrorEnvio si no se pudo entregar."""
+        config = self._config_operativa(destinatario)
+        mensaje = self._sobre(config, destinatario, asunto, cuerpo)
 
         # Con logo el mensaje pasa a ser multiparte: el texto plano queda como
         # alternativa y se agrega un HTML que referencia la imagen en línea.
@@ -207,19 +250,4 @@ class SmtpService:
             filename=nombre_adjunto,
         )
 
-        cliente = None
-        try:
-            cliente = self._conectar(config, password)
-            cliente.send_message(mensaje)
-            config.ultimo_envio = datetime.now(timezone.utc)
-            config.ultimo_resultado = f"Enviado a {destinatario}"
-            self.db.commit()
-            logger.info("Informe enviado a %s", destinatario)
-        except Exception as e:
-            logger.exception("Fallo al enviar el informe a %s", destinatario)
-            config.ultimo_envio = datetime.now(timezone.utc)
-            config.ultimo_resultado = f"Error: {e}"
-            self.db.commit()
-            raise ErrorEnvio(f"No se pudo enviar el correo: {e}") from e
-        finally:
-            self._cerrar(cliente)
+        self._despachar(config, mensaje, destinatario)

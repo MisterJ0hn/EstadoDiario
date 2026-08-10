@@ -6,6 +6,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Cliente, ClienteInbox, ClienteInboxUpdate } from '@core/models/admin.model';
 import { Usuario } from '@core/models/usuario.model';
 import { NotificationService } from '@core/services/notification.service';
+import { passwordCumplePolitica, reglasPassword } from '@core/utils/password';
 import { formatearRut, rutValido } from '@core/utils/rut';
 import { AdminClienteService } from '../services/admin-cliente.service';
 
@@ -586,7 +587,15 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
               </label>
               <input id="u-password" type="password" class="form-input" [(ngModel)]="usuarioModelo.password"
                      autocomplete="new-password"
+                     aria-describedby="u-password-ayuda"
                      [placeholder]="editandoUsuario() ? 'Dejar vacío para no cambiarla' : 'Mínimo 8 caracteres'" />
+              <!-- La clave provisoria cumple la misma política que la
+                   definitiva: el backend la rechaza igual, y decirlo acá evita
+                   perder lo escrito en el resto del formulario. -->
+              <p id="u-password-ayuda" class="text-xs text-neutral-500 mt-1">
+                Mínimo 8 caracteres, con al menos una mayúscula, una minúscula y un número.
+                El usuario deberá cambiarla la primera vez que ingrese.
+              </p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1012,8 +1021,11 @@ export class ClienteDetalleComponent implements OnInit {
       return 'El apellido debe ser una sola palabra. Indique solo el primer apellido.';
     }
     if (!this.usuarioModelo.email.trim()) return 'Indique el correo electrónico';
-    if (this.usuarioModelo.password && this.usuarioModelo.password.length < 8) {
-      return 'La contraseña debe tener al menos 8 caracteres';
+    if (this.usuarioModelo.password && !passwordCumplePolitica(this.usuarioModelo.password)) {
+      const faltan = reglasPassword(this.usuarioModelo.password)
+        .filter((r) => !r.cumple)
+        .map((r) => r.texto.toLowerCase());
+      return `La contraseña debe tener ${faltan.join(', ')}`;
     }
     return null;
   }

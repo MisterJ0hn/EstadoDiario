@@ -28,11 +28,22 @@ services:
       - BACKEND_SECRET_KEY=${BACKEND_SECRET_KEY}
       - BACKEND_ACCESS_TOKEN_EXPIRE_MINUTES=${BACKEND_ACCESS_TOKEN_EXPIRE_MINUTES}
       - BACKEND_REFRESH_TOKEN_EXPIRE_DAYS=${BACKEND_REFRESH_TOKEN_EXPIRE_DAYS}
+      - PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=${PASSWORD_RESET_TOKEN_EXPIRE_MINUTES:-30}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
       - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL}
       - MAIL_ENCRYPTION_KEY=${MAIL_ENCRYPTION_KEY:-}
       - TIMEZONE=${TIMEZONE:-America/Santiago}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:8090}
+      # reCAPTCHA: apagado mientras las dos llaves estén vacías. Van también en
+      # admin_api y TIENEN QUE SER LAS MISMAS, por lo mismo que la clave de
+      # firma: la site key que sirve un servicio se verifica contra el secret
+      # del otro cuando alguien navega entre las dos aplicaciones.
+      - RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY:-}
+      - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY:-}
+      - RECAPTCHA_SCORE_MINIMO=${RECAPTCHA_SCORE_MINIMO:-0.5}
+      - RECAPTCHA_SOLO_REGISTRAR=${RECAPTCHA_SOLO_REGISTRAR:-false}
+      - RECAPTCHA_FALLA_ABIERTA=${RECAPTCHA_FALLA_ABIERTA:-true}
+      - RECAPTCHA_HOSTNAMES=${RECAPTCHA_HOSTNAMES:-}
     ports:
       - "${BACKEND_PORT:-8091}:8000"
     volumes:
@@ -99,6 +110,15 @@ services:
       - TIMEZONE=${TIMEZONE:-America/Santiago}
       - ADMIN_INICIAL_USUARIO=${ADMIN_INICIAL_USUARIO:-admin}
       - ADMIN_INICIAL_PASSWORD=${ADMIN_INICIAL_PASSWORD:-admin123}
+      # Las MISMAS llaves que el backend: la consola sirve su propia site key
+      # por GET /api/v1/auth/recaptcha y verifica con su propio secret, así que
+      # un par distinto acá haría fallar el 100% de los ingresos.
+      - RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY:-}
+      - RECAPTCHA_SECRET_KEY=${RECAPTCHA_SECRET_KEY:-}
+      - RECAPTCHA_SCORE_MINIMO=${RECAPTCHA_SCORE_MINIMO:-0.5}
+      - RECAPTCHA_SOLO_REGISTRAR=${RECAPTCHA_SOLO_REGISTRAR:-false}
+      - RECAPTCHA_FALLA_ABIERTA=${RECAPTCHA_FALLA_ABIERTA:-true}
+      - RECAPTCHA_HOSTNAMES=${RECAPTCHA_HOSTNAMES:-}
       # Sirviendo la consola por su Nginx (servicio admin_app) la SPA y la API
       # quedan en el mismo origen y esto no se usa. Queda por si se expone el
       # puerto 8092 directo a un navegador.

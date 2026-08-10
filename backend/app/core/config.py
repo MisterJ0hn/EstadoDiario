@@ -72,15 +72,23 @@ class Settings(BaseSettings):
     BACKEND_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     JWT_ALGORITHM: str = "HS256"
 
-    # CORS. Separados por COMA (ver cors_origins). Los dev-servers del repo:
-    # 4400 la app de escritorio, 4300 la de Ionic.
+    # Vigencia del enlace de recuperación de contraseña que se manda por
+    # correo. Corto a propósito: el enlace permite cambiar la clave sin saber
+    # la anterior, así que un correo viejo reenviado no debería seguir
+    # sirviendo. Alcanza para leer el correo y usarlo en el momento.
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # CORS. Separados por COMA (ver cors_origins). Los dev-servers del repo son
+    # los de los `npm start` de cada app: 4300 la de Ionic (la que se publica) y
+    # 4200 la de escritorio (`frontend/`). La consola de administración no va
+    # acá: habla con admin_api, que tiene su propia lista.
     #
     # El origen tiene que coincidir EXACTO con el que manda el navegador:
     # esquema, host y puerto, sin barra final ni ningún otro carácter de más.
     # Un separador equivocado no da error al arrancar, da un preflight
     # rechazado con "No 'Access-Control-Allow-Origin' header", que parece un
     # problema del endpoint y no de esta línea.
-    BACKEND_CORS_ORIGINS: str = "http://localhost:4400,http://localhost:4300"
+    BACKEND_CORS_ORIGINS: str = "http://localhost:4300,http://localhost:4200"
 
     # Logging
     BACKEND_LOG_LEVEL: str = "INFO"
@@ -103,9 +111,40 @@ class Settings(BaseSettings):
     # no acá: esto solo dice dónde vive la app.
     PUBLIC_BASE_URL: str = "http://localhost:8090"
 
+    # ── reCAPTCHA v3 (invisible, por puntaje) ──
+    # El interruptor son las DOS claves: mientras cualquiera esté vacía el
+    # sistema se comporta exactamente como antes y no sale nada a la red. Las
+    # comparte `admin_api`, que valida el login de la consola con las mismas.
+    RECAPTCHA_SECRET_KEY: str = ""
+    # Pública por definición: la sirve GET /auth/recaptcha para que el frontend
+    # no tenga que traerla compilada (ver app/core/recaptcha.py).
+    RECAPTCHA_SITE_KEY: str = ""
+    # Bajo este puntaje se rechaza. 0.0 es "bot seguro" y 1.0 "humano seguro";
+    # 0.5 es el default de Google. Solo se puede calibrar con datos de
+    # producción: en localhost Google devuelve casi siempre 0.9.
+    RECAPTCHA_SCORE_MINIMO: float = 0.5
+    RECAPTCHA_TIMEOUT_SEGUNDOS: float = 5.0
+    # Hostnames aceptados, separados por coma. Vacío = no se valida acá y se
+    # confía en la verificación de dominio de la consola de Google. Solo hace
+    # falta si esa verificación se desactivó allá.
+    RECAPTCHA_HOSTNAMES: str = ""
+    # Modo monitor: verifica y deja el puntaje en el log, pero NO rechaza a
+    # nadie. Es como hay que estrenarlo en producción — ver DEPLOY.md.
+    RECAPTCHA_SOLO_REGISTRAR: bool = False
+    # Google inalcanzable → dejar pasar. En false, una caída de Google bloquea
+    # todos los ingresos: solo para estar bajo ataque activo.
+    RECAPTCHA_FALLA_ABIERTA: bool = True
+    # Configurable porque www.recaptcha.net es el dominio alternativo que
+    # documenta Google donde google.com está bloqueado.
+    RECAPTCHA_VERIFY_URL: str = "https://www.google.com/recaptcha/api/siteverify"
+
     @property
     def google_redirect_uri(self) -> str:
         return f"{self.PUBLIC_BASE_URL}/api/v1/google-calendar/callback"
+
+    @property
+    def recaptcha_hostnames(self) -> List[str]:
+        return [h.strip().lower() for h in self.RECAPTCHA_HOSTNAMES.split(",") if h.strip()]
 
     def url_base(self, nombre_base: str) -> str:
         """URL de conexión a una base cualquiera del mismo servidor.

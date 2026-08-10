@@ -19,12 +19,14 @@ from app.core.database import sesion_tenant
 from app.core.exceptions import BadRequestException, ConflictException, NotFoundException
 from app.core.security import get_password_hash
 from app.models.maestra.cliente import Cliente
+from app.models.password_historial import PasswordHistorial
 from app.models.usuario import Usuario
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from admin_api.app.schemas.cliente import ClienteInbox, ClienteInboxUpdate
 from app.schemas.usuario import UsuarioAdminCreate, UsuarioAdminUpdate, UsuarioResponse
 from admin_api.app.services.cliente_service import ClienteService
+from app.services import password_service
 from app.services.correo_service import CorreoService
 from app.services.usuario_service import UsuarioService
 
@@ -150,6 +152,10 @@ class AdminClienteService:
                     f"El cliente ya tiene un usuario con el correo '{datos.email}'"
                 )
 
+            # La clave provisoria cumple la misma política que la definitiva.
+            # No hay historial que revisar todavía: la cuenta no existe.
+            password_service.validar_nueva(db_tenant, None, datos.password, PasswordHistorial)
+
             usuario = Usuario(
                 password_hash=get_password_hash(datos.password),
                 nombre=datos.nombre,
@@ -165,6 +171,12 @@ class AdminClienteService:
             usuario.telefono = datos.telefono
 
             repo.create(usuario)
+            # Después del create: la fila del historial necesita el id, que
+            # recién existe cuando el usuario está insertado.
+            password_service.registrar(
+                db_tenant, usuario.id, usuario.password_hash, PasswordHistorial
+            )
+            db_tenant.commit()
             logger.info(
                 "Usuario '%s' creado en el cliente %s desde administración",
                 nombre_usuario,
@@ -190,6 +202,14 @@ class AdminClienteService:
                         f"El cliente ya tiene un usuario con el correo '{datos.email}'"
                     )
 
+            # La clave se valida ANTES de tocar el resto de los campos: una
+            # clave rechazada tiene que dejar el usuario como estaba, no a
+            # medio actualizar. El cambio en sí se aplica más abajo.
+            if datos.password:
+                password_service.validar_nueva(
+                    db_tenant, usuario, datos.password, PasswordHistorial
+                )
+
             # Renombrar: el id no cambia, así que los registros de quién hizo
             # qué siguen apuntando a la misma persona. Lo único que hay que
             # cuidar es que el nombre nuevo no lo tenga otro, porque es con lo
@@ -211,6 +231,11 @@ class AdminClienteService:
                 usuario.password_hash = get_password_hash(datos.password)
                 # Clave puesta por un tercero: se exige cambiarla al entrar.
                 usuario.debe_cambiar_password = True
+                # Queda en el historial igual que cualquier otra: si no, un
+                # reseteo sería la forma de saltarse la regla de no repetir.
+                password_service.registrar(
+                    db_tenant, usuario.id, usuario.password_hash, PasswordHistorial
+                )
                 logger.info(
                     "Contraseña del usuario %s del cliente %s reseteada desde administración",
                     usuario_id,

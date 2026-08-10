@@ -13,6 +13,24 @@ export const routes: Routes = [
       import('./features/auth/login.component').then((m) => m.LoginComponent),
   },
   {
+    // "Olvidé mi contraseña", paso 1: pedir el enlace por correo. Pública, sin
+    // guard: quien llega acá justamente no puede iniciar sesión.
+    path: 'recuperar-clave',
+    loadComponent: () =>
+      import('./features/auth/recuperar-clave.component').then(
+        (m) => m.RecuperarClaveComponent
+      ),
+  },
+  {
+    // Paso 2: es la URL que va dentro del correo, con `?token=`. También
+    // pública, y por la misma razón: la credencial es el token del enlace.
+    path: 'restablecer-clave',
+    loadComponent: () =>
+      import('./features/auth/restablecer-clave.component').then(
+        (m) => m.RestablecerClaveComponent
+      ),
+  },
+  {
     // Cambio de contraseña obligatorio: fuera del layout a propósito, no hay
     // menú ni navegación posible hasta que la clave provisoria se reemplace.
     path: 'cambiar-clave',
