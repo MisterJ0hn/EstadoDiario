@@ -71,6 +71,14 @@ export const routes: Routes = [
         ],
       },
       {
+        // El enlace del perfil estaba en la barra lateral desde siempre, pero
+        // sin esta ruta caía en el comodín `**` y volvía al dashboard: parecía
+        // que no hacía nada.
+        path: 'perfil',
+        loadComponent: () =>
+          import('./features/perfil/perfil.component').then((m) => m.PerfilComponent),
+      },
+      {
         // Facturación. El listado es la pantalla principal: lo que se busca acá
         // es una factura concreta —la de tal cliente, la de tal mes, la que el
         // cliente reclama por su número—, y eso es una búsqueda.

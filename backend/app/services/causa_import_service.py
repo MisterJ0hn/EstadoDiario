@@ -32,6 +32,7 @@ import openpyxl
 import xlrd
 from sqlalchemy.orm import Session
 
+from app.core.estados_causa import esta_finalizada
 from app.models.causa import Causa
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
@@ -242,6 +243,79 @@ class CausaImportService:
         self.repo = CausaRepository(db)
         self.jurisdiccion_repo = JurisdiccionRepository(db)
 
+    # ── Deduplicación ─────────────────────────────────────
+    #
+    # El Excel del PJUD trae la misma causa más de una vez. En una cartera real
+    # de 12.248 filas había 1.653 repetidas, y en cero de esos grupos difería el
+    # caratulado: es la misma causa, no dos parecidas.
+    #
+    # **La llave es `rol + tribunal`**, medido sobre esa misma cartera: el rol
+    # se renumera en cada tribunal (`C-17-2021` existe en ocho juzgados civiles
+    # a la vez), y agregarle la materia da exactamente el mismo número de
+    # causas, porque el tribunal ya determina la materia.
+
+    @staticmethod
+    def _norm(valor: Optional[str]) -> str:
+        """Para comparar: sin espacios sobrantes y en minúsculas. El Excel
+        rellena las celdas a la derecha ('Concluido            ')."""
+        return (valor or "").strip().lower()
+
+    @classmethod
+    def _clave_materia(cls, fila: dict) -> Optional[tuple]:
+        """`(rol, tribunal)`, o None si falta alguna de las dos.
+
+        Sin las dos partes no se puede afirmar que dos filas sean la misma
+        causa, así que entran las dos por separado: preferible una repetida a
+        fundir dos causas distintas, que sería perder una.
+        """
+        rol, tribunal = cls._norm(fila.get("rol")), cls._norm(fila.get("tribunal"))
+        return (rol, tribunal) if rol and tribunal else None
+
+    @classmethod
+    def _clave_corte(cls, fila: dict) -> Optional[tuple]:
+        """`(tipo, rol, era, corte)`. En Suprema `corte` viene vacío —hay una
+        sola— así que ahí la llave efectiva es rol + era."""
+        rol = cls._norm(fila.get("rol"))
+        if not rol:
+            return None
+        return (cls._norm(fila.get("tipo")), rol,
+                cls._norm(fila.get("era")), cls._norm(fila.get("corte")))
+
+    @classmethod
+    def _fusionar_materia(cls, causa: Causa, fila: dict) -> None:
+        """Vuelca sobre la causa ya vista lo que aporte su duplicado.
+
+        **Si alguna de las dos dice que terminó, la causa terminó.** Es la regla
+        que pidió el estudio y es la conservadora: una causa concluida no se
+        factura, así que ante la duda no se cobra. Sin esto quedaba el estado de
+        la fila que viniera primero en el Excel, que es un orden que nadie
+        controla.
+        """
+        if esta_finalizada(fila.get("estado_causa")):
+            causa.estado_causa = fila.get("estado_causa")
+        elif not (causa.estado_causa or "").strip():
+            causa.estado_causa = fila.get("estado_causa")
+
+        # El resto solo rellena huecos: dos filas de la misma causa pueden traer
+        # una el RUC y la otra no.
+        for campo in ("tipo_causa", "ruc", "fecha_ingreso", "caratulado", "institucion"):
+            if not getattr(causa, campo, None) and fila.get(campo):
+                setattr(causa, campo, fila[campo])
+
+    @classmethod
+    def _fusionar_corte(cls, causa: CausaCorte, fila: dict) -> None:
+        """Igual que en materia, sobre `estado_procesal`, que es como se llama
+        ahí la misma columna."""
+        if esta_finalizada(fila.get("estado_procesal")):
+            causa.estado_procesal = fila.get("estado_procesal")
+        elif not (causa.estado_procesal or "").strip():
+            causa.estado_procesal = fila.get("estado_procesal")
+
+        for campo in ("era", "corte", "fecha_ingreso", "ubicacion",
+                      "fecha_ubicacion", "caratulado", "institucion"):
+            if not getattr(causa, campo, None) and fila.get(campo):
+                setattr(causa, campo, fila[campo])
+
     def _jurisdiccion_de_corte(self, tipo: str) -> Optional[int]:
         """Jurisdicción de una hoja de corte.
 
@@ -298,25 +372,40 @@ class CausaImportService:
         cache_jurisdiccion: dict[str, Optional[int]] = {}
         por_materia: dict[str, int] = {}
         cortes = 0
+        # Las causas ya vistas en ESTE archivo, por su llave. El Excel del PJUD
+        # repite la misma causa —1.653 filas de más en una cartera real de
+        # 12.248— y sin esto entraban todas: la pantalla las mostraba dos veces
+        # y la factura las cobraba dos veces.
+        vistas_materia: dict[tuple, Causa] = {}
+        vistas_corte: dict[tuple, CausaCorte] = {}
+        duplicadas = 0
 
         for fila in filas:
             if fila.get("tipo"):
-                self.db.add(
-                    CausaCorte(
-                        estado_diario_origen_id=origen.id,
-                        tipo=fila["tipo"],
-                        rol=fila.get("rol"),
-                        era=fila.get("era"),
-                        corte=fila.get("corte"),
-                        fecha_ingreso=fila.get("fecha_ingreso"),
-                        ubicacion=fila.get("ubicacion"),
-                        fecha_ubicacion=fila.get("fecha_ubicacion"),
-                        caratulado=fila.get("caratulado"),
-                        estado_procesal=fila.get("estado_procesal"),
-                        institucion=fila.get("institucion"),
-                        jurisdiccion_id=self._jurisdiccion_de_corte(fila["tipo"]),
-                    )
+                clave = self._clave_corte(fila)
+                previa = vistas_corte.get(clave) if clave else None
+                if previa is not None:
+                    self._fusionar_corte(previa, fila)
+                    duplicadas += 1
+                    continue
+
+                registro = CausaCorte(
+                    estado_diario_origen_id=origen.id,
+                    tipo=fila["tipo"],
+                    rol=fila.get("rol"),
+                    era=fila.get("era"),
+                    corte=fila.get("corte"),
+                    fecha_ingreso=fila.get("fecha_ingreso"),
+                    ubicacion=fila.get("ubicacion"),
+                    fecha_ubicacion=fila.get("fecha_ubicacion"),
+                    caratulado=fila.get("caratulado"),
+                    estado_procesal=fila.get("estado_procesal"),
+                    institucion=fila.get("institucion"),
+                    jurisdiccion_id=self._jurisdiccion_de_corte(fila["tipo"]),
                 )
+                self.db.add(registro)
+                if clave:
+                    vistas_corte[clave] = registro
                 cortes += 1
                 continue
 
@@ -325,21 +414,29 @@ class CausaImportService:
                 jur = self.jurisdiccion_repo.find_by_nombre(materia) if materia else None
                 cache_jurisdiccion[materia] = jur.id if jur else None
 
-            self.db.add(
-                Causa(
-                    estado_diario_origen_id=origen.id,
-                    materia=materia,
-                    tipo_causa=fila.get("tipo_causa"),
-                    rol=fila.get("rol"),
-                    ruc=fila.get("ruc"),
-                    tribunal=fila.get("tribunal"),
-                    fecha_ingreso=fila.get("fecha_ingreso"),
-                    caratulado=fila.get("caratulado"),
-                    estado_causa=fila.get("estado_causa"),
-                    institucion=fila.get("institucion"),
-                    jurisdiccion_id=cache_jurisdiccion[materia],
-                )
+            clave = self._clave_materia(fila)
+            previa = vistas_materia.get(clave) if clave else None
+            if previa is not None:
+                self._fusionar_materia(previa, fila)
+                duplicadas += 1
+                continue
+
+            causa = Causa(
+                estado_diario_origen_id=origen.id,
+                materia=materia,
+                tipo_causa=fila.get("tipo_causa"),
+                rol=fila.get("rol"),
+                ruc=fila.get("ruc"),
+                tribunal=fila.get("tribunal"),
+                fecha_ingreso=fila.get("fecha_ingreso"),
+                caratulado=fila.get("caratulado"),
+                estado_causa=fila.get("estado_causa"),
+                institucion=fila.get("institucion"),
+                jurisdiccion_id=cache_jurisdiccion[materia],
             )
+            self.db.add(causa)
+            if clave:
+                vistas_materia[clave] = causa
             por_materia[materia] = por_materia.get(materia, 0) + 1
 
         # La carga de Causas reemplaza la foto de la cartera, así que el cruce
@@ -352,12 +449,14 @@ class CausaImportService:
 
         causas = sum(por_materia.values())
         logger.info(
-            "Importadas %d causas y %d de corte para origen %d (%s)",
-            causas, cortes, origen.id, por_materia,
+            "Importadas %d causas y %d de corte para origen %d (%s); "
+            "%d filas repetidas del Excel se fusionaron",
+            causas, cortes, origen.id, por_materia, duplicadas,
         )
         return {
             "origen_id": origen.id,
             "causas_importadas": causas,
             "cortes_importados": cortes,
+            "duplicadas_fusionadas": duplicadas,
             "por_materia": por_materia,
         }

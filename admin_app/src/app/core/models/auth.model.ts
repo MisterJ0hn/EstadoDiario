@@ -52,6 +52,12 @@ export interface UserInfo {
 }
 
 export interface CambiarPasswordRequest {
+  /**
+   * Solo en el cambio VOLUNTARIO, desde el perfil. Con la clave provisoria se
+   * omite: el administrador acaba de escribirla para entrar y pedírsela de
+   * nuevo es fricción sin ganancia. El backend aplica esa misma distinción.
+   */
+  password_actual?: string;
   password_nueva: string;
 }
 

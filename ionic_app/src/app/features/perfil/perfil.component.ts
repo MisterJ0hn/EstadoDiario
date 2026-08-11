@@ -52,7 +52,7 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
                  los Excel del PJUD— y no tenía dónde consultarse: la configura
                  la plataforma, no el estudio. -->
             <div>
-              <span class="text-xs text-neutral-500 uppercase">Casilla de ingesta del estudio</span>
+              <span class="text-xs text-neutral-500 uppercase">Casilla de Importación</span>
               <div class="flex items-center gap-2 mt-1 flex-wrap">
                 <code class="font-medium text-primary-700 break-all">{{ inbox }}</code>
                 <button type="button" (click)="copiarInbox(inbox)" class="btn-secondary btn-sm shrink-0">
@@ -248,6 +248,12 @@ export class PerfilComponent implements OnInit {
 
   ngOnInit(): void {
     this.telefono = this.auth.user()?.telefono ?? '';
+    // Se vuelve a pedir el perfil al servidor en vez de confiar en el que hay
+    // guardado: `_user` sale de localStorage y se escribió al iniciar sesión,
+    // así que un campo agregado después —como la casilla de ingesta— no
+    // aparecería hasta que la persona volviera a entrar. Esta es la pantalla
+    // que lo muestra todo, y es donde tiene que estar al día.
+    this.auth.loadProfile();
     this.cargarEstadoGoogle();
 
     const resultado = this.route.snapshot.queryParamMap.get('google');
