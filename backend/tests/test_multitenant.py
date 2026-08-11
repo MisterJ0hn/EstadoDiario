@@ -136,6 +136,15 @@ def test_la_base_principal_no_lleva_datos_operativos():
         "configuracion_sistema",
         "configuracion_smtp",
         "configuracion_whatsapp",
+        # Facturación de la plataforma: es dato COMERCIAL, no operativo del
+        # estudio. Quien lo mira es el administrador que factura, que nunca abre
+        # la base de un cliente; y el correlativo de las facturas es uno solo
+        # para todos, así que no podría vivir repartido por tenant.
+        "factura",
+        "factura_detalle",
+        # El precio acordado con cada cliente. Va acá por lo mismo: es del
+        # contrato, no de la operación.
+        "tarifa_cliente",
         "usuario",
         # Contraseñas anteriores del administrador de la plataforma. No es dato
         # operativo de ningún cliente: los de ellos van en su propia base, en

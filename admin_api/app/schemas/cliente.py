@@ -149,7 +149,7 @@ class ClienteUpdate(BaseModel):
     # puede adivinar el sistema.
     cal: int | None = Field(default=None, ge=1, le=500)
     activo: bool = True
-    # Datos comerciales para la cabecera de la orden de compra. Opcionales: el
+    # Datos comerciales para la cabecera de la factura. Opcionales: el
     # cliente ya existe sin ellos y no se le puede exigir un giro para poder
     # operar. La orden imprime lo que haya y omite el resto.
     giro: str | None = Field(default=None, max_length=255)
@@ -194,7 +194,7 @@ class ClienteResponse(BaseModel):
     # mismas que el estudio ve en "Mis Causas". 0 también cuando la base no
     # respondió, así que no distingue "sin causas" de "no se pudo consultar".
     causas_activas: int = 0
-    # Datos comerciales; salen en la cabecera de la orden de compra.
+    # Datos comerciales; salen en la cabecera de la factura.
     giro: str | None = None
     direccion: str | None = None
     comuna: str | None = None
@@ -346,146 +346,3 @@ class OperacionResponse(BaseModel):
 
     exito: bool
     mensaje: str
-
-
-# ── Facturación ───────────────────────────────────────────
-
-
-class FacturacionCierreResponse(BaseModel):
-    """Lo que se le cobra a un cliente en un período, ya congelado.
-
-    Van las cantidades Y las tarifas: sin ellas una factura discutida no se
-    puede explicar, y subir el precio reescribiría el monto de los meses ya
-    cerrados al recalcularlo.
-    """
-
-    cliente_id: int
-    cliente_nombre: str
-    cliente_rut: str
-    # Primer día del mes facturado.
-    periodo: date
-    causas_materia: int
-    cortes_apelaciones: int
-    cortes_suprema: int
-    tarifa_materia: int
-    tarifa_apelaciones: int
-    tarifa_suprema: int
-    monto: float
-    # ok | sin_datos | error. `error` es un cierre que no se pudo tomar, no un
-    # cliente sin causas: los dos dan monto 0 y no se facturan igual.
-    estado: str
-    detalle: str | None = None
-    fecha_cierre: datetime | None = None
-    # Fecha del archivo de causas con el que se contó. Null = no había ninguno.
-    fecha_archivo_causas: date | None = None
-
-
-class FacturacionPeriodoResponse(BaseModel):
-    periodo: date
-    # Períodos que tienen cierre, del más nuevo al más viejo. Es lo que alimenta
-    # el selector de la pantalla.
-    periodos_disponibles: list[date] = []
-    # true = el período todavía no se ha cerrado y lo que se muestra es una
-    # estimación calculada al momento, que puede cambiar hasta el cierre.
-    es_estimacion: bool = False
-    total_clientes: int
-    total_causas_materia: int
-    total_cortes_apelaciones: int
-    total_cortes_suprema: int
-    total_monto: float
-    # Clientes cuya base no se pudo consultar: el cierre quedó incompleto.
-    clientes_con_error: int = 0
-    cierres: list[FacturacionCierreResponse]
-
-
-class FacturaLineaResponse(BaseModel):
-    """Un mes dentro de la orden de compra. Copia del cierre, no referencia."""
-
-    periodo: date
-    causas_materia: int
-    cortes_apelaciones: int
-    cortes_suprema: int
-    tarifa_materia: int
-    tarifa_apelaciones: int
-    tarifa_suprema: int
-    subtotal: float
-
-
-class FacturaResponse(BaseModel):
-    """Orden de compra emitida.
-
-    **No es un DTE del SII**: no lleva folio autorizado ni timbre electrónico.
-    Es el documento de cobro de la plataforma, con numeración propia.
-
-    El PDF no viaja acá: se descarga por `/facturas/{id}/pdf`. Meterlo en el
-    listado significaría mandar cientos de kilobytes por fila.
-    """
-
-    id: int
-    # Correlativo global de seis dígitos, como se imprime: `000042`.
-    numero: str
-    cliente_id: int
-    cliente_nombre: str
-    # Datos congelados al emitir: si el cliente se muda, esta orden no cambia.
-    razon_social: str
-    rut: str
-    giro: str | None = None
-    direccion: str | None = None
-    comuna: str | None = None
-    ciudad: str | None = None
-    correo: str | None = None
-    fecha_desde: date
-    fecha_hasta: date
-    fecha_emision: datetime
-    total: float
-    emitida_por: str | None = None
-    anulada: bool = False
-    motivo_anulacion: str | None = None
-    lineas: list[FacturaLineaResponse] = []
-
-
-class FacturaListResponse(BaseModel):
-    exito: bool = True
-    total: int
-    # Suma de las órdenes NO anuladas del listado.
-    total_monto: float = 0
-    facturas: list[FacturaResponse]
-
-
-class EmitirFacturaRequest(BaseModel):
-    """Emisión de una orden de compra por rango de fechas.
-
-    El rango se guarda tal como se pide, pero el detalle va por **mes
-    completo**: entra todo mes que se cruce con el rango. Nadie factura media
-    mensualidad, y el cierre —que es de donde salen los montos— es mensual.
-    """
-
-    cliente_id: int
-    fecha_desde: date
-    fecha_hasta: date
-
-    @model_validator(mode="after")
-    def _validar_rango(self) -> "EmitirFacturaRequest":
-        if self.fecha_hasta < self.fecha_desde:
-            raise ValueError("La fecha 'hasta' no puede ser anterior a 'desde'.")
-        return self
-
-
-class AnularFacturaRequest(BaseModel):
-    """El motivo es obligatorio: una orden anulada sin explicación es un agujero
-    en la contabilidad que nadie puede cerrar después."""
-
-    motivo: str = Field(..., min_length=3, max_length=500)
-
-
-class CerrarPeriodoRequest(BaseModel):
-    """Cierre manual desde la consola, para repetir el que falló.
-
-    `periodo` ausente = el mes anterior a hoy, igual que el job del día 1.
-    """
-
-    periodo: date | None = None
-    # Sobrescribe los cierres que ya existan. Solo tiene sentido el mismo día:
-    # después, el archivo de causas del cliente ya es otro y el recuento daría
-    # un número distinto al que se facturó.
-    rehacer: bool = False

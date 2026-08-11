@@ -279,7 +279,7 @@ class ClienteService:
         cliente.nombre = datos.nombre.strip()
         cliente.correo = datos.correo
 
-        # Datos de la cabecera de la orden de compra. Se guardan vacíos como
+        # Datos de la cabecera de la factura. Se guardan vacíos como
         # NULL: una cadena vacía haría que la orden imprimiera la etiqueta con
         # la línea en blanco al lado, que se lee como un dato perdido.
         cliente.giro = (datos.giro or "").strip() or None

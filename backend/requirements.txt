@@ -10,7 +10,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
 openpyxl==3.1.5
-# PDF de las órdenes de compra. reportlab y no WeasyPrint: es Python puro y
+# PDF de las facturas. reportlab y no WeasyPrint: es Python puro y
 # no arrastra GTK/cairo, que en la imagen slim son ~200 MB de dependencias
 # de sistema para dibujar una tabla y un total.
 reportlab==4.2.2

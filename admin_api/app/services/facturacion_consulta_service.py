@@ -1,36 +1,41 @@
 """Lectura de la facturación para la consola.
 
-El cálculo y el cierre viven en `app.services.facturacion_service`, que además
-usa el job del día 1. Acá solo se arma lo que la pantalla necesita: pegarle el
-nombre y el RUT del cliente a cada cierre (que se guardan por `cliente_id`) y
-sumar los totales del período.
+El cálculo y la generación viven en `app.services.facturacion_service`, que
+además usa el job del día 1. Acá solo se arma lo que la pantalla necesita:
+pegarle a cada factura el nombre y el estado **actuales** del cliente —la
+factura guarda la copia congelada, que es otra cosa— y totalizar.
 
-**El período en curso se muestra como estimación.** Preguntar por un mes que
-todavía no cerró es lo primero que hace cualquiera al abrir la pantalla, y
-responder "no hay datos" haría parecer que el módulo está roto. Se cuenta al
-momento y se marca `es_estimacion`: ese número puede cambiar hasta el cierre,
-y decirlo es parte de la respuesta.
+**El período en curso se responde como estimación.** Preguntar cuánto va a salir
+la factura antes de que exista es lo primero que hace cualquiera al abrir la
+pantalla, y responder "no hay datos" haría parecer que el módulo está roto. Se
+cuenta al momento, no se escribe nada y se dice que puede cambiar.
 """
 
 import logging
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundException
 from app.models.maestra.cliente import Cliente
-from app.models.maestra.facturacion_cierre import FacturacionCierre
+from app.models.maestra.factura import Factura
 from app.repositories.cliente_repository import ClienteRepository
-from app.services.facturacion_service import (
-    TARIFA_APELACIONES,
-    TARIFA_MATERIA,
-    TARIFA_SUPREMA,
-    FacturacionService,
-    periodo_de,
-)
-from admin_api.app.schemas.cliente import (
-    FacturacionCierreResponse,
-    FacturacionPeriodoResponse,
+from app.services.factura_service import FacturaService, FiltroFacturas
+from app.services.facturacion_service import FacturacionService, periodo_de
+from app.services.tarifa_service import TarifaService
+
+from admin_api.app.schemas.facturacion import (
+    ClienteConErrorResponse,
+    EstimacionClienteResponse,
+    EstimacionLineaResponse,
+    EstimacionPeriodoResponse,
+    FacturaDetalleResponse,
+    FacturaListResponse,
+    FacturaResponse,
+    GenerarPeriodoResponse,
+    TarifaResponse,
+    TarifasClienteResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,161 +44,168 @@ logger = logging.getLogger(__name__)
 class FacturacionConsultaService:
     def __init__(self, db_maestra: Session):
         self.db = db_maestra
+        self.facturas = FacturaService(db_maestra)
         self.facturacion = FacturacionService(db_maestra)
+        self.tarifas = TarifaService(db_maestra)
         self.clientes = ClienteRepository(db_maestra)
 
-    def periodo(self, periodo: date | None) -> FacturacionPeriodoResponse:
-        """El período pedido; por defecto, el último que tenga cierre.
+    # ── Listado y detalle ─────────────────────────────────
 
-        Si el que se pide no está cerrado, se estima contando ahora. Es la
-        única forma de que la pantalla sirva para lo que se usa el otro 30 del
-        mes: ver cuánto va a salir la factura antes de que salga.
-        """
-        disponibles = self.facturacion.periodos()
-        elegido = (periodo.replace(day=1) if periodo else None) or (
-            disponibles[0] if disponibles else periodo_de(date.today())
+    def listar(self, filtro: FiltroFacturas) -> FacturaListResponse:
+        facturas = self.facturas.listar(filtro)
+        por_id = self.facturas.clientes_por_id()
+        filas = [self._a_response(f, por_id.get(f.cliente_id)) for f in facturas]
+        return FacturaListResponse(
+            total=len(filas),
+            total_monto=self.facturas.total_cobrable(facturas),
+            facturas=filas,
         )
 
-        cierres = self.facturacion.cierres_de(elegido)
-        if cierres:
-            return self._armar(elegido, disponibles, cierres, es_estimacion=False)
-        return self._estimar(elegido, disponibles)
+    def obtener(self, factura_id: int) -> FacturaResponse:
+        factura = self.facturas.obtener(factura_id)
+        return self._a_response(factura, self.clientes.find_by_id(factura.cliente_id))
 
-    def cerrar(self, periodo: date | None, rehacer: bool) -> FacturacionPeriodoResponse:
+    def periodos(self) -> list[date]:
+        return self.facturacion.periodos()
+
+    @staticmethod
+    def _a_response(factura: Factura, cliente: Cliente | None) -> FacturaResponse:
+        return FacturaResponse(
+            id=factura.id,
+            numero=factura.numero_formateado,
+            cliente_id=factura.cliente_id,
+            # Una factura cuyo cliente ya no está en la tabla igual se muestra:
+            # existió y el total del período tiene que cuadrar.
+            cliente_nombre=cliente.nombre if cliente else "(cliente eliminado)",
+            cliente_activo=bool(cliente.activo) if cliente else False,
+            periodo=factura.periodo,
+            fecha_emision=factura.fecha_emision,
+            total=Decimal(factura.total or 0),
+            estado=factura.estado or Factura.ESTADO_EMITIDA,
+            razon_social=factura.razon_social,
+            rut=factura.rut,
+            giro=factura.giro,
+            direccion=factura.direccion,
+            comuna=factura.comuna,
+            ciudad=factura.ciudad,
+            correo=factura.correo,
+            origen_estado=factura.origen_estado or Factura.ORIGEN_OK,
+            origen_detalle=factura.origen_detalle,
+            fecha_archivo_causas=factura.fecha_archivo_causas,
+            emitida_por=factura.emitida_por,
+            anulada=bool(factura.anulada),
+            motivo_anulacion=factura.motivo_anulacion,
+            detalles=[
+                FacturaDetalleResponse(
+                    id=d.id,
+                    tipo=d.tipo,
+                    concepto=d.concepto,
+                    cantidad=d.cantidad or 0,
+                    valor_unitario=Decimal(d.valor_unitario or 0),
+                    valor_total=Decimal(d.valor_total or 0),
+                )
+                for d in factura.detalles
+            ],
+            total_causas=sum(d.cantidad or 0 for d in factura.detalles),
+        )
+
+    # ── Generación ────────────────────────────────────────
+
+    def generar(
+        self, periodo: date | None, rehacer: bool, generado_por: str
+    ) -> GenerarPeriodoResponse:
         elegido = periodo.replace(day=1) if periodo else periodo_de(date.today())
-        cierres = self.facturacion.cerrar_periodo(elegido, rehacer)
-        logger.info("Período %s cerrado desde la consola", elegido)
-        return self._armar(
-            elegido, self.facturacion.periodos(), cierres, es_estimacion=False
+        resultado = self.facturacion.generar_periodo(elegido, rehacer, generado_por)
+        logger.info("Período %s facturado desde la consola por %s", elegido, generado_por)
+        return GenerarPeriodoResponse(
+            periodo=elegido,
+            generadas=len(resultado.generadas),
+            omitidas=len(resultado.omitidas),
+            total_generado=resultado.total_generado,
+            con_error=[
+                ClienteConErrorResponse(
+                    cliente_id=c.cliente_id, cliente_nombre=c.nombre, motivo=motivo
+                )
+                for c, motivo in resultado.con_error
+            ],
         )
 
-    # ── Armado ────────────────────────────────────────────
+    # ── Estimación ────────────────────────────────────────
 
-    def _estimar(
-        self, periodo: date, disponibles: list[date]
-    ) -> FacturacionPeriodoResponse:
-        """Cuenta la cartera de cada cliente AHORA, sin escribir nada."""
-        filas: list[FacturacionCierreResponse] = []
+    def estimar(self, periodo: date | None) -> EstimacionPeriodoResponse:
+        """Cuenta la cartera de cada cliente AHORA y le aplica sus tarifas.
+
+        No escribe nada. El `periodo` que se recibe es solo la etiqueta que se
+        devuelve: lo que se cuenta es la cartera de hoy, porque es la única que
+        existe — el archivo del mes pasado ya fue reemplazado.
+        """
+        elegido = periodo.replace(day=1) if periodo else periodo_de(date.today())
+        ya_generado = bool(
+            self.db.query(Factura.id).filter(Factura.periodo == elegido).first()
+        )
+
+        filas: list[EstimacionClienteResponse] = []
         for cliente in self.clientes.find_all():
-            resumen = self.facturacion.contar_cartera(cliente)
+            resumen, lineas = self.facturacion.estimar(cliente)
+            total = sum((l.valor_total for l in lineas), Decimal("0"))
             filas.append(
-                FacturacionCierreResponse(
+                EstimacionClienteResponse(
                     cliente_id=cliente.cliente_id,
                     cliente_nombre=cliente.nombre,
                     # Descifrado por la propiedad del modelo.
                     cliente_rut=cliente.rut,
-                    periodo=periodo,
-                    causas_materia=resumen.materia,
-                    cortes_apelaciones=resumen.apelaciones,
-                    cortes_suprema=resumen.suprema,
-                    tarifa_materia=TARIFA_MATERIA,
-                    tarifa_apelaciones=TARIFA_APELACIONES,
-                    tarifa_suprema=TARIFA_SUPREMA,
-                    monto=float(resumen.monto),
-                    estado=resumen.estado,
-                    detalle=resumen.detalle,
-                    fecha_cierre=None,
+                    cliente_activo=bool(cliente.activo),
+                    total=total,
+                    total_causas=resumen.total_causas,
+                    origen_estado=resumen.estado,
+                    origen_detalle=resumen.detalle,
                     fecha_archivo_causas=resumen.fecha_archivo,
+                    detalles=[
+                        EstimacionLineaResponse(
+                            tipo=l.tipo,
+                            concepto=l.concepto,
+                            cantidad=l.cantidad,
+                            valor_unitario=l.valor_unitario,
+                            valor_total=l.valor_total,
+                        )
+                        for l in lineas
+                    ],
                 )
             )
-        filas.sort(key=lambda f: (-f.monto, f.cliente_nombre.lower()))
-        return self._totalizar(periodo, disponibles, filas, es_estimacion=True)
 
-    def _armar(
-        self,
-        periodo: date,
-        disponibles: list[date],
-        cierres: list[FacturacionCierre],
-        es_estimacion: bool,
-    ) -> FacturacionPeriodoResponse:
-        # Los clientes se leen de una vez y se indexan: un `find_by_id` por
-        # cierre serían cincuenta consultas para pegar cincuenta nombres.
-        por_id: dict[int, Cliente] = {
-            c.cliente_id: c for c in self.clientes.find_all()
-        }
-        filas = [
-            FacturacionCierreResponse(
-                cliente_id=c.cliente_id,
-                cliente_nombre=self._nombre(por_id.get(c.cliente_id)),
-                cliente_rut=self._rut(por_id.get(c.cliente_id)),
-                periodo=c.periodo,
-                causas_materia=c.causas_materia or 0,
-                cortes_apelaciones=c.cortes_apelaciones or 0,
-                cortes_suprema=c.cortes_suprema or 0,
-                tarifa_materia=c.tarifa_materia,
-                tarifa_apelaciones=c.tarifa_apelaciones,
-                tarifa_suprema=c.tarifa_suprema,
-                monto=float(c.monto or 0),
-                estado=c.estado,
-                detalle=c.detalle,
-                fecha_cierre=c.fecha_cierre,
-                fecha_archivo_causas=c.fecha_archivo_causas,
-            )
-            for c in cierres
-        ]
-        return self._totalizar(periodo, disponibles, filas, es_estimacion)
-
-    @staticmethod
-    def _nombre(cliente: Cliente | None) -> str:
-        # Un cierre cuyo cliente ya no está en la tabla igual se muestra: la
-        # factura existió y el total del período tiene que cuadrar.
-        return cliente.nombre if cliente else "(cliente eliminado)"
-
-    @staticmethod
-    def _rut(cliente: Cliente | None) -> str:
-        return cliente.rut if cliente else "—"
-
-    @staticmethod
-    def _totalizar(
-        periodo: date,
-        disponibles: list[date],
-        filas: list[FacturacionCierreResponse],
-        es_estimacion: bool,
-    ) -> FacturacionPeriodoResponse:
-        return FacturacionPeriodoResponse(
-            periodo=periodo,
-            periodos_disponibles=disponibles,
-            es_estimacion=es_estimacion,
+        # Por monto y no alfabéticamente: la pantalla se abre para ver cuánto se
+        # va a facturar, y el que más pesa va arriba.
+        filas.sort(key=lambda f: (-f.total, f.cliente_nombre.lower()))
+        return EstimacionPeriodoResponse(
+            periodo=elegido,
+            ya_generado=ya_generado,
             total_clientes=len(filas),
-            total_causas_materia=sum(f.causas_materia for f in filas),
-            total_cortes_apelaciones=sum(f.cortes_apelaciones for f in filas),
-            total_cortes_suprema=sum(f.cortes_suprema for f in filas),
-            total_monto=sum(f.monto for f in filas),
+            total_monto=sum((f.total for f in filas), Decimal("0")),
+            total_causas=sum(f.total_causas for f in filas),
             clientes_con_error=sum(
-                1 for f in filas if f.estado == FacturacionCierre.ESTADO_ERROR
+                1 for f in filas if f.origen_estado == Factura.ORIGEN_ERROR
             ),
-            cierres=filas,
+            clientes=filas,
         )
 
-    def detalle_cliente(self, cliente_id: int) -> list[FacturacionCierreResponse]:
-        """Historial de un cliente, del período más nuevo al más viejo."""
+    # ── Tarifas ───────────────────────────────────────────
+
+    def tarifas_de(self, cliente_id: int) -> TarifasClienteResponse:
         cliente = self.clientes.find_by_id(cliente_id)
         if not cliente:
             raise NotFoundException("Cliente no encontrado")
-
-        cierres = (
-            self.db.query(FacturacionCierre)
-            .filter(FacturacionCierre.cliente_id == cliente_id)
-            .order_by(FacturacionCierre.periodo.desc())
-            .all()
+        return TarifasClienteResponse(
+            cliente_id=cliente_id,
+            cliente_nombre=cliente.nombre,
+            tarifas=[
+                TarifaResponse(
+                    id=t.id,
+                    cliente_id=t.cliente_id,
+                    concepto=t.concepto,
+                    valor_unitario=Decimal(t.valor_unitario),
+                    activo=bool(t.activo),
+                )
+                for t in self.tarifas.listar(cliente_id)
+            ],
+            por_defecto=self.tarifas.por_defecto(),
         )
-        return [
-            FacturacionCierreResponse(
-                cliente_id=c.cliente_id,
-                cliente_nombre=cliente.nombre,
-                cliente_rut=cliente.rut,
-                periodo=c.periodo,
-                causas_materia=c.causas_materia or 0,
-                cortes_apelaciones=c.cortes_apelaciones or 0,
-                cortes_suprema=c.cortes_suprema or 0,
-                tarifa_materia=c.tarifa_materia,
-                tarifa_apelaciones=c.tarifa_apelaciones,
-                tarifa_suprema=c.tarifa_suprema,
-                monto=float(c.monto or 0),
-                estado=c.estado,
-                detalle=c.detalle,
-                fecha_cierre=c.fecha_cierre,
-                fecha_archivo_causas=c.fecha_archivo_causas,
-            )
-            for c in cierres
-        ]

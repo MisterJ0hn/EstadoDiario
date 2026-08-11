@@ -1,57 +1,72 @@
-"""Emisión de las órdenes de compra.
+"""Consulta de las facturas emitidas: listado, filtros, detalle, PDF y anulación.
 
-Una orden de compra cubre un **rango de fechas** y suma los cierres mensuales
-que caen dentro. No recalcula nada: los montos salen de `facturacion_cierre`,
-que ya se congeló el día 1 de cada mes (ver `facturacion_service`). Es lo que
-hace que el documento sea reproducible — emitir dos veces el mismo rango da el
-mismo total, aunque el estudio haya cargado causas nuevas en el medio.
+Acá **no se calcula nada**. La factura se genera una vez, el día 1, en
+`facturacion_service`, y desde entonces es un documento cerrado: este módulo
+solo la busca y la devuelve. Es la separación que hace que una factura no cambie
+de monto porque alguien abrió la pantalla.
 
-Un mes del rango **sin cierre no se factura y se avisa**. La alternativa
-—contarlo al momento y meterlo igual— mezclaría en un mismo documento montos
-congelados con montos que cambian solos, y nadie podría después decir cuál era
-cuál. Si falta un mes, lo que corresponde es cerrarlo y volver a emitir.
+**Sobre el filtro por RUT.** El RUT del cliente está cifrado en la base
+(`Cliente.rut_cifrado`, con un HMAC en `rut_hash` por donde se busca), así que
+buscar por RUT es **coincidencia exacta** y no un LIKE: no existe forma de hacer
+una búsqueda parcial sobre un campo cifrado sin descifrar la tabla entera. La
+factura sí guarda el RUT en claro —es parte del documento impreso—, y es contra
+esa copia que se filtra, normalizando puntos y guion para que "12.345.678-9" y
+"12345678-9" encuentren lo mismo.
 """
 
 import logging
-from datetime import date, datetime, timezone
+import re
+from datetime import date
+from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.models.maestra.cliente import Cliente
-from app.models.maestra.factura import Factura, FacturaLinea
-from app.models.maestra.facturacion_cierre import FacturacionCierre
+from app.models.maestra.factura import Factura
 from app.repositories.cliente_repository import ClienteRepository
-from app.services import factura_pdf
 
 logger = logging.getLogger(__name__)
 
 
-def meses_del_rango(desde: date, hasta: date) -> List[date]:
-    """Los primeros de mes que caen en el rango, en orden.
+def normalizar_rut(rut: Optional[str]) -> str:
+    """`12.345.678-K` → `12345678k`. Sin puntos, sin guion y en minúsculas."""
+    return re.sub(r"[^0-9kK]", "", rut or "").lower()
 
-    Un mes entra si **empieza** dentro del rango o si el rango empieza dentro
-    de él: de 15-01 a 15-03 se facturan enero, febrero y marzo. Es lo que
-    espera quien escribe un rango a mano — nadie pretende media mensualidad—,
-    y por eso el rango se guarda tal como se pidió pero el detalle va por mes
-    completo.
+
+class FiltroFacturas:
+    """Los filtros del listado, juntos.
+
+    Van en un objeto y no en ocho parámetros sueltos porque el endpoint, la
+    pantalla del cliente y el listado general usan los mismos y con firmas
+    largas es cuestión de tiempo que alguien invierta dos.
     """
-    if hasta < desde:
-        raise BadRequestException("La fecha 'hasta' no puede ser anterior a 'desde'")
 
-    meses: List[date] = []
-    actual = desde.replace(day=1)
-    fin = hasta.replace(day=1)
-    while actual <= fin:
-        meses.append(actual)
-        actual = (
-            date(actual.year + 1, 1, 1)
-            if actual.month == 12
-            else date(actual.year, actual.month + 1, 1)
-        )
-    return meses
+    def __init__(
+        self,
+        cliente_id: Optional[int] = None,
+        desde: Optional[date] = None,
+        hasta: Optional[date] = None,
+        rut: Optional[str] = None,
+        cliente_activo: Optional[bool] = None,
+        busqueda: Optional[str] = None,
+        estado: Optional[str] = None,
+        incluir_anuladas: bool = True,
+    ):
+        self.cliente_id = cliente_id
+        # Acotan el PERÍODO facturado, no la fecha de generación: se busca "la
+        # factura de marzo", no "la que se generó en abril".
+        self.desde = desde
+        self.hasta = hasta
+        self.rut = rut
+        self.cliente_activo = cliente_activo
+        # Nombre del cliente o número de factura, en el mismo campo: quien busca
+        # escribe lo que tiene a mano y no quiere elegir antes en qué columna.
+        self.busqueda = busqueda
+        self.estado = estado
+        self.incluir_anuladas = incluir_anuladas
 
 
 class FacturaService:
@@ -59,183 +74,101 @@ class FacturaService:
         self.db = db_maestra
         self.clientes = ClienteRepository(db_maestra)
 
-    # ── Emisión ───────────────────────────────────────────
-
-    def emitir(
-        self,
-        cliente_id: int,
-        desde: date,
-        hasta: date,
-        emitida_por: Optional[str] = None,
-    ) -> Factura:
-        """Emite la orden de compra del cliente para el rango indicado."""
-        cliente = self.clientes.find_by_id(cliente_id)
-        if not cliente:
-            raise NotFoundException("Cliente no encontrado")
-
-        meses = meses_del_rango(desde, hasta)
-        cierres = self._cierres_de(cliente_id, meses)
-
-        faltantes = [m for m in meses if m not in cierres]
-        if faltantes:
-            nombres = ", ".join(factura_pdf.mes_largo(m) for m in faltantes)
-            raise BadRequestException(
-                f"No hay cierre de facturación para {nombres}. Cierre esos períodos "
-                f"antes de emitir: una orden de compra solo suma montos ya congelados."
-            )
-
-        factura = Factura(
-            numero=self._siguiente_numero(),
-            cliente_id=cliente.cliente_id,
-            fecha_desde=desde,
-            fecha_hasta=hasta,
-            fecha_emision=datetime.now(timezone.utc),
-            emitida_por=emitida_por,
-            # Copia de los datos del cliente: la orden emitida no cambia si
-            # después se corrige la dirección.
-            razon_social=cliente.nombre,
-            rut=cliente.rut,
-            giro=cliente.giro,
-            direccion=cliente.direccion,
-            comuna=cliente.comuna,
-            ciudad=cliente.ciudad,
-            correo=cliente.correo,
-        )
-
-        total = 0.0
-        for mes in meses:
-            cierre = cierres[mes]
-            subtotal = float(cierre.monto or 0)
-            total += subtotal
-            factura.lineas.append(
-                FacturaLinea(
-                    periodo=mes,
-                    causas_materia=cierre.causas_materia or 0,
-                    cortes_apelaciones=cierre.cortes_apelaciones or 0,
-                    cortes_suprema=cierre.cortes_suprema or 0,
-                    tarifa_materia=cierre.tarifa_materia,
-                    tarifa_apelaciones=cierre.tarifa_apelaciones,
-                    tarifa_suprema=cierre.tarifa_suprema,
-                    subtotal=subtotal,
-                    facturacion_cierre_id=cierre.id,
-                )
-            )
-        factura.total = total
-
-        # El PDF se dibuja ANTES del commit: si reventara, no queda una orden
-        # con un número consumido y sin documento que entregar.
-        factura.pdf = factura_pdf.generar(self._a_datos_pdf(factura))
-        factura.pdf_nombre = f"orden-compra-{factura.numero_formateado}.pdf"
-
-        self.db.add(factura)
-        self.db.commit()
-        self.db.refresh(factura)
-        logger.info(
-            "Orden de compra %s emitida al cliente %s por %s ($%s)",
-            factura.numero_formateado, cliente.guid, emitida_por or "?", total,
-        )
-        return factura
-
-    def _cierres_de(
-        self, cliente_id: int, meses: List[date]
-    ) -> dict[date, FacturacionCierre]:
-        """{mes: cierre} para los meses pedidos, en una sola consulta."""
-        filas = (
-            self.db.query(FacturacionCierre)
-            .filter(
-                FacturacionCierre.cliente_id == cliente_id,
-                FacturacionCierre.periodo.in_(meses),
-            )
-            .all()
-        )
-        # Un cierre en estado `error` es un mes que no se pudo contar; entra
-        # igual porque su monto es el que se congeló, y el que decide si eso se
-        # cobra o se rehace es una persona, no este método. Lo que no puede
-        # pasar es que desaparezca sin que nadie lo note: por eso el estado
-        # viaja en la respuesta de la API.
-        return {f.periodo: f for f in filas}
-
-    def _siguiente_numero(self) -> int:
-        """El siguiente correlativo global, sin huecos ni repetidos.
-
-        Va con `LOCK TABLE ... IN EXCLUSIVE MODE` y no con una secuencia de
-        PostgreSQL a propósito: una secuencia **deja huecos** cuando la
-        transacción se deshace —los nextval no se revierten— y un talonario con
-        el número 47 faltante es algo que después nadie puede explicar. El
-        bloqueo serializa la emisión, que es exactamente lo que se quiere: se
-        emiten unas pocas al mes y son de las poquísimas operaciones donde
-        esperar 20 ms vale más que la concurrencia.
-
-        EXCLUSIVE deja pasar los SELECT (el listado sigue respondiendo) y
-        bloquea solo a otro que esté emitiendo al mismo tiempo. Se libera al
-        cerrar la transacción, que es el commit de `emitir`.
-        """
-        self.db.execute(text("LOCK TABLE factura IN EXCLUSIVE MODE"))
-        maximo = self.db.execute(text("SELECT COALESCE(MAX(numero), 0) FROM factura")).scalar()
-        return int(maximo or 0) + 1
-
-    @staticmethod
-    def _a_datos_pdf(factura: Factura) -> factura_pdf.DatosFactura:
-        """Traduce el modelo al contrato de dibujo. La traducción vive acá y no
-        en `factura_pdf` para que ese módulo no dependa de la base y se pueda
-        probar solo."""
-        return factura_pdf.DatosFactura(
-            numero=factura.numero_formateado,
-            fecha_emision=factura.fecha_emision,
-            fecha_desde=factura.fecha_desde,
-            fecha_hasta=factura.fecha_hasta,
-            razon_social=factura.razon_social,
-            rut=factura.rut,
-            giro=factura.giro,
-            direccion=factura.direccion,
-            comuna=factura.comuna,
-            ciudad=factura.ciudad,
-            correo=factura.correo,
-            lineas=[
-                factura_pdf.LineaFactura(
-                    periodo=l.periodo,
-                    causas_materia=l.causas_materia or 0,
-                    cortes_apelaciones=l.cortes_apelaciones or 0,
-                    cortes_suprema=l.cortes_suprema or 0,
-                    tarifa_materia=l.tarifa_materia,
-                    tarifa_apelaciones=l.tarifa_apelaciones,
-                    tarifa_suprema=l.tarifa_suprema,
-                    subtotal=float(l.subtotal or 0),
-                )
-                for l in factura.lineas
-            ],
-            total=float(factura.total or 0),
-            emitida_por=factura.emitida_por,
-        )
-
     # ── Consulta ──────────────────────────────────────────
 
-    def listar(
-        self,
-        cliente_id: Optional[int] = None,
-        desde: Optional[date] = None,
-        hasta: Optional[date] = None,
-    ) -> List[Factura]:
-        """Órdenes emitidas, de la más nueva a la más vieja.
+    def listar(self, filtro: Optional[FiltroFacturas] = None) -> List[Factura]:
+        """Facturas que cumplen el filtro, de la más nueva a la más vieja.
 
-        El filtro de fechas va contra el RANGO facturado y no contra la fecha
-        de emisión: se busca "la orden de marzo", no "la que emití en abril".
-        Una orden entra si su rango se cruza con el pedido.
+        El detalle viaja con `selectinload`: el listado muestra el total de
+        conceptos por fila y sin esto serían tantas consultas como facturas.
         """
-        query = self.db.query(Factura)
-        if cliente_id:
-            query = query.filter(Factura.cliente_id == cliente_id)
-        if desde:
-            query = query.filter(Factura.fecha_hasta >= desde)
-        if hasta:
-            query = query.filter(Factura.fecha_desde <= hasta)
+        filtro = filtro or FiltroFacturas()
+        query = self.db.query(Factura).options(selectinload(Factura.detalles))
+
+        if filtro.cliente_id:
+            query = query.filter(Factura.cliente_id == filtro.cliente_id)
+
+        # El período es el primer día del mes: una factura de julio entra en un
+        # filtro "desde 15-07" porque lo que se pide es el mes, no el día.
+        if filtro.desde:
+            query = query.filter(Factura.fecha_hasta >= filtro.desde)
+        if filtro.hasta:
+            query = query.filter(Factura.fecha_desde <= filtro.hasta)
+
+        if filtro.rut:
+            query = query.filter(Factura.cliente_id.in_(self._ids_por_rut(filtro.rut)))
+
+        if filtro.cliente_activo is not None:
+            query = query.filter(
+                Factura.cliente_id.in_(self._ids_por_actividad(filtro.cliente_activo))
+            )
+
+        if filtro.estado:
+            query = query.filter(Factura.estado == filtro.estado)
+
+        if not filtro.incluir_anuladas:
+            query = query.filter(Factura.anulada.is_(False))
+
+        if filtro.busqueda:
+            termino = filtro.busqueda.strip()
+            if termino:
+                condiciones = [Factura.razon_social.ilike(f"%{termino}%")]
+                # Un término que es todo dígitos también se prueba como número
+                # de factura, con y sin los ceros de relleno: la gente copia
+                # "000042" del PDF y escribe "42" de memoria.
+                solo_digitos = termino.lstrip("0") or "0"
+                if solo_digitos.isdigit():
+                    condiciones.append(Factura.numero == int(solo_digitos))
+                query = query.filter(or_(*condiciones))
+
         return query.order_by(Factura.numero.desc()).all()
 
+    def _ids_por_rut(self, rut: str) -> List[int]:
+        """Los cliente_id cuyo RUT coincide, comparando ya normalizado.
+
+        Se resuelve en Python y no en SQL a propósito: la comparación tiene que
+        ignorar puntos y guion, y la columna de la factura guarda el RUT tal
+        como estaba escrito el día que se emitió. Son unas pocas facturas por
+        cliente y por mes; no vale la pena una columna normalizada más.
+        """
+        buscado = normalizar_rut(rut)
+        if not buscado:
+            return []
+        return [
+            c.cliente_id
+            for c in self.clientes.find_all()
+            if normalizar_rut(c.rut) == buscado
+        ]
+
+    def _ids_por_actividad(self, activo: bool) -> List[int]:
+        return [c.cliente_id for c in self.clientes.find_all() if bool(c.activo) is activo]
+
     def obtener(self, factura_id: int) -> Factura:
-        factura = self.db.get(Factura, factura_id)
+        factura = (
+            self.db.query(Factura)
+            .options(selectinload(Factura.detalles))
+            .filter(Factura.id == factura_id)
+            .first()
+        )
         if not factura:
-            raise NotFoundException("Orden de compra no encontrada")
+            raise NotFoundException("Factura no encontrada")
         return factura
+
+    @staticmethod
+    def total_cobrable(facturas: List[Factura]) -> Decimal:
+        """Suma de las NO anuladas. El total de un listado tiene que ser lo que
+        se puede cobrar; incluir las anuladas da una cifra que no existe."""
+        return sum(
+            (Decimal(f.total or 0) for f in facturas if not f.anulada), Decimal("0")
+        )
+
+    def clientes_por_id(self) -> dict[int, Cliente]:
+        """Los clientes indexados, para pegarle a cada factura el nombre y el
+        estado actuales. Se leen de una vez: un `find_by_id` por fila serían
+        tantas consultas como facturas solo para mostrar un nombre."""
+        return {c.cliente_id: c for c in self.clientes.find_all()}
+
+    # ── Documento ─────────────────────────────────────────
 
     def pdf(self, factura_id: int) -> tuple[bytes, str]:
         """El PDF **guardado**, no uno nuevo.
@@ -248,18 +181,39 @@ class FacturaService:
         factura = self.obtener(factura_id)
         if not factura.pdf:
             raise NotFoundException(
-                "Esta orden de compra no tiene PDF guardado. Emítala de nuevo."
+                "Esta factura no tiene PDF guardado. Regenere el período."
             )
-        return bytes(factura.pdf), factura.pdf_nombre or f"orden-{factura.numero}.pdf"
+        return bytes(factura.pdf), factura.pdf_nombre or f"factura-{factura.numero}.pdf"
+
+    # ── Estado ────────────────────────────────────────────
 
     def anular(self, factura_id: int, motivo: str) -> Factura:
-        """Marca la orden como anulada. **No la borra ni libera el número**: un
+        """Marca la factura como anulada. **No la borra ni libera el número**: un
         correlativo con huecos es imposible de auditar, y el PDF entregado
         existe aunque se haya anulado."""
         factura = self.obtener(factura_id)
-        factura.anulada = True
-        factura.motivo_anulacion = motivo
+        factura.marcar_anulada(motivo)
         self.db.commit()
         self.db.refresh(factura)
-        logger.info("Orden de compra %s anulada: %s", factura.numero_formateado, motivo)
+        logger.info("Factura %s anulada: %s", factura.numero_formateado, motivo)
+        return factura
+
+    def marcar_pagada(self, factura_id: int, pagada: bool) -> Factura:
+        """Pone o saca la marca de pagada.
+
+        No hay integración con ningún banco: lo registra una persona que vio el
+        pago. Una factura anulada no se puede marcar pagada, que es lo que
+        evita cuadrar una contabilidad contra un documento que no existe.
+        """
+        factura = self.obtener(factura_id)
+        if factura.anulada:
+            raise BadRequestException(
+                "Una factura anulada no se puede marcar como pagada."
+            )
+        factura.estado = Factura.ESTADO_PAGADA if pagada else Factura.ESTADO_EMITIDA
+        self.db.commit()
+        self.db.refresh(factura)
+        logger.info(
+            "Factura %s marcada como %s", factura.numero_formateado, factura.estado
+        )
         return factura

@@ -75,33 +75,24 @@ def mes_largo(periodo: date) -> str:
     return f"{MESES[periodo.month - 1]} {periodo.year}"
 
 
-def dia_mes_anio(valor: Optional[date]) -> str:
-    return valor.strftime("%d-%m-%Y") if valor else "—"
-
-
 class LineaFactura:
-    """Una fila del detalle. Es un contrato de dibujo, no el modelo ORM: este
-    módulo no importa nada de la base para poder probarse solo."""
+    """Una fila del detalle: un concepto, su cantidad y su valor.
+
+    Es un contrato de dibujo, no el modelo ORM: este módulo no importa nada de
+    la base para poder probarse solo.
+    """
 
     def __init__(
         self,
-        periodo: date,
-        causas_materia: int,
-        cortes_apelaciones: int,
-        cortes_suprema: int,
-        tarifa_materia: int,
-        tarifa_apelaciones: int,
-        tarifa_suprema: int,
-        subtotal: float,
+        concepto: str,
+        cantidad: int,
+        valor_unitario: float,
+        valor_total: float,
     ):
-        self.periodo = periodo
-        self.causas_materia = causas_materia
-        self.cortes_apelaciones = cortes_apelaciones
-        self.cortes_suprema = cortes_suprema
-        self.tarifa_materia = tarifa_materia
-        self.tarifa_apelaciones = tarifa_apelaciones
-        self.tarifa_suprema = tarifa_suprema
-        self.subtotal = subtotal
+        self.concepto = concepto
+        self.cantidad = cantidad
+        self.valor_unitario = valor_unitario
+        self.valor_total = valor_total
 
 
 class DatosFactura:
@@ -111,8 +102,7 @@ class DatosFactura:
         self,
         numero: str,
         fecha_emision: datetime,
-        fecha_desde: date,
-        fecha_hasta: date,
+        periodo: date,
         razon_social: str,
         rut: str,
         giro: Optional[str],
@@ -126,8 +116,10 @@ class DatosFactura:
     ):
         self.numero = numero
         self.fecha_emision = fecha_emision
-        self.fecha_desde = fecha_desde
-        self.fecha_hasta = fecha_hasta
+        # Primer día del mes facturado. Una factura cubre un mes entero, así que
+        # se imprime "julio 2026" y no un rango de fechas: el rango invitaba a
+        # creer que se podía facturar media mensualidad.
+        self.periodo = periodo
         self.razon_social = razon_social
         self.rut = rut
         self.giro = giro
@@ -144,6 +136,10 @@ class DatosFactura:
         """`Providencia, Santiago`, omitiendo lo que falte."""
         partes = [p for p in (self.comuna, self.ciudad) if p]
         return ", ".join(partes) if partes else None
+
+    @property
+    def total_causas(self) -> int:
+        return sum(l.cantidad for l in self.lineas)
 
 
 # ── Dibujo ────────────────────────────────────────────────
@@ -183,7 +179,7 @@ def _cabecera(c, datos: DatosFactura, y: float) -> float:
     c.setLineWidth(1)
     c.rect(caja_x, caja_y, caja_ancho, caja_alto, stroke=1, fill=0)
 
-    _texto(c, caja_x + 5 * mm, caja_techo - 6 * mm, "ORDEN DE COMPRA",
+    _texto(c, caja_x + 5 * mm, caja_techo - 6 * mm, "FACTURA",
            tam=7.5, color=ACENTO, negrita=True)
     _texto(c, caja_x + 5 * mm, caja_techo - 13 * mm, f"N° {datos.numero}",
            tam=15, negrita=True)
@@ -211,24 +207,32 @@ def _bloque_cliente(c, datos: DatosFactura, y: float) -> float:
         y -= 5 * mm
 
     y -= 2 * mm
-    _texto(c, MARGEN, y,
-           f"Período facturado: {dia_mes_anio(datos.fecha_desde)} al "
-           f"{dia_mes_anio(datos.fecha_hasta)}", tam=9.5, negrita=True)
+    _texto(c, MARGEN, y, f"Período facturado: {mes_largo(datos.periodo)}",
+           tam=9.5, negrita=True)
     return y - 8 * mm
 
 
 # Columnas del detalle: (encabezado, x relativo al margen, alineación).
 # El x es el borde DERECHO en las numéricas, que es como se alinean los números.
+# Cuatro columnas y no ocho: el detalle pasó de ser un mes por fila con sus tres
+# pares cantidad/precio a ser un concepto por fila, que es como se lee una
+# factura y como se discute cuando el cliente pregunta.
 _COLUMNAS = [
-    ("Período", 0, "izq"),
-    ("Materia", 62, "der"),
-    ("$", 78, "der"),
-    ("Apelac.", 100, "der"),
-    ("$", 116, "der"),
-    ("Suprema", 140, "der"),
-    ("$", 156, "der"),
-    ("Subtotal", 170, "der"),
+    ("Concepto", 0, "izq"),
+    ("Cantidad", 110, "der"),
+    ("Valor unitario", 140, "der"),
+    ("Valor total", 170, "der"),
 ]
+
+
+def _fila_detalle(c, valores, y: float, tam: float = 8.5, negrita_total: bool = False):
+    for (texto, dx, alineacion) in valores:
+        x = MARGEN + dx * mm
+        negrita = negrita_total and dx == 170
+        if alineacion == "der":
+            _texto_der(c, x, y, texto, tam=tam, negrita=negrita)
+        else:
+            _texto(c, x, y, texto, tam=tam, negrita=negrita)
 
 
 def _detalle(c, datos: DatosFactura, y: float) -> float:
@@ -248,24 +252,24 @@ def _detalle(c, datos: DatosFactura, y: float) -> float:
             _texto(c, x, y, titulo, tam=7.5, color=GRIS, negrita=True)
     y -= 8 * mm
 
+    if not datos.lineas:
+        # Una factura en cero se imprime igual y lo dice. Una tabla vacía sin
+        # explicación parece un PDF que se generó mal.
+        _texto(c, MARGEN, y, "Sin causas en la cartera del período.", tam=8.5, color=GRIS)
+        return y - 8 * mm
+
     for linea in datos.lineas:
-        valores = [
-            (mes_largo(linea.periodo), 0, "izq"),
-            (f"{linea.causas_materia}", 62, "der"),
-            (pesos(linea.causas_materia * linea.tarifa_materia), 78, "der"),
-            (f"{linea.cortes_apelaciones}", 100, "der"),
-            (pesos(linea.cortes_apelaciones * linea.tarifa_apelaciones), 116, "der"),
-            (f"{linea.cortes_suprema}", 140, "der"),
-            (pesos(linea.cortes_suprema * linea.tarifa_suprema), 156, "der"),
-            (pesos(linea.subtotal), 170, "der"),
-        ]
-        for texto, dx, alineacion in valores:
-            x = MARGEN + dx * mm
-            negrita = dx == 170
-            if alineacion == "der":
-                _texto_der(c, x, y, texto, tam=8.5, negrita=negrita)
-            else:
-                _texto(c, x, y, texto, tam=8.5, negrita=negrita)
+        _fila_detalle(
+            c,
+            [
+                (linea.concepto, 0, "izq"),
+                (f"{linea.cantidad}", 110, "der"),
+                (pesos(linea.valor_unitario), 140, "der"),
+                (pesos(linea.valor_total), 170, "der"),
+            ],
+            y,
+            negrita_total=True,
+        )
 
         y -= 3 * mm
         c.setStrokeColor(GRIS_CLARO)
@@ -273,18 +277,23 @@ def _detalle(c, datos: DatosFactura, y: float) -> float:
         c.line(MARGEN, y, MARGEN + ancho_util, y)
         y -= 5 * mm
 
-    # Las tarifas, al pie del detalle: sin esto las columnas de pesos son
-    # números sin explicación, y son justo lo que un cliente pregunta.
-    if datos.lineas:
-        t = datos.lineas[0]
-        _texto(c, MARGEN, y,
-               f"Tarifas aplicadas: causa por materia {pesos(t.tarifa_materia)} · "
-               f"Corte de Apelaciones {pesos(t.tarifa_apelaciones)} · "
-               f"Corte Suprema {pesos(t.tarifa_suprema)}, por causa y por mes.",
-               tam=7.5, color=GRIS)
-        y -= 6 * mm
+    # Total de causas: es la pregunta que sigue a "cuánto", y sumar la columna a
+    # mano sobre diez materias es justo lo que uno no quiere hacer al revisar.
+    _fila_detalle(
+        c,
+        [
+            ("Total de causas facturadas", 0, "izq"),
+            (f"{datos.total_causas}", 110, "der"),
+        ],
+        y,
+        tam=8,
+    )
+    y -= 6 * mm
 
-    return y
+    _texto(c, MARGEN, y,
+           "Valores por causa y por mes, según las tarifas acordadas con el cliente.",
+           tam=7.5, color=GRIS)
+    return y - 6 * mm
 
 
 def _total(c, datos: DatosFactura, y: float) -> float:
@@ -320,7 +329,7 @@ def _pie(c, datos: DatosFactura) -> None:
     c.line(MARGEN, y + 6 * mm, ANCHO - MARGEN, y + 6 * mm)
 
     _texto(c, MARGEN, y,
-           "Orden de compra emitida por el sistema. No constituye documento "
+           "Factura emitida por el sistema. No constituye documento "
            "tributario electrónico del SII.", tam=7.5, color=GRIS)
     if datos.emitida_por:
         _texto(c, MARGEN, y - 4.5 * mm, f"Emitida por {datos.emitida_por}.",
@@ -348,11 +357,9 @@ def generar(datos: DatosFactura) -> bytes:
             strength=128,
         ),
     )
-    c.setTitle(f"Orden de compra {datos.numero} - {datos.razon_social}")
+    c.setTitle(f"Factura {datos.numero} - {datos.razon_social}")
     c.setAuthor("Estado Diario")
-    c.setSubject(
-        f"Período {dia_mes_anio(datos.fecha_desde)} a {dia_mes_anio(datos.fecha_hasta)}"
-    )
+    c.setSubject(f"Período {mes_largo(datos.periodo)}")
 
     y = ALTO - MARGEN
     y = _cabecera(c, datos, y)

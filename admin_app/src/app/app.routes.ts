@@ -52,6 +52,16 @@ export const routes: Routes = [
               ),
           },
           {
+            // Antes de `:id`: con la ruta dinámica primero, `tarifas` entraría
+            // como id de cliente y la ficha intentaría cargar un cliente que no
+            // existe.
+            path: ':id/tarifas',
+            loadComponent: () =>
+              import('./features/admin/facturacion/tarifas-cliente.component').then(
+                (m) => m.TarifasClienteComponent
+              ),
+          },
+          {
             path: ':id',
             loadComponent: () =>
               import('./features/admin/clientes/cliente-detalle.component').then(
@@ -61,24 +71,38 @@ export const routes: Routes = [
         ],
       },
       {
-        // Facturación: qué se le cobra a cada cliente por su cartera. Va suelta
-        // y no bajo /clientes porque se mira por período —todos los clientes de
-        // un mes— y no cliente por cliente.
+        // Facturación. El listado es la pantalla principal: lo que se busca acá
+        // es una factura concreta —la de tal cliente, la de tal mes, la que el
+        // cliente reclama por su número—, y eso es una búsqueda.
+        //
+        // `/facturacion?cliente=12` es el mismo listado acotado a un cliente, a
+        // donde lleva el botón "Facturas" de su ficha. No hay una pantalla
+        // aparte para eso: sería la misma duplicada.
         path: 'facturacion',
-        loadComponent: () =>
-          import('./features/admin/facturacion/facturacion.component').then(
-            (m) => m.FacturacionComponent
-          ),
-      },
-      {
-        // Las órdenes de compra son el DOCUMENTO; /facturacion es el cálculo.
-        // Van en pantallas distintas porque se usan en momentos distintos: el
-        // cálculo se mira todo el mes, la orden se emite una vez.
-        path: 'ordenes-compra',
-        loadComponent: () =>
-          import('./features/admin/facturacion/ordenes-compra.component').then(
-            (m) => m.OrdenesCompraComponent
-          ),
+        children: [
+          {
+            path: '',
+            loadComponent: () =>
+              import('./features/admin/facturacion/facturas-list.component').then(
+                (m) => m.FacturasListComponent
+              ),
+          },
+          {
+            // Antes de `:id` por lo mismo que las tarifas del cliente.
+            path: 'estimacion',
+            loadComponent: () =>
+              import('./features/admin/facturacion/estimacion.component').then(
+                (m) => m.EstimacionComponent
+              ),
+          },
+          {
+            path: ':id',
+            loadComponent: () =>
+              import('./features/admin/facturacion/factura-detalle.component').then(
+                (m) => m.FacturaDetalleComponent
+              ),
+          },
+        ],
       },
       {
         // Un solo módulo con paneles: se configuran juntos al montar el

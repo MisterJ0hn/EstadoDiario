@@ -43,7 +43,7 @@ export interface Cliente {
    */
   causas_activas: number;
   /**
-   * Datos comerciales para la cabecera de la orden de compra. Opcionales: el
+   * Datos comerciales para la cabecera de la factura. Opcionales: el
    * cliente ya existe sin ellos y la orden omite lo que falte en vez de
    * imprimir una etiqueta con la línea vacía al lado.
    */
@@ -117,7 +117,7 @@ export interface ClienteUpdate {
   correo: string;
   /** Ampliar o reducir lo contratado. No puede quedar bajo los usuarios activos. */
   cal?: number | null;
-  /** Cabecera de la orden de compra. Vacío = se guarda nulo y no se imprime. */
+  /** Cabecera de la factura. Vacío = se guarda nulo y no se imprime. */
   giro?: string | null;
   direccion?: string | null;
   comuna?: string | null;

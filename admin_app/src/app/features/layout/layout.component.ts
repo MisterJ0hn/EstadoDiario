@@ -57,8 +57,10 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
   {
     titulo: 'Plataforma',
     items: [
+      // Una sola entrada: el cálculo y el documento dejaron de ser dos cosas.
+      // La estimación del mes en curso cuelga de acá adentro, que es donde se
+      // busca cuando ya se está mirando la facturación.
       { ruta: '/facturacion', etiqueta: 'Facturación', icono: ICONO.barras },
-      { ruta: '/ordenes-compra', etiqueta: 'Órdenes de compra', icono: ICONO.bitacora },
       { ruta: '/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje },
     ],
   },

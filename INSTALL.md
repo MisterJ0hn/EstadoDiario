@@ -299,60 +299,86 @@ override por cliente en su ficha) y la aplica un job nocturno, base por base:
 30 3 * * * docker exec ed_backend python -m app.jobs.purgar_logs >> /var/log/estado_diario_purga.log 2>&1
 ```
 
-## Cierre de Facturación
+## Facturación Mensual
 
-Se cobra por cantidad de causas: **$1** por causa de materia vigente, **$2**
-por causa de Corte de Apelaciones y **$3** por causa de Corte Suprema, sobre el
-último archivo de causas que cargó cada cliente.
+Se cobra por cantidad de causas de la cartera vigente: una línea por materia
+(Civil, Cobranza, Familia, Laboral, Penal), más Corte de Apelaciones y Corte
+Suprema. El precio de cada concepto sale de las **tarifas del cliente**
+(`tarifa_cliente`), y un concepto sin fila se cobra al valor por defecto de la
+plataforma: $1 por causa de materia, $2 por Apelaciones y $3 por Suprema.
 
-El día 1 de cada mes un job congela el mes que terminó, cliente por cliente, y
-lo escribe en `facturacion_cierre` (base principal). **No es una consulta que
-se pueda repetir después**: la cartera es una foto que se reemplaza con cada
-carga del Excel de Causas, así que el archivo de julio ya no está en la base en
-octubre y el período no se puede recalcular.
+El día 1 de cada mes un job genera la factura del mes que terminó, cliente por
+cliente, y la escribe con su detalle en `factura` + `factura_detalle` (base
+principal). **No es una consulta que se pueda repetir después**: la cartera es
+una foto que se reemplaza con cada carga del Excel de Causas, así que el archivo
+de julio ya no está en la base en octubre y el período no se puede recalcular.
 
 ```bash
 # crontab -e  en el host
-0 4 1 * * docker exec ed_backend python -m app.jobs.cerrar_facturacion >> /var/log/estado_diario_facturacion.log 2>&1
+0 4 1 * * docker exec ed_backend python -m app.jobs.generar_facturacion >> /var/log/estado_diario_facturacion.log 2>&1
 ```
 
-Es idempotente: un cliente que ya tiene cierre del período se salta, así que
-dispararlo dos veces el día 1 no duplica ninguna factura. Si la base de un
-cliente estaba caída, su fila queda en estado `error` (que no es lo mismo que
-un cierre en cero) y el job devuelve código 1. Para repetirlo, el mismo día:
+Es idempotente: un cliente que ya tiene factura del período se salta, así que
+dispararlo dos veces el día 1 no cobra dos veces. Además lo respalda un índice
+único por cliente y período.
+
+Si la base de un cliente estaba caída, **no se le emite factura** —una factura
+en cero gastaría un número del correlativo en un documento que nadie debería
+mandar— y el job devuelve código 1. Se arregla la base y se vuelve a correr: los
+que ya tienen factura se saltan solos. Para rehacer una factura ya emitida, el
+mismo día (la anula y emite otra con su propio número):
 
 ```bash
-docker exec ed_backend python -m app.jobs.cerrar_facturacion --periodo 2026-07 --rehacer
+docker exec ed_backend python -m app.jobs.generar_facturacion --periodo 2026-07 --rehacer
 ```
 
-Lo cerrado se consulta en **Administración de la plataforma → Facturación**,
-que además estima el mes en curso contando al momento.
+Las facturas se consultan en **Administración de la plataforma → Facturación**,
+con filtros por período, RUT, cliente activo/inactivo, nombre y número. La
+estimación del mes en curso (antes de que existan las facturas) está en
+**Facturación → Estimar el mes**, y las tarifas de cada cliente en su ficha →
+**Tarifas**.
 
-### Órdenes de compra
+### Migración desde la versión anterior
 
-El documento que se le entrega al cliente se emite en **Administración de la
-plataforma → Órdenes de compra**: se elige el cliente y un rango de fechas, y
-el sistema suma los cierres mensuales que caen dentro. Se factura por **mes
-completo**: entra todo mes que se cruce con el rango.
+La versión anterior tenía dos tablas: `facturacion_cierre` (el cálculo mensual)
+y `factura` + `factura_linea` (una orden de compra por rango de fechas). Un job
+de un solo uso las convierte en facturas mensuales:
 
-Un rango con algún mes sin cierre se rechaza nombrando los meses que faltan.
-Es deliberado: una orden solo suma montos ya congelados, y mezclarlos con
-meses contados al momento daría un documento que cambia solo.
+```bash
+docker exec ed_backend python -m app.jobs.migrar_facturas_mensuales --simular
+docker exec ed_backend python -m app.jobs.migrar_facturas_mensuales
+```
 
-El PDF sale con la edición y la copia bloqueadas, y **se guarda en la base tal
-como se entregó** (`factura.pdf`). Al descargarlo se devuelve esa copia, no una
-nueva: es la referencia contra la que se contrasta cualquier archivo que llegue
-adulterado. Los permisos del formato disuaden pero no impiden — si algún día se
-necesita que la alteración sea detectable sin tener la copia al lado, lo que
-corresponde es una firma digital con certificado.
+Las facturas migradas quedan con una línea "Causas por materia" en vez del
+desglose por materia: el cierre viejo guardaba un solo número para todas juntas
+y el archivo de causas de ese mes ya no está. El desglose empieza con las que
+genere el job mensual.
+
+Las tablas viejas **no se borran solas**. Cuando el resultado esté revisado, se
+agregan a `TABLAS_A_BORRAR_MAESTRA` en `backend/app/core/esquema.py`.
+
+### El documento
+
+El PDF se dibuja al generar la factura, sale con la edición y la copia
+bloqueadas, y **se guarda en la base tal como se entregó** (`factura.pdf`). Al
+descargarlo se devuelve esa copia, no una nueva: es la referencia contra la que
+se contrasta cualquier archivo que llegue adulterado. Los permisos del formato
+disuaden pero no impiden — si algún día se necesita que la alteración sea
+detectable sin tener la copia al lado, lo que corresponde es una firma digital
+con certificado.
 
 La numeración es un correlativo global de la plataforma (`000001`, `000002`).
 Anular **no borra ni libera el número**: un talonario con huecos no se puede
-auditar.
+auditar. Rehacer un período anula la factura anterior y emite otra con su propio
+número, en vez de cambiarle el monto a un documento que ya salió.
 
 Los datos de la cabecera (razón social, RUT, giro, dirección, comuna y ciudad)
-salen de la ficha del cliente, pestaña *Datos*, y se **copian** en la orden al
-emitirla: corregir la dirección después no reescribe las órdenes ya emitidas.
+salen de la ficha del cliente, pestaña *Datos*, y se **copian** en la factura al
+generarla: corregir la dirección después no reescribe las facturas ya emitidas.
+Lo mismo con las tarifas: cada línea del detalle guarda el valor unitario que
+usó, así que subir un precio rige desde la próxima generación y no antes.
+
+**No es un DTE del SII**: no lleva folio autorizado ni timbre electrónico.
 
 > **No es un documento tributario del SII.** No lleva folio autorizado (CAF) ni
 > timbre electrónico, y el propio PDF lo dice al pie. Emitir el DTE es una

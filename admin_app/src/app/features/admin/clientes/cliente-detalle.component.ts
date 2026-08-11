@@ -209,14 +209,28 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
 
               <hr class="border-neutral-200" />
 
-              <!-- Datos comerciales. Van en la cabecera de la orden de compra
-                   y en ningún otro lado: sin ellos el sistema funciona igual,
-                   y por eso ninguno es obligatorio. -->
+              <!-- Datos comerciales. Van en la cabecera de la factura y en
+                   ningún otro lado: sin ellos el sistema funciona igual, y por
+                   eso ninguno es obligatorio. -->
               <div>
-                <h3 class="text-sm font-semibold text-neutral-800">Datos de facturación</h3>
-                <p class="text-xs text-neutral-500 mt-0.5">
-                  Encabezan la orden de compra. Lo que se deje vacío no se imprime.
-                </p>
+                <div class="flex items-start justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 class="text-sm font-semibold text-neutral-800">Datos de facturación</h3>
+                    <p class="text-xs text-neutral-500 mt-0.5">
+                      Encabezan la factura. Lo que se deje vacío no se imprime.
+                    </p>
+                  </div>
+                  <!-- Las dos puertas a facturación desde la ficha: lo que se
+                       le cobró y lo que se le va a cobrar. Van acá, junto a los
+                       datos que salen impresos, y no en la cabecera de la
+                       pantalla, donde competirían con guardar y suspender. -->
+                  <div class="flex items-center gap-2 shrink-0">
+                    <a routerLink="/facturacion" [queryParams]="{ cliente: c.id }"
+                       class="btn-outline btn-sm">Facturas</a>
+                    <a [routerLink]="['/clientes', c.id, 'tarifas']"
+                       class="btn-secondary btn-sm">Tarifas</a>
+                  </div>
+                </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                   <div>
@@ -860,7 +874,7 @@ export class ClienteDetalleComponent implements OnInit {
         rut: this.datos.rut.trim(),
         correo: this.datos.correo.trim(),
         // Vacío viaja como null: el backend distingue "sin dato" de cadena
-        // vacía y la orden de compra omite las líneas que no tienen valor.
+        // vacía y la factura omite las líneas que no tienen valor.
         giro: this.datos.giro.trim() || null,
         direccion: this.datos.direccion.trim() || null,
         comuna: this.datos.comuna.trim() || null,

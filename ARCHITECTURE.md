@@ -205,8 +205,8 @@ backend/
 │   │       ├── usuario_admin.py    #   administrador de la plataforma
 │   │       ├── password_historial_admin.py  # su historial de contraseñas
 │   │       ├── configuracion_sistema.py
-│   │       ├── facturacion_cierre.py   #  lo cobrado a un cliente en un mes
-│   │       ├── factura.py          #   la orden de compra emitida + su PDF
+│   │       ├── factura.py          #   la factura mensual + su detalle + PDF
+│   │       ├── tarifa_cliente.py   #   el precio acordado con cada cliente
 │   │       └── configuracion_*.py  #   correo, smtp, google, whatsapp
 │   ├── schemas/                    # Pydantic DTOs
 │   ├── repositories/               # Acceso a datos
@@ -228,7 +228,8 @@ backend/
 │       ├── revisar_correo.py
 │       ├── enviar_recordatorios_whatsapp.py
 │       ├── purgar_logs.py
-│       ├── cerrar_facturacion.py   # El día 1: congela el mes que terminó
+│       ├── generar_facturacion.py  # El día 1: factura el mes que terminó
+│       ├── migrar_facturas_mensuales.py # Un solo uso: cierres → facturas
 │       └── migrar_a_multitenant.py # Un solo uso: ver "Migración"
 ├── Dockerfile
 └── requirements.txt
@@ -482,11 +483,15 @@ frontend/src/app/
 
    usuario                → administrador de la PLATAFORMA (no opera causas)
    configuracion_sistema  → parámetros globales, una sola fila
-   facturacion_cierre     → lo cobrado a un cliente en un mes, congelado
-                            (cliente_id, periodo) UNIQUE
-   factura / factura_linea → la orden de compra emitida y su detalle por mes,
-                            con el PDF entregado y los datos del cliente
-                            COPIADOS (numero UNIQUE)
+   factura                → la factura mensual de un cliente, con el PDF
+                            entregado y los datos del cliente COPIADOS
+                            (numero UNIQUE; cliente_id+periodo UNIQUE entre
+                            las no anuladas)
+   factura_detalle        → una fila por concepto (cada materia, y las dos
+                            cortes) con cantidad y valor unitario COPIADO
+   tarifa_cliente         → el precio por concepto de cada cliente
+                            (cliente_id, concepto) UNIQUE; sin fila se cobra
+                            el valor por defecto de la plataforma
 ```
 
 ### Base de cada cliente (`estado_diario_<guid>`)
@@ -573,12 +578,14 @@ principal; algunas operaciones abren además la base del cliente indicado.
 | POST     | /api/v1/admin/clientes/{id}/inbox/probar          | Probar la conexión IMAP              |
 | GET/POST | /api/v1/admin/clientes/{id}/usuarios              | Usuarios, **en la base del cliente** |
 | PUT      | /api/v1/admin/clientes/{id}/usuarios/{uid}        | Editar / resetear clave              |
-| GET      | /api/v1/admin/facturacion                         | Detalle y totales de un período      |
-| GET      | /api/v1/admin/facturacion/clientes/{id}           | Historial facturado de un cliente    |
-| POST     | /api/v1/admin/facturacion/cerrar                  | Cerrar un período a mano             |
-| GET/POST | /api/v1/admin/facturacion/facturas                | Órdenes de compra: listar / emitir   |
+| GET      | /api/v1/admin/facturacion/facturas                | Listado con filtros                  |
+| GET      | /api/v1/admin/facturacion/facturas/{id}           | Detalle completo de una factura      |
 | GET      | /api/v1/admin/facturacion/facturas/{id}/pdf       | Descargar el PDF guardado            |
 | POST     | /api/v1/admin/facturacion/facturas/{id}/anular    | Anular sin liberar el número         |
+| POST     | /api/v1/admin/facturacion/facturas/{id}/pagada    | Marcar / desmarcar como pagada       |
+| GET      | /api/v1/admin/facturacion/estimacion              | Cuánto saldría si se facturara ahora |
+| POST     | /api/v1/admin/facturacion/generar                 | Generar el período a mano            |
+| GET/PUT  | /api/v1/admin/facturacion/clientes/{id}/tarifas   | Tarifas del cliente                  |
 
 ### Dentro del estudio
 
@@ -630,59 +637,74 @@ consola de Twilio debe quedar configurado con la **URL pública** del sitio
 
 ## Facturación
 
-Se cobra por cantidad de causas de la cartera vigente de cada cliente:
+**Una factura por cliente y por mes.** Se cobra por cantidad de causas de la
+cartera vigente, con una línea del detalle por cada concepto:
 
-| Qué | Precio por causa |
-|-----|------------------|
-| Materia (Civil, Laboral, Penal, Cobranza, Familia) | $1 |
-| Corte de Apelaciones | $2 |
-| Corte Suprema | $3 |
+| Concepto | Qué cuenta |
+|----------|------------|
+| Una fila por materia (Civil, Cobranza, Familia, Laboral, Penal) | causas **vigentes** de esa materia |
+| Corte de Apelaciones | todas las causas de esa corte |
+| Corte Suprema | todas las causas de esa corte |
 
 Las de materia se cuentan **solo si están vigentes**; las de corte se cuentan
 todas. No es un descuido: "Fallada" en una corte dice que se falló ese recurso,
 no que la causa salió de la cartera del estudio, y el reporte deja de traerla
 cuando eso pasa.
 
-**El cierre es el día 1 y se guarda.** Por lo de la sección anterior —la
+**El precio es del contrato, no del producto.** Cada cliente tiene sus tarifas
+en `tarifa_cliente`, y un concepto sin fila se cobra al valor por defecto de la
+plataforma ($1 materia, $2 Apelaciones, $3 Suprema). Ausencia de fila **no es
+precio cero**: obligar a sembrar tres filas por cliente nuevo facturaría en $0 a
+cualquier alta a la que se le olvidara configurarlas. La resolución de una
+materia va de lo específico a lo general — `materia:Familia` → `materia` →
+plataforma —, para que quien cobra distinto lo penal declare una sola fila y
+nadie más tenga que enumerar sus cinco materias.
+
+**Se genera el día 1 y queda escrita.** Por lo de la sección anterior —la
 cartera es una foto que se reemplaza— el período de marzo no se puede
 reconstruir en junio: ese archivo ya no está en la base. Así que el día 1 se
-cuenta una vez, se calcula el monto y se escribe una fila por cliente en
-`facturacion_cierre` (base principal). Lo que se factura después sale de ahí y
-no de volver a contar: una factura emitida no puede cambiar de monto porque el
-estudio cerró tres causas.
+cuenta una vez, se aplican las tarifas del cliente y se escribe la factura con
+su detalle (`factura` + `factura_detalle`, base principal), todo en una
+transacción. Lo que se muestre después sale de ahí y no de volver a contar.
 
-El cierre del día 1 factura **el mes que terminó**: correr el job el 1 de
-agosto crea el período `2026-07-01`.
+El job del día 1 factura **el mes que terminó**: correr el 1 de agosto crea el
+período `2026-07-01`.
 
-Cada fila guarda las tres cantidades **y las tarifas vigentes al cierre**. Sin
-las cantidades, una factura discutida no se puede explicar; sin las tarifas,
-subir el precio reescribiría el monto de los meses ya cerrados.
+Cada línea guarda la cantidad **y el valor unitario que usó**. Sin la cantidad,
+una factura discutida no se puede explicar; sin el valor, renegociar el precio
+reescribiría el detalle de todos los meses anteriores.
 
-Un cliente cuya base no responde queda en estado `error` en vez de tumbar el
-cierre de los demás: es lo que distingue "este mes no tuvo causas" de "este mes
-no pudimos preguntarle", dos cosas que no se facturan igual. El job devuelve
-código 1 cuando hay alguno, para que el cron lo reporte.
+**Qué se entiende por "las causas activas del período".** La cartera no tiene
+fecha de alta ni de baja: `causa` solo sabe de qué archivo salió. Lo que se
+factura es la cartera vigente **según el último Excel cargado al momento de
+generar**. Es una aproximación al mes calendario y es la única disponible con
+los datos que entrega el Poder Judicial; por eso la fecha de ese archivo viaja
+en la factura (`fecha_archivo_causas`) y se muestra: un cliente que dejó de
+cargar el Excel se está facturando con una cartera vieja.
 
-Es idempotente por el `UNIQUE (cliente_id, periodo)` más el salto de los que ya
-tienen cierre: dispararlo dos veces el día 1 no duplica ninguna factura.
+Un cliente cuya base no responde **no se factura** y se informa, en vez de
+recibir una factura en cero: gastaría un número del correlativo en un documento
+que nadie debería mandar, y un mes en cero por caída se ve idéntico a un mes sin
+causas. El job devuelve código 1 cuando hay alguno, para que el cron lo reporte;
+volver a correrlo salta a los que ya tienen factura.
 
-La consola muestra además el **período en curso como estimación**, contándolo
-al momento y marcado como tal. Es la pregunta que se hace el 20 del mes —cuánto
-va a salir la factura— y responder "no hay datos" haría parecer que el módulo
-no funciona.
+Es idempotente por el índice único `(cliente_id, periodo)` sobre las no anuladas
+más el salto de los que ya la tienen: dispararlo dos veces el día 1 no cobra dos
+veces. El índice es **parcial** porque rehacer un período anula la factura
+anterior y emite otra; las dos comparten cliente y período, y lo que no puede
+haber es dos cobrables del mismo mes.
 
-### La orden de compra
+La consola muestra además el **período en curso como estimación**, contándolo al
+momento, sin escribir nada y marcado como tal. Es la pregunta que se hace el 20
+del mes —cuánto va a salir la factura— y responder "no hay datos" haría parecer
+que el módulo no funciona.
 
-Es el documento que se entrega. Cubre un **rango de fechas** y suma los cierres
-mensuales que caen dentro; se factura por mes completo, así que entra todo mes
-que se cruce con el rango. Un mes sin cierre **rechaza la emisión** en vez de
-contarse al momento: mezclar montos congelados con montos que cambian solos
-daría un documento que nadie puede después reconstruir.
+### El documento
 
 Todo lo que se imprime queda **copiado** en `factura`: la razón social, el RUT,
-el giro y la dirección del cliente, y las cantidades y tarifas de cada mes. Una
-orden emitida no puede cambiar porque el cliente se mudó o porque se rehízo un
-cierre.
+el giro y la dirección del cliente, y en cada línea del detalle la cantidad y el
+valor unitario. Una factura emitida no puede cambiar porque el cliente se mudó,
+porque se le subió la tarifa o porque el estudio cerró tres causas.
 
 El PDF se guarda entero (`factura.pdf`) y se devuelve ESE al descargar, no uno
 regenerado: un cambio en el dibujo o en el formato de los números bastaría para
@@ -716,7 +738,7 @@ base lista se saltan.
 */15 * * * *  docker exec ed_backend python -m app.jobs.revisar_correo
 */5  * * * *  docker exec ed_backend python -m app.jobs.enviar_recordatorios_whatsapp
 30 3 * * *    docker exec ed_backend python -m app.jobs.purgar_logs
-0  4 1 * *    docker exec ed_backend python -m app.jobs.cerrar_facturacion
+0  4 1 * *    docker exec ed_backend python -m app.jobs.generar_facturacion
 ```
 
 La revisión de correo corre en **cada pasada** del cron y no una vez al día: el

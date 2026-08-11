@@ -183,6 +183,12 @@ interface UsuarioBorrador {
                         <td>
                           <div class="flex gap-2">
                             <a [routerLink]="['/clientes', c.id]" class="btn-outline btn-sm">Ver ficha</a>
+                            <!-- Lleva al listado de facturación ya filtrado por
+                                 este cliente. No es una pantalla aparte: es el
+                                 mismo listado con el filtro puesto, y por eso
+                                 desde allá se puede quitar y ver todas. -->
+                            <a routerLink="/facturacion" [queryParams]="{ cliente: c.id }"
+                               class="btn-secondary btn-sm">Facturas</a>
                             @if (c.activo) {
                               <button type="button" class="btn-secondary btn-sm" (click)="pedirSuspender(c)">
                                 Suspender
@@ -225,8 +231,10 @@ interface UsuarioBorrador {
                       <dt class="text-neutral-500">Creado</dt>
                       <dd class="text-neutral-700">{{ c.fecha_creacion | date: 'dd-MM-yyyy' }}</dd>
                     </dl>
-                    <div class="flex gap-2 mt-3">
+                    <div class="flex flex-wrap gap-2 mt-3">
                       <a [routerLink]="['/clientes', c.id]" class="btn-outline btn-sm">Ver ficha</a>
+                      <a routerLink="/facturacion" [queryParams]="{ cliente: c.id }"
+                         class="btn-secondary btn-sm">Facturas</a>
                       @if (c.activo) {
                         <button type="button" class="btn-secondary btn-sm" (click)="pedirSuspender(c)">Suspender</button>
                       } @else {

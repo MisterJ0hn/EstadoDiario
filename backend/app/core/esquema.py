@@ -60,6 +60,17 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     ("cliente", "direccion", "VARCHAR(255)"),
     ("cliente", "comuna", "VARCHAR(100)"),
     ("cliente", "ciudad", "VARCHAR(100)"),
+    # La factura pasó de cubrir un rango de fechas a ser mensual. `periodo` va
+    # NULL en las órdenes por rango que existieran antes: las rellena
+    # `app.jobs.migrar_facturas_mensuales`, que además les arma el detalle.
+    ("factura", "periodo", "DATE"),
+    ("factura", "estado", "VARCHAR(20) DEFAULT 'emitida'"),
+    # Cómo salió el conteo del mes. El DEFAULT deja en 'ok' las facturas
+    # anteriores: se emitieron, así que el conteo funcionó.
+    ("factura", "origen_estado", "VARCHAR(20) DEFAULT 'ok'"),
+    ("factura", "origen_detalle", "VARCHAR(500)"),
+    ("factura", "origen_causas_id", "INTEGER"),
+    ("factura", "fecha_archivo_causas", "DATE"),
 ]
 
 COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
@@ -87,22 +98,40 @@ TABLAS_A_BORRAR_TENANT: list[str] = [
     # Permiso de visibilidad por jurisdicción, eliminado con los roles.
     "usuario_jurisdiccion",
 ]
+# `facturacion_cierre` y `factura_linea` NO van acá aunque ya no tengan modelo.
+# Guardan lo que se le cobró a cada cliente antes de que la factura pasara a ser
+# mensual, y borrarlas al arrancar destruiría ese historial antes de que nadie
+# alcance a correr `app.jobs.migrar_facturas_mensuales`. Se agregan a esta lista
+# después de migrar, no antes.
 TABLAS_A_BORRAR_MAESTRA: list[str] = []
 
-# (nombre del índice, tabla, columnas). create_all() tampoco crea índices sobre
-# columnas agregadas a tablas que ya existían.
-INDICES_NUEVOS_MAESTRA: list[tuple[str, str, str]] = []
-INDICES_NUEVOS_TENANT: list[tuple[str, str, str]] = []
+# (nombre del índice, tabla, columnas[, condición]). create_all() tampoco crea
+# índices sobre columnas agregadas a tablas que ya existían. La condición es
+# opcional y hace el índice parcial: `CREATE INDEX ... WHERE <condición>`.
+INDICES_NUEVOS_MAESTRA: list[tuple[str, ...]] = [
+    ("ix_factura_periodo", "factura", "periodo"),
+    ("ix_factura_estado", "factura", "estado"),
+]
+INDICES_NUEVOS_TENANT: list[tuple[str, ...]] = []
 
 # Los nombres son los que usa SQLAlchemy para un `index=True` (ix_<tabla>_<col>):
 # si no coincidieran, create_all() intentaría crearlos de nuevo en una base
 # nueva y chocaría con el que ya está.
-INDICES_UNICOS_MAESTRA: list[tuple[str, str, str]] = [
+INDICES_UNICOS_MAESTRA: list[tuple[str, ...]] = [
     ("ix_configuracion_smtp_cliente_id", "configuracion_smtp", "cliente_id"),
     ("ix_configuracion_google_cliente_id", "configuracion_google", "cliente_id"),
     ("ix_configuracion_whatsapp_cliente_id", "configuracion_whatsapp", "cliente_id"),
+    # Una factura VIVA por cliente y período: es lo que impide cobrar dos veces
+    # el mismo mes si el job del día 1 se dispara dos veces. Parcial sobre las
+    # no anuladas porque regenerar un mes anula la anterior y emite otra.
+    #
+    # En una base con órdenes por rango previas puede fallar al crearse (dos
+    # rangos que caían en el mismo mes): queda el error en el log, el listado
+    # sigue funcionando y `FacturacionService` valida igual antes de insertar.
+    # Se resuelve corriendo `app.jobs.migrar_facturas_mensuales`.
+    ("uq_factura_cliente_periodo", "factura", "cliente_id, periodo", "anulada = false"),
 ]
-INDICES_UNICOS_TENANT: list[tuple[str, str, str]] = []
+INDICES_UNICOS_TENANT: list[tuple[str, ...]] = []
 
 
 # Las 18 tablas que debe tener la base de un cliente. Es una verificación, no
@@ -158,6 +187,20 @@ def tabla_existe(conn, tabla: str) -> bool:
     return fila is not None
 
 
+def _sql_indice(
+    nombre: str, tabla: str, columnas: str, condicion: str | None, unico: bool
+) -> str:
+    """El CREATE INDEX, con su WHERE si el índice es parcial.
+
+    Los índices parciales existen desde siempre en PostgreSQL, pero hay que
+    escribirlos a mano: `create_all()` sí los sabe crear en una base nueva, y
+    esta función es para las que ya existen.
+    """
+    unicidad = "UNIQUE " if unico else ""
+    donde = f" WHERE {condicion}" if condicion else ""
+    return f"CREATE {unicidad}INDEX {nombre} ON {tabla} ({columnas}){donde}"
+
+
 def _aplicar(
     engine: Engine, columnas, indices, indices_unicos, columnas_a_borrar=(), tablas_a_borrar=()
 ) -> None:
@@ -187,18 +230,24 @@ def _aplicar(
             except Exception as e:
                 logger.error("No se pudo agregar %s.%s: %s", tabla, columna, e)
 
-        for nombre, tabla, columnas_idx in indices:
-            try:
-                if not indice_existe(conn, nombre):
-                    conn.execute(text(f"CREATE INDEX {nombre} ON {tabla} ({columnas_idx})"))
-            except Exception as e:
-                logger.error("No se pudo crear el índice %s: %s", nombre, e)
-
-        for nombre, tabla, columnas_idx in indices_unicos:
+        for indice in indices:
+            nombre, tabla, columnas_idx = indice[:3]
+            condicion = indice[3] if len(indice) > 3 else None
             try:
                 if not indice_existe(conn, nombre):
                     conn.execute(
-                        text(f"CREATE UNIQUE INDEX {nombre} ON {tabla} ({columnas_idx})")
+                        text(_sql_indice(nombre, tabla, columnas_idx, condicion, unico=False))
+                    )
+            except Exception as e:
+                logger.error("No se pudo crear el índice %s: %s", nombre, e)
+
+        for indice in indices_unicos:
+            nombre, tabla, columnas_idx = indice[:3]
+            condicion = indice[3] if len(indice) > 3 else None
+            try:
+                if not indice_existe(conn, nombre):
+                    conn.execute(
+                        text(_sql_indice(nombre, tabla, columnas_idx, condicion, unico=True))
                     )
             except Exception as e:
                 logger.error("No se pudo crear el índice único %s: %s", nombre, e)
