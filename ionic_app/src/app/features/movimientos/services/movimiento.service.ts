@@ -48,6 +48,7 @@ export class MovimientoService {
       corte?: string;
       fecha_desde?: string;
       fecha_hasta?: string;
+      vigencia?: string;
       page?: number;
       limit?: number;
     } = {}
@@ -79,6 +80,7 @@ export class MovimientoService {
     if (filtros.busqueda) params = params.set('busqueda', filtros.busqueda);
     if (filtros.rut) params = params.set('rut', filtros.rut);
     if (filtros.origen_id) params = params.set('origen_id', filtros.origen_id);
+    if (filtros.vigencia) params = params.set('vigencia', filtros.vigencia);
     if (filtros.page) params = params.set('page', filtros.page);
     if (filtros.limit) params = params.set('limit', filtros.limit);
     return params;

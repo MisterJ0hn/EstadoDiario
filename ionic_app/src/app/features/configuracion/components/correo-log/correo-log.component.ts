@@ -6,17 +6,35 @@ import { ConfiguracionCorreoService } from '../../services/configuracion-correo.
 import { NotificationService } from '@core/services/notification.service';
 import { CorreoLog, ResultadoCorreo } from '@core/models/configuracion-correo.model';
 
+/**
+ * Bitácora de la casilla de ingesta: qué llegó por correo y qué pasó con cada
+ * mensaje.
+ *
+ * Vive **dentro** de la pantalla Bitácora, como una pestaña más junto a los
+ * archivos cargados. Antes era una pantalla aparte del menú, y eran lo mismo
+ * visto de dos formas: un archivo entra subiéndolo a mano o llegando por
+ * correo, y para saber si hoy entró el estado diario había que mirar en dos
+ * lugares.
+ *
+ * Por eso este componente **no lleva encabezado propio**: el título lo pone la
+ * pantalla que lo contiene. Lo que sí conserva es su botón de revisar la
+ * casilla, que es la acción de esta pestaña y de ninguna otra.
+ *
+ * Muestra más que la lista de archivos y esa es la razón de que siga siendo una
+ * pestaña propia en vez de fundirse en la tabla: acá también quedan los correos
+ * que NO produjeron un archivo —descartados, duplicados, errores y fallas de
+ * conexión—, que es justo lo que se viene a mirar cuando algo no llegó.
+ */
 @Component({
   selector: 'app-correo-log',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="space-y-6">
-      <div class="flex items-start justify-between">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Bitácora de mi casilla de correo</h1>
-          <p class="text-neutral-500 mt-1">
-            Importaciones hechas desde su casilla; cambie el filtro para ver descartados,
+          <p class="text-neutral-500">
+            Lo que llegó a su casilla de ingesta; cambie el filtro para ver descartados,
             duplicados y errores
           </p>
         </div>

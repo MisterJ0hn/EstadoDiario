@@ -1,10 +1,18 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import BaseTenant
+
+# De qué reporte salió la fila. El Excel de Causas es la fuente natural de la
+# cartera; las otras dos existen porque una causa puede moverse (y por lo tanto
+# aparecer en Movimientos o en el Estado Diario) sin estar todavía en el reporte
+# de Causas, y en ese caso el estudio igual es parte.
+ORIGEN_DATO_CAUSAS = "causas"
+ORIGEN_DATO_MOVIMIENTOS = "movimientos"
+ORIGEN_DATO_ESTADO_DIARIO = "estado_diario"
 
 
 class Causa(BaseTenant):
@@ -60,6 +68,17 @@ class Causa(BaseTenant):
     jurisdiccion_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("jurisdiccion.id"), index=True
     )
+
+    # ── Cruce con los otros dos reportes ──
+    # De dónde salió esta fila: `causas` si vino del Excel de la cartera, o el
+    # reporte que la dedujo (ver las constantes ORIGEN_DATO_* arriba). No es un
+    # detalle interno: una causa deducida se factura igual que las demás, y
+    # cuando alguien discuta una factura hay que poder decir de dónde salió.
+    origen_dato: Mapped[str] = mapped_column(
+        String(20), default=ORIGEN_DATO_CAUSAS, server_default=ORIGEN_DATO_CAUSAS
+    )
+    # Cuándo la tocó el cruce por última vez. Nulo = tal cual la trajo el Excel.
+    enriquecida_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="causas")
     jurisdiccion = relationship("Jurisdiccion")

@@ -13,13 +13,14 @@ from typing import Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.estados_causa import ESTADOS_FINALIZADOS
+from app.core.estados_causa import FINALIZADAS, VIGENTES, condicion_vigencia
 from app.models.causa import Causa
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 
-# Valores del parámetro `vigencia` de las consultas de cartera.
-VIGENTES = "vigentes"
-FINALIZADAS = "finalizadas"
+# `VIGENTES` y `FINALIZADAS` se re-exportan desde `app.core.estados_causa`: los
+# endpoints y los otros repositorios los importan desde acá desde antes, y la
+# regla vive allá.
+__all__ = ["VIGENTES", "FINALIZADAS", "ultimo_origen_causas_id", "CausaRepository"]
 
 
 def ultimo_origen_causas_id(db: Session) -> Optional[int]:
@@ -75,22 +76,11 @@ class CausaRepository:
     def _condicion_vigencia(vigencia: Optional[str]):
         """Condición de vigencia sobre `Causa.estado_causa`, o None.
 
-        El estado nulo cuenta como VIGENTE y por eso el `is_(None)` explícito:
-        la hoja de Cobranza no trae la columna, y en SQL un `NOT IN` contra
-        NULL no es verdadero sino NULL, así que sin esta rama Cobranza no
-        aparecería en ninguno de los dos lados del filtro.
+        La regla vive en `app.core.estados_causa`: son cuatro las pantallas que
+        filtran por esto y tenerla escrita cuatro veces haría que agregar un
+        estado terminal arreglara unas y dejara otras mintiendo.
         """
-        # `func.lower(func.btrim(...))`: el Excel del PJUD rellena la celda con
-        # espacios a la derecha ('Concluido                     ').
-        normalizado = func.lower(func.btrim(Causa.estado_causa))
-        if vigencia == VIGENTES:
-            return or_(
-                Causa.estado_causa.is_(None),
-                normalizado.notin_(ESTADOS_FINALIZADOS),
-            )
-        if vigencia == FINALIZADAS:
-            return normalizado.in_(ESTADOS_FINALIZADOS)
-        return None
+        return condicion_vigencia(Causa.estado_causa, vigencia)
 
     @classmethod
     def _aplicar_filtros(

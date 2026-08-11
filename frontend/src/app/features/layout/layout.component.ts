@@ -88,28 +88,10 @@ const MENU_CLIENTE: GrupoMenu[] = [
       { ruta: '/audiencias', etiqueta: 'Audiencias', icono: ICONO.reloj },
       { ruta: '/estado-diario/calendario', etiqueta: 'Calendario', icono: ICONO.calendario },
       { ruta: '/informes', etiqueta: 'Reportes', icono: ICONO.barras },
+      { ruta: '/facturas', etiqueta: 'Mis Facturas', icono: ICONO.bitacora },
     ],
   },
 ];
-
-/**
- * Grupo que solo ve el administrador del estudio.
- *
- * La casilla de ingesta **no se configura desde acá**: es una por estudio y la
- * administra la plataforma, porque de qué casilla se lee determina en qué base
- * termina cada archivo. Al estudio le queda la bitácora, que es de solo
- * lectura y responde la única pregunta que necesita: si hoy llegó el estado
- * diario o no.
- *
- * Usuarios tampoco es un alta: los crea la plataforma. Lo que el administrador
- * del estudio decide es **qué ve cada uno**.
- */
-const MENU_ADMIN_CLIENTE: GrupoMenu = {
-  titulo: 'Administración',
-  items: [
-    { ruta: '/configuracion/correo/log', etiqueta: 'Bitácora de Correo', icono: ICONO.bitacora },
-  ],
-};
 
 @Component({
   selector: 'app-layout',
@@ -379,7 +361,7 @@ export class LayoutComponent {
   /** El administrador del estudio suma su bloque. La consola de la plataforma
    *  es otra aplicación (`admin_app/`) y no aparece acá. */
   menu = computed<GrupoMenu[]>(() =>
-    [...MENU_CLIENTE, MENU_ADMIN_CLIENTE]
+    [...MENU_CLIENTE]
   );
 
   /** Nombre del estudio de la sesión actual, para la barra superior. */

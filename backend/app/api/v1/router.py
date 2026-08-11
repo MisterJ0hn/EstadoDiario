@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     causas,
     configuracion_correo,
     dashboard,
+    facturas,
     estado_diario,
     google_calendar,
     jurisdicciones,
@@ -17,6 +18,7 @@ api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(auth.router)
 api_router.include_router(causas.router)
+api_router.include_router(facturas.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(jurisdicciones.router)
 api_router.include_router(estado_diario.router)

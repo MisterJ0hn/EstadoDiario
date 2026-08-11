@@ -14,6 +14,7 @@ from typing import Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.estados_causa import condicion_vigencia
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.causa_repository import ultimo_origen_causas_id
@@ -53,6 +54,7 @@ class CausaCorteRepository:
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
         origen_id: Optional[int] = None,
+        vigencia: Optional[str] = None,
     ):
         if origen_id is not None:
             query = query.filter(CausaCorte.estado_diario_origen_id == origen_id)
@@ -73,6 +75,11 @@ class CausaCorteRepository:
             query = query.filter(EstadoDiarioOrigen.fecha >= fecha_desde)
         if fecha_hasta:
             query = query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
+        # En corte la columna de estado se llama `estado_procesal`, pero la
+        # regla de qué cuenta como terminada es la misma.
+        condicion = condicion_vigencia(CausaCorte.estado_procesal, vigencia)
+        if condicion is not None:
+            query = query.filter(condicion)
         return query
 
     def find_filtered(
@@ -82,6 +89,7 @@ class CausaCorteRepository:
         corte: Optional[str] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
+        vigencia: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -91,7 +99,7 @@ class CausaCorteRepository:
                 EstadoDiarioOrigen,
                 CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
             ),
-            tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id,
+            tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia,
         )
         total = (
             self._aplicar_filtros(
@@ -99,7 +107,7 @@ class CausaCorteRepository:
                     EstadoDiarioOrigen,
                     CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
                 ),
-                tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id,
+                tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia,
             ).scalar()
             or 0
         )

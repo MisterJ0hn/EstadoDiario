@@ -34,6 +34,12 @@ export interface EstadoDiarioOrigen {
   fecha_carga: string;
   usuario_carga: string | null;
   total_movimientos: number;
+  /**
+   * Cómo entró el archivo: `correo` si llegó por la casilla de ingesta,
+   * `manual` si alguien lo subió. No se deduce de `usuario_carga`: la
+   * importación por correo también deja usuario.
+   */
+  via: 'manual' | 'correo';
 }
 
 export interface OrigenListResponse {

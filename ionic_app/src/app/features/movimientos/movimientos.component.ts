@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MovimientoService } from './services/movimiento.service';
 import { NotificationService } from '@core/services/notification.service';
+import { VigenciaCausa } from '@core/models/causa.model';
 import { ConteoMateria, Movimiento, MovimientoFiltros } from '@core/models/movimiento.model';
 import {
   ChipFiltro,
@@ -35,11 +36,12 @@ import {
       <!-- Header -->
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Movimientos</h1>
+          <h1 class="text-2xl font-bold text-neutral-800">{{ titulo() }}</h1>
           <p class="text-neutral-500 mt-1">
             Estado procesal de las causas — {{ total() }} registros encontrados
           </p>
         </div>
+
       </div>
 
       <!-- Se llegó acotado a un archivo concreto desde la vista Archivos -->
@@ -97,6 +99,16 @@ import {
         (limpiar)="onLimpiarFiltros()"
         (quitar)="quitarFiltro($event)"
       >
+        <div>
+          <label class="form-label" for="m-vigencia">Vigencia</label>
+          <select id="m-vigencia" class="form-select" [(ngModel)]="filtroVigencia">
+            <option value="vigentes">Vigentes</option>
+            <option value="finalizadas">No vigentes</option>
+          </select>
+          <!-- Sin opción "todas" a propósito: mezclar causas vivas con
+               concluidas es lo que hace inútil el listado, y el título dice
+               cuál de las dos mitades se está mirando. -->
+        </div>
         <div>
           <label class="form-label" for="m-busqueda">Búsqueda</label>
           <input id="m-busqueda" type="text" class="form-input" [(ngModel)]="filtroBusqueda"
@@ -228,6 +240,29 @@ export class MovimientosComponent implements OnInit {
   totalPages = signal(1);
   total = signal(0);
 
+  /**
+   * Qué mitad se está viendo. Por defecto las vigentes: son las que el estudio
+   * tramita, y una cartera con años de causas concluidas encima haría inútil el
+   * listado el primer día.
+   */
+  vigencia = signal<VigenciaCausa>('vigentes');
+  /**
+   * Lo que está elegido en el panel, que no es lo mismo que lo aplicado: el
+   * panel tiene botón "Aplicar", y mientras esté abierto la tabla y el título
+   * siguen mostrando la vigencia anterior.
+   */
+  filtroVigencia: VigenciaCausa = 'vigentes';
+
+  readonly VIGENCIAS: { clave: VigenciaCausa; etiqueta: string; titulo: string }[] = [
+    { clave: 'vigentes', etiqueta: 'Vigentes', titulo: 'Cartera cliente Vigentes' },
+    { clave: 'finalizadas', etiqueta: 'No vigentes', titulo: 'Cartera cliente Finalizada' },
+  ];
+
+  titulo = computed(
+    () => this.VIGENCIAS.find((v) => v.clave === this.vigencia())!.titulo
+  );
+
+
   /** null = pestaña "Todas". Se refleja en el query param `materia`. */
   materiaActiva = signal<string | null>(null);
   detalleAbiertoId = signal<number | null>(null);
@@ -310,6 +345,7 @@ export class MovimientosComponent implements OnInit {
       .getMovimientos({
         ...this.filtros(),
         materia: this.materiaActiva() || undefined,
+        vigencia: this.vigencia(),
         page: this.currentPage(),
         limit: 20,
       })
@@ -354,6 +390,9 @@ export class MovimientosComponent implements OnInit {
   }
 
   onFiltrar(): void {
+    // Lo elegido en el panel pasa a ser lo aplicado: de acá salen la
+    // consulta, el título y el chip.
+    this.vigencia.set(this.filtroVigencia);
     this.currentPage.set(1);
     this.detalleAbiertoId.set(null);
     this.sincronizarChips();
@@ -362,6 +401,8 @@ export class MovimientosComponent implements OnInit {
   }
 
   onLimpiarFiltros(): void {
+    // Vuelve a Vigentes, que es el valor por defecto de la pantalla.
+    this.filtroVigencia = 'vigentes';
     this.filtroBusqueda = '';
     this.filtroEstadoCausa = '';
     this.filtroTribunal = '';
@@ -378,6 +419,9 @@ export class MovimientosComponent implements OnInit {
   /** Quita un solo filtro desde su badge y vuelve a consultar. */
   quitarFiltro(clave: string): void {
     switch (clave) {
+      case 'vigencia':
+        this.filtroVigencia = 'vigentes';
+        break;
       case 'busqueda':
         this.filtroBusqueda = '';
         break;
@@ -404,6 +448,9 @@ export class MovimientosComponent implements OnInit {
    */
   private sincronizarChips(): void {
     const chips: ChipFiltro[] = [];
+    if (this.vigencia() === 'finalizadas') {
+      chips.push({ clave: 'vigencia', etiqueta: 'Vigencia', valor: 'No vigentes' });
+    }
     if (this.filtroBusqueda) {
       chips.push({ clave: 'busqueda', etiqueta: 'Búsqueda', valor: this.filtroBusqueda });
     }
@@ -435,4 +482,6 @@ export class MovimientosComponent implements OnInit {
     this.detalleAbiertoId.set(null);
     this.cargarDatos();
   }
+
+
 }

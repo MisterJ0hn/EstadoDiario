@@ -77,6 +77,13 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # Clave provisoria del usuario del cliente. Los que ya existen tienen su
     # clave definitiva, así que el DEFAULT correcto es FALSE.
     ("usuario", "debe_cambiar_password", "BOOLEAN DEFAULT FALSE"),
+    # De qué reporte salió cada fila de la cartera. Las que ya están se
+    # cargaron desde el Excel de Causas, de ahí el DEFAULT: marcarlas como
+    # deducidas sería mentir sobre su procedencia.
+    ("causa", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
+    ("causa", "enriquecida_en", "TIMESTAMPTZ"),
+    ("causa_corte", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
+    ("causa_corte", "enriquecida_en", "TIMESTAMPTZ"),
 ]
 
 # Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`

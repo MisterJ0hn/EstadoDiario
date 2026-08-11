@@ -54,6 +54,7 @@ class FiltroFacturas:
         busqueda: Optional[str] = None,
         estado: Optional[str] = None,
         incluir_anuladas: bool = True,
+        limite: Optional[int] = None,
     ):
         self.cliente_id = cliente_id
         # Acotan el PERÍODO facturado, no la fecha de generación: se busca "la
@@ -67,6 +68,10 @@ class FiltroFacturas:
         self.busqueda = busqueda
         self.estado = estado
         self.incluir_anuladas = incluir_anuladas
+        # Cuántas devolver como máximo, de la más nueva hacia atrás. Se usa al
+        # mirar UN cliente: ahí la pregunta es "cómo viene su facturación", que
+        # se responde con el último año y no con todo el historial.
+        self.limite = limite
 
 
 class FacturaService:
@@ -121,7 +126,10 @@ class FacturaService:
                     condiciones.append(Factura.numero == int(solo_digitos))
                 query = query.filter(or_(*condiciones))
 
-        return query.order_by(Factura.numero.desc()).all()
+        query = query.order_by(Factura.numero.desc())
+        if filtro.limite and filtro.limite > 0:
+            query = query.limit(filtro.limite)
+        return query.all()
 
     def _ids_por_rut(self, rut: str) -> List[int]:
         """Los cliente_id cuyo RUT coincide, comparando ya normalizado.

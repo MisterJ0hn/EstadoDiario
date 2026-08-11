@@ -55,6 +55,30 @@ class EstadoDiarioOrigenRepository:
 
         return items, total, total_pages
 
+    def ids_ingresados_por_correo(self, origen_ids: list[int]) -> set[int]:
+        """De esos archivos, cuáles llegaron por la casilla de ingesta.
+
+        La bitácora de correo es la única que lo sabe: guarda qué mensaje
+        produjo qué archivo (`correo_log.estado_diario_origen_id`). No sirve
+        mirar `usuario_carga`, porque la importación por correo también deja
+        usuario — el que disparó la revisión, o el del cron.
+
+        Import local para no acoplar este repositorio al módulo de correo, que
+        es opcional: un estudio sin casilla configurada nunca escribe esa tabla.
+        """
+        if not origen_ids:
+            return set()
+
+        from app.models.correo_log import CorreoLog
+
+        filas = (
+            self.db.query(CorreoLog.estado_diario_origen_id)
+            .filter(CorreoLog.estado_diario_origen_id.in_(origen_ids))
+            .distinct()
+            .all()
+        )
+        return {f[0] for f in filas if f[0] is not None}
+
     def find_by_id(self, oid: int) -> Optional[EstadoDiarioOrigen]:
         return (
             self.db.query(EstadoDiarioOrigen)

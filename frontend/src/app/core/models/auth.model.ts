@@ -48,6 +48,12 @@ export interface UserInfo {
    *  cabecera `X-Cliente-Guid`, para verificación cruzada con el token. */
   cliente_guid?: string | null;
   /**
+   * Casilla de ingesta del estudio: a esta dirección se le reenvían los Excel
+   * del PJUD para que entren solos. El estudio no la elige —la asigna la
+   * plataforma—, así que se muestra para leerla y copiarla, no para editarla.
+   */
+  cliente_inbox?: string | null;
+  /**
    * La sesión es válida pero el backend rechaza todo lo demás hasta que la
    * contraseña se cambie: administrador sembrado al instalar, o clave
    * reseteada por soporte.

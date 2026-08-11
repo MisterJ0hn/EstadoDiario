@@ -44,6 +44,28 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
                  roles dentro de un estudio: mostraba la etiqueta sola. -->
           </div>
 
+          @if (auth.user()?.cliente_inbox; as inbox) {
+            <hr class="border-neutral-200" />
+
+            <!-- La casilla de ingesta del estudio. Va en el perfil porque es
+                 dato de solo lectura que se necesita a mano —para reenviarle
+                 los Excel del PJUD— y no tenía dónde consultarse: la configura
+                 la plataforma, no el estudio. -->
+            <div>
+              <span class="text-xs text-neutral-500 uppercase">Casilla de ingesta del estudio</span>
+              <div class="flex items-center gap-2 mt-1 flex-wrap">
+                <code class="font-medium text-primary-700 break-all">{{ inbox }}</code>
+                <button type="button" (click)="copiarInbox(inbox)" class="btn-secondary btn-sm shrink-0">
+                  {{ inboxCopiado() ? 'Copiado' : 'Copiar' }}
+                </button>
+              </div>
+              <p class="text-xs text-neutral-400 mt-1">
+                Reenvíe a esta dirección los correos del Poder Judicial y sus archivos se
+                importan solos. Lo que llega queda en Bitácora, pestaña Correo.
+              </p>
+            </div>
+          }
+
           <hr class="border-neutral-200" />
 
           <div>
@@ -196,6 +218,8 @@ export class PerfilComponent implements OnInit {
 
   telefono = '';
   guardandoTelefono = signal(false);
+  /** Marca "Copiado" en el botón un momento, para que se vea que pasó algo. */
+  inboxCopiado = signal(false);
 
   readonly notaHistorial = NOTA_HISTORIAL_PASSWORD;
   claveActual = signal('');
@@ -348,4 +372,22 @@ export class PerfilComponent implements OnInit {
       },
     });
   }
+
+  /**
+   * Copia la casilla de ingesta al portapapeles.
+   *
+   * `navigator.clipboard` no existe fuera de un contexto seguro (http:// que no
+   * sea localhost), de ahí el `?.` y el aviso: es preferible decir que no se
+   * pudo a que el botón no haga nada.
+   */
+  copiarInbox(direccion: string): void {
+    navigator.clipboard?.writeText(direccion).then(
+      () => {
+        this.inboxCopiado.set(true);
+        setTimeout(() => this.inboxCopiado.set(false), 2000);
+      },
+      () => this.notification.error('El navegador no permitió copiar. Selecciónela a mano.')
+    );
+  }
+
 }

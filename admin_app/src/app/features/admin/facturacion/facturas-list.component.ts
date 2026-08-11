@@ -448,10 +448,20 @@ export class FacturasListComponent implements OnInit {
     this.router.navigate(['/facturacion'], { queryParams: {} });
   }
 
+  /**
+   * Cuántas facturas se piden cuando el listado está acotado a UN cliente.
+   *
+   * Un año. Mirando un cliente la pregunta es cómo viene su facturación, y eso
+   * se responde con los últimos meses; el historial completo se busca desde el
+   * listado general, que no lleva tope.
+   */
+  private readonly ULTIMAS_POR_CLIENTE = 12;
+
   private armarFiltro(): FiltroFacturas {
     const f = this.aplicado();
     return {
       cliente_id: this.clienteId(),
+      limite: this.clienteId() !== null ? this.ULTIMAS_POR_CLIENTE : null,
       q: f.q || null,
       rut: f.rut || null,
       desde: f.desde || null,

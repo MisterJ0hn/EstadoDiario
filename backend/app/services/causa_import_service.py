@@ -37,6 +37,7 @@ from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.causa_repository import CausaRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.services.cartera_sync_service import sincronizar_cartera
 from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
 from app.utils.excel_pjud import (
     detectar_formato,
@@ -340,6 +341,12 @@ class CausaImportService:
                 )
             )
             por_materia[materia] = por_materia.get(materia, 0) + 1
+
+        # La carga de Causas reemplaza la foto de la cartera, así que el cruce
+        # se rehace sobre el origen recién creado: lo enriquecido antes colgaba
+        # del archivo anterior y ya nadie lo lee.
+        self.db.flush()
+        sincronizar_cartera(self.db)
 
         self.db.commit()
 

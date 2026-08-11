@@ -16,6 +16,12 @@ class EstadoDiarioOrigenResponse(BaseModel):
     fecha_carga: datetime
     usuario_carga: str | None = None
     total_movimientos: int = 0
+    # Cómo entró el archivo: 'correo' si llegó por la casilla de ingesta,
+    # 'manual' si alguien lo subió. No se puede deducir de `usuario_carga`: la
+    # importación por correo también deja usuario (el que disparó la revisión, o
+    # el del cron), así que se resuelve por la bitácora de correo, que es la que
+    # sabe qué mensaje produjo qué archivo.
+    via: str = "manual"
 
     class Config:
         from_attributes = True

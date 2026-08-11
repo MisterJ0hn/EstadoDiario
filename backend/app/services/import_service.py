@@ -15,6 +15,7 @@ from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.services.cartera_sync_service import sincronizar_cartera
 from app.models.jurisdiccion import Jurisdiccion
 from app.services.deteccion_archivo import verificar_contenido
 
@@ -224,6 +225,11 @@ class ImportService:
             )
             self.db.add(registro)
             cortes += 1
+
+        # El cruce va ANTES del commit y en la misma transacción: si fallara,
+        # no queda un archivo importado y una cartera a medio actualizar.
+        self.db.flush()
+        sincronizar_cartera(self.db)
 
         self.db.commit()
         logger.info(

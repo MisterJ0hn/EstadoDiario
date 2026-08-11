@@ -187,6 +187,13 @@ export const routes: Routes = [
         ],
       },
       {
+        // Sus propias facturas, de solo lectura: generar y anular viven en la
+        // consola de administración.
+        path: 'facturas',
+        loadComponent: () =>
+          import('./features/facturas/facturas.component').then((m) => m.FacturasComponent),
+      },
+      {
         path: 'perfil',
         loadComponent: () =>
           import('./features/perfil/perfil.component').then((m) => m.PerfilComponent),
@@ -200,11 +207,13 @@ export const routes: Routes = [
           // de qué casilla se lee determina en qué base entra cada archivo.
           // Al estudio le queda la bitácora, y solo a su administrador.
           {
+            // La bitácora de correo dejó de ser una pantalla propia: es una
+            // pestaña de Bitácora. La ruta se conserva redirigiendo para que
+            // los enlaces guardados y el historial del navegador sigan
+            // llevando a donde el usuario espera.
             path: 'correo/log',
-            loadComponent: () =>
-              import('./features/configuracion/components/correo-log/correo-log.component').then(
-                (m) => m.CorreoLogComponent
-              ),
+            redirectTo: '/estado-diario?tab=correo',
+            pathMatch: 'full',
           },
           // SMTP, Google Calendar y WhatsApp dejaron de ser del estudio: son
           // servicios del sistema y viven en /admin/configuracion.

@@ -299,6 +299,45 @@ override por cliente en su ficha) y la aplica un job nocturno, base por base:
 30 3 * * * docker exec ed_backend python -m app.jobs.purgar_logs >> /var/log/estado_diario_purga.log 2>&1
 ```
 
+## Cruce de los reportes contra Mis Causas
+
+Los tres Excel del PJUD hablan de las mismas causas y ninguno las trae todas. El
+sistema las cruza para mantener `causa` y `causa_corte` al día: rellena campos
+vacíos, actualiza el estado y agrega lo que la cartera no tenga.
+
+**Corre solo, al cerrar cada importación.** No hay que hacer nada: cada Excel que
+entra —por correo o subido a mano— dispara el cruce en su misma transacción.
+
+Para lo que ya estaba cargado antes de esta versión, hay un job de reconstrucción:
+
+```bash
+# Ver qué haría, sin escribir nada
+docker exec ed_backend python -m app.jobs.sincronizar_cartera --simular
+# Aplicarlo a todos los clientes
+docker exec ed_backend python -m app.jobs.sincronizar_cartera
+# Un solo cliente
+docker exec ed_backend python -m app.jobs.sincronizar_cartera --guid <guid>
+```
+
+Es idempotente: correrlo dos veces no cambia nada la segunda. Conviene dejarlo
+también en el crontab por si alguna importación quedó a medias:
+
+```bash
+15 2 * * * docker exec ed_backend python -m app.jobs.sincronizar_cartera >> /var/log/estado_diario_cartera.log 2>&1
+```
+
+Dos cosas que conviene saber al mirar el resultado:
+
+- **El estado casi siempre lo mueve Movimientos.** El estado diario solo trae esa
+  columna en Penal y Familia, y en Corte no la trae nunca. Buscar ahí un estado
+  que no llega es perder el tiempo.
+- **Las filas sin tribunal se omiten y se informan.** La causa se identifica por
+  `rol + tribunal`; sin las dos partes no hay con qué cruzar. Si el job reporta
+  muchas omitidas, suele ser dato mal clasificado por el importador antiguo.
+
+Una causa agregada por el cruce **se factura igual que las demás**. Queda marcada
+con `origen_dato` para poder explicar de dónde salió.
+
 ## Facturación Mensual
 
 Se cobra por cantidad de causas de la cartera vigente: una línea por materia

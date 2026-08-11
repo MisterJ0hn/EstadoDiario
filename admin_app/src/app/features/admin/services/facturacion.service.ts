@@ -44,6 +44,7 @@ export class FacturacionService {
     agregar('cliente_activo', filtro.cliente_activo);
     agregar('q', filtro.q);
     agregar('estado', filtro.estado);
+    agregar('limite', filtro.limite);
     return this.http.get<FacturaListResponse>(`${this.apiUrl}/facturas`, { params });
   }
 

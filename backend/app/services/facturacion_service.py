@@ -92,22 +92,47 @@ _SQL_ULTIMO_ORIGEN = text(
 # sin eso se facturaría la misma causa tantas veces como se haya cargado el
 # Excel — el error más caro posible en este módulo.
 #
+# **Se cuentan CAUSAS, no filas.** El Excel del PJUD repite la misma causa: en
+# una cartera real de 12.248 filas había 1.653 repetidas, y contarlas cobraba
+# $419 de más en una sola factura. La causa se identifica por `rol + tribunal`
+# —el rol se renumera en cada tribunal, así que `C-17-2021` existe en ocho
+# juzgados civiles a la vez— y la materia no discrimina nada: agregarla a esa
+# llave da exactamente el mismo número de causas.
+#
+# El DISTINCT va en una subconsulta y no como `COUNT(DISTINCT (a, b))` para no
+# depender de la comparación de tipos fila, y `fila:<id>` evita que dos causas
+# sin rol se fundan en una: sin rol no son identificables, así que cada una
+# cuenta por sí misma en vez de desaparecer.
+#
 # Nada de `FILTER (...)`: producción corre PostgreSQL 9.2 y esa sintaxis llegó
 # en 9.4.
 _SQL_CONCEPTOS = text(
     f"""
-    SELECT 'materia' AS tipo,
-           COALESCE(NULLIF(BTRIM(materia), ''), '{MATERIA_SIN_NOMBRE}') AS concepto,
-           COUNT(*) AS cantidad
-      FROM causa
-     WHERE estado_diario_origen_id = :origen_id
-       AND {sql_vigente('estado_causa')}
-     GROUP BY COALESCE(NULLIF(BTRIM(materia), ''), '{MATERIA_SIN_NOMBRE}')
+    SELECT 'materia' AS tipo, concepto, COUNT(*) AS cantidad
+      FROM (
+        SELECT DISTINCT
+               COALESCE(NULLIF(BTRIM(materia), ''), '{MATERIA_SIN_NOMBRE}') AS concepto,
+               COALESCE(NULLIF(BTRIM(rol), ''), 'fila:' || CAST(id AS text)) AS llave_rol,
+               COALESCE(BTRIM(tribunal), '') AS llave_tribunal
+          FROM causa
+         WHERE estado_diario_origen_id = :origen_id
+           AND {sql_vigente('estado_causa')}
+      ) causas_unicas
+     GROUP BY concepto
     UNION ALL
-    SELECT 'corte' AS tipo, tipo AS concepto, COUNT(*) AS cantidad
-      FROM causa_corte
-     WHERE estado_diario_origen_id = :origen_id
-     GROUP BY tipo
+    SELECT 'corte' AS tipo, concepto, COUNT(*) AS cantidad
+      FROM (
+        SELECT DISTINCT
+               tipo AS concepto,
+               COALESCE(NULLIF(BTRIM(rol), ''), 'fila:' || CAST(id AS text)) AS llave_rol,
+               COALESCE(BTRIM(era), '') AS llave_era,
+               -- Corte Suprema no trae columna Corte, así que ahí queda vacía y
+               -- la llave es rol + era, que es lo correcto: hay una sola.
+               COALESCE(BTRIM(corte), '') AS llave_corte
+          FROM causa_corte
+         WHERE estado_diario_origen_id = :origen_id
+      ) cortes_unicos
+     GROUP BY concepto
     """
 )
 

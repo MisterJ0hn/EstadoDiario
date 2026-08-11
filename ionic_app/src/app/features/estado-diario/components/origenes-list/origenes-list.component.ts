@@ -4,26 +4,48 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
 import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model';
+import { CorreoLogComponent } from '../../../configuracion/components/correo-log/correo-log.component';
 
+/** Las pestañas: los cuatro tipos de archivo, más la casilla de correo. */
+type Pestana = TipoOrigen | 'correo';
+
+/**
+ * Bitácora: todo lo que entró al sistema, en un solo lugar.
+ *
+ * **Por qué una sola pantalla.** Antes había dos entradas de menú —"Bitácora"
+ * para los archivos y "Bitácora de Correo" para la casilla— y eran lo mismo
+ * visto de dos formas: un archivo entra subiéndolo a mano o llegando por
+ * correo. Para responder "¿llegó hoy el estado diario?" había que mirar en dos
+ * lugares y cruzarlos a ojo.
+ *
+ * Ahora las cuatro primeras pestañas son los archivos que **existen**, sin
+ * importar cómo entraron (la columna *Vía* lo dice), y la quinta es la casilla:
+ * qué mensajes llegaron y qué pasó con cada uno. Esa última sigue aparte
+ * porque muestra cosas que las otras no pueden: los correos que NO produjeron
+ * archivo —descartados, duplicados, errores, fallas de conexión—, que es justo
+ * lo que se viene a buscar cuando algo no llegó.
+ */
 @Component({
   selector: 'app-origenes-list',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, CorreoLogComponent],
   template: `
     <div class="space-y-6">
       <!-- Header -->
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Archivos</h1>
+          <h1 class="text-2xl font-bold text-neutral-800">Bitácora</h1>
           <p class="text-neutral-500 mt-1">{{ subtitulo() }}</p>
         </div>
-        <a [routerLink]="activeTab() === 'causas' ? '/causas/cargar' : '/estado-diario/upload'"
-           class="btn-primary">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          {{ activeTab() === 'causas' ? 'Cargar Causas' : 'Cargar Archivo' }}
-        </a>
+        @if (activeTab() !== 'correo') {
+          <a [routerLink]="activeTab() === 'causas' ? '/causas/cargar' : '/estado-diario/upload'"
+             class="btn-primary">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            {{ activeTab() === 'causas' ? 'Cargar Causas' : 'Cargar Archivo' }}
+          </a>
+        }
       </div>
 
       <!-- Pestañas por tipo de archivo -->
@@ -41,7 +63,7 @@ import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model
                 : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'"
             >
               {{ t.label }}
-              @if (activeTab() === t.key) {
+              @if (activeTab() === t.key && t.key !== 'correo') {
                 <span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-primary-100 text-primary-700">
                   {{ total() }}
                 </span>
@@ -51,8 +73,11 @@ import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model
         </nav>
       </div>
 
-      <!-- Table -->
-      @if (loading()) {
+      @if (activeTab() === 'correo') {
+        <!-- La casilla trae su propia paginación, su filtro por resultado y el
+             botón de revisar: es su pestaña entera, no una tabla más. -->
+        <app-correo-log />
+      } @else if (loading()) {
         <div class="flex items-center justify-center py-20">
           <svg class="animate-spin h-10 w-10 text-primary-600" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
@@ -70,6 +95,7 @@ import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model
                   <th>Fecha</th>
                   <th>Archivo</th>
                   <th>Fecha Carga</th>
+                  <th>Vía</th>
                   <th>Usuario</th>
                   <th>{{ columnaContador() }}</th>
                   <th>Acciones</th>
@@ -83,6 +109,15 @@ import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model
                     <td>{{ o.fecha || '-' }}</td>
                     <td class="max-w-[200px] truncate" [title]="o.nombre_archivo || ''">{{ o.nombre_archivo || '-' }}</td>
                     <td>{{ o.fecha_carga | date:'dd/MM/yyyy HH:mm' }}</td>
+                    <td>
+                      <!-- De dónde vino el archivo. Es lo que hacía falta mirar
+                           en la otra pantalla para saberlo. -->
+                      @if (o.via === 'correo') {
+                        <span class="badge-info">Correo</span>
+                      } @else {
+                        <span class="badge-neutral">Manual</span>
+                      }
+                    </td>
                     <td>{{ o.usuario_carga || '-' }}</td>
                     <td>
                       <span class="badge-info">{{ o.total_movimientos }}</span>
@@ -106,7 +141,7 @@ import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="8" class="text-center py-10 text-neutral-400">
+                    <td colspan="9" class="text-center py-10 text-neutral-400">
                       No hay archivos cargados
                     </td>
                   </tr>
@@ -140,16 +175,19 @@ export class OrigenesListComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  /** Los cuatro tipos de Excel que maneja el sistema; el `key` es el valor que
-   *  espera el backend.
+  /** Los cuatro tipos de Excel que maneja el sistema, más la casilla; el `key`
+   *  de los cuatro primeros es el valor que espera el backend.
    *
-   *  Causas va última porque es la que menos se consulta: se carga una vez y
-   *  reemplaza a la anterior, mientras que las otras tres llegan a diario. */
-  readonly tabs: { key: TipoOrigen; label: string }[] = [
+   *  Causas va antes de Correo porque es la que menos se consulta: se carga una
+   *  vez y reemplaza a la anterior, mientras que las otras tres llegan a
+   *  diario. Correo va última porque no es un tipo de archivo sino la vía por
+   *  donde llegan todos. */
+  readonly tabs: { key: Pestana; label: string }[] = [
     { key: 'estado_diario', label: 'Estado Diario' },
     { key: 'movimientos', label: 'Movimientos' },
     { key: 'audiencias', label: 'Audiencias' },
     { key: 'causas', label: 'Causas' },
+    { key: 'correo', label: 'Correo' },
   ];
 
   origenes = signal<EstadoDiarioOrigen[]>([]);
@@ -158,23 +196,27 @@ export class OrigenesListComponent implements OnInit {
   totalPages = signal(1);
   total = signal(0);
 
-  activeTab = signal<TipoOrigen>('estado_diario');
+  activeTab = signal<Pestana>('estado_diario');
 
-  private readonly SUBTITULOS: Record<TipoOrigen, string> = {
+  private readonly SUBTITULOS: Record<Pestana, string> = {
     estado_diario: 'Archivos de estado diario cargados',
     movimientos: 'Archivos de movimientos cargados',
     audiencias: 'Archivos de audiencias cargados',
     causas: 'Archivos de causas cargados — el más reciente es la cartera vigente',
+    correo: 'Todo lo que llegó a su casilla de ingesta, entrara o no',
   };
 
   /** El contador de filas por archivo significa algo distinto en cada pestaña.
    *  En todas cuenta materia MÁS corte: son las dos clases de hoja que trae el
    *  mismo Excel, y contar solo una dejaba la columna diciendo de menos. */
-  private readonly CONTADORES: Record<TipoOrigen, string> = {
+  private readonly CONTADORES: Record<Pestana, string> = {
     estado_diario: 'Estado Diario',
     movimientos: 'Movimientos',
     audiencias: 'Audiencias',
     causas: 'Causas',
+    // Nunca se muestra: la pestaña de correo no usa esta tabla. Está para que
+    // el Record quede completo y el compilador siga cuidando el tipo.
+    correo: '',
   };
 
   subtitulo = computed(() => this.SUBTITULOS[this.activeTab()]);
@@ -184,14 +226,20 @@ export class OrigenesListComponent implements OnInit {
   ngOnInit(): void {
     const queryTab = this.route.snapshot.queryParamMap.get('tab');
     this.activeTab.set(this.normalizeTab(queryTab) ?? 'estado_diario');
-    this.loadPage(1);
+    // La pestaña de correo trae sus propios datos: pedirle archivos al backend
+    // sería una consulta que nadie va a mirar.
+    if (this.activeTab() !== 'correo') {
+      this.loadPage(1);
+    } else {
+      this.loading.set(false);
+    }
   }
 
-  private normalizeTab(value: string | null): TipoOrigen | null {
-    return this.tabs.some((t) => t.key === value) ? (value as TipoOrigen) : null;
+  private normalizeTab(value: string | null): Pestana | null {
+    return this.tabs.some((t) => t.key === value) ? (value as Pestana) : null;
   }
 
-  selectTab(tab: TipoOrigen): void {
+  selectTab(tab: Pestana): void {
     if (this.activeTab() === tab) return;
     this.activeTab.set(tab);
     this.router.navigate([], {
@@ -200,6 +248,10 @@ export class OrigenesListComponent implements OnInit {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
+    if (tab === 'correo') {
+      this.loading.set(false);
+      return;
+    }
     this.loadPage(1);
   }
 
@@ -220,8 +272,13 @@ export class OrigenesListComponent implements OnInit {
   }
 
   loadPage(page: number): void {
+    const tipo = this.activeTab();
+    // Guarda por si alguien llama a esto desde la pestaña de correo: ese `tipo`
+    // no existe en el backend y devolvería la lista vacía sin decir por qué.
+    if (tipo === 'correo') return;
+
     this.loading.set(true);
-    this.service.getOrigenes(page, 20, this.activeTab()).subscribe({
+    this.service.getOrigenes(page, 20, tipo).subscribe({
       next: (res) => {
         this.origenes.set(res.origenes);
         this.currentPage.set(res.page);

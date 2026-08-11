@@ -137,6 +137,11 @@ class UserInfo(BaseModel):
     # puede quedar en una URL pública.
     cliente_logo: str | None = None
     cliente_guid: str | None = None
+    # Casilla de ingesta del estudio: a esta dirección se le reenvían los Excel
+    # del PJUD para que entren solos. Va en el perfil y no en una pantalla de
+    # configuración porque el estudio no la elige —la asigna la plataforma— y lo
+    # único que necesita es poder leerla y copiarla.
+    cliente_inbox: str | None = None
 
 
 class RecaptchaConfigResponse(BaseModel):

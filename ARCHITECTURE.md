@@ -229,6 +229,7 @@ backend/
 │       ├── enviar_recordatorios_whatsapp.py
 │       ├── purgar_logs.py
 │       ├── generar_facturacion.py  # El día 1: factura el mes que terminó
+│       ├── sincronizar_cartera.py  # Cruza los 3 reportes contra Mis Causas
 │       ├── migrar_facturas_mensuales.py # Un solo uso: cierres → facturas
 │       └── migrar_a_multitenant.py # Un solo uso: ver "Migración"
 ├── Dockerfile
@@ -699,6 +700,61 @@ momento, sin escribir nada y marcado como tal. Es la pregunta que se hace el 20
 del mes —cuánto va a salir la factura— y responder "no hay datos" haría parecer
 que el módulo no funciona.
 
+## Cruce de los reportes contra la cartera
+
+Los tres Excel del PJUD hablan de las mismas causas y ninguno las trae todas.
+`app/services/cartera_sync_service.py` las junta: rellena campos vacíos,
+actualiza el estado y da de alta en `causa` / `causa_corte` lo que la cartera no
+tenga. Corre al cerrar **cada** importación, dentro de su misma transacción, y
+además hay un job (`app.jobs.sincronizar_cartera`) para lo ya cargado.
+
+**La llave es `rol + tribunal`**, medido sobre una cartera real de 12.248 causas:
+
+| Llave | Combinaciones |
+|-------|--------------:|
+| `rol` | 9.734 |
+| `rol + materia` | 9.875 |
+| `rol + tribunal` | **10.595** |
+| `rol + tribunal + materia` | 10.595 |
+
+El rol se renumera en cada tribunal —`C-17-2021` existe a la vez en ocho
+juzgados civiles— y agregarle la materia a la llave da el número idéntico: el
+tribunal ya determina la materia. De ahí sale también cómo se deduce la materia
+de una causa que llega del estado diario, que no la trae pero sí trae tribunal.
+
+Las repeticiones que quedan bajo esa llave son la MISMA causa repetida en el
+Excel: en cero de esos grupos difiere el caratulado. Por eso el cruce actualiza
+todas las filas de un grupo, y por eso la facturación cuenta causas distintas y
+no filas.
+
+**Una fila sin rol o sin tribunal se omite.** Sin las dos partes no hay llave. No
+es teórico: el importador viejo guardaba las causas de corte en la tabla
+`estado_diario`, con el rol en formato de corte y el tribunal vacío; sin esa
+guarda entraban a la cartera como causas de materia sin materia, y se
+facturaban.
+
+**En corte la llave se construye.** Causas y Movimientos traen `Rol` y `Era` en
+columnas separadas; el estado diario los trae pegados (`Civil-2786-2026`), así
+que se parsea `<materia>-<rol>-<era>` y se cruza por `rol + era + corte`. Suprema
+no trae columna Corte —hay una sola— y ahí la llave es `rol + era`.
+
+**Qué puede aportar cada reporte**, que no es simétrico:
+
+| Reporte | ¿Trae estado? |
+|---------|---------------|
+| Causas | Sí, salvo Cobranza |
+| Movimientos | Sí, en todas las hojas |
+| Estado Diario | Solo Penal y Familia |
+| Estado Diario Corte | **Nunca**: no tiene la columna |
+
+En la práctica el estado lo mueve Movimientos. Gana el archivo con `origen.fecha`
+más reciente; con fechas iguales manda Causas, que es el reporte que define la
+cartera. Un nulo nunca pisa a un valor existente.
+
+Cada fila lleva `origen_dato` y `enriquecida_en`: una causa deducida se factura
+igual que las demás, y al discutir una factura hay que poder decir de dónde
+salió.
+
 ### El documento
 
 Todo lo que se imprime queda **copiado** en `factura`: la razón social, el RUT,
@@ -739,6 +795,7 @@ base lista se saltan.
 */5  * * * *  docker exec ed_backend python -m app.jobs.enviar_recordatorios_whatsapp
 30 3 * * *    docker exec ed_backend python -m app.jobs.purgar_logs
 0  4 1 * *    docker exec ed_backend python -m app.jobs.generar_facturacion
+15 2 * * *    docker exec ed_backend python -m app.jobs.sincronizar_cartera
 ```
 
 La revisión de correo corre en **cada pasada** del cron y no una vez al día: el

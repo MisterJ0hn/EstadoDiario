@@ -146,6 +146,9 @@ def listar_cortes(
     corte: str | None = Query(None, description="Nombre de la corte"),
     fecha_desde: str | None = Query(None),
     fecha_hasta: str | None = Query(None),
+    vigencia: str | None = Query(
+        VIGENTES, description="vigentes | finalizadas | vacío para todas"
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
@@ -155,7 +158,7 @@ def listar_cortes(
     items, total, pagina, total_pages = repo.find_filtered(
         tipo=tipo, busqueda=busqueda, corte=corte,
         fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
-        page=page, limit=limit,
+        vigencia=_vigencia(vigencia), page=page, limit=limit,
     )
     return CausaCorteListResponse(
         total=total,

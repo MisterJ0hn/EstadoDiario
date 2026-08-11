@@ -13,6 +13,7 @@ from typing import Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.estados_causa import condicion_vigencia
 from app.models.movimiento_corte import MovimientoCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 
@@ -30,6 +31,7 @@ class MovimientoCorteRepository:
         corte: Optional[str],
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
+        vigencia: Optional[str] = None,
     ):
         query = query
 
@@ -54,6 +56,12 @@ class MovimientoCorteRepository:
         if fecha_hasta:
             query = query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
 
+        # Misma regla que la cartera. En este reporte la columna se llama
+        # `estado_causa` aunque sea de corte: lo nombra así el Excel.
+        condicion = condicion_vigencia(MovimientoCorte.estado_causa, vigencia)
+        if condicion is not None:
+            query = query.filter(condicion)
+
         return query
 
     def find_filtered(
@@ -63,6 +71,7 @@ class MovimientoCorteRepository:
         corte: Optional[str] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
+        vigencia: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -71,7 +80,7 @@ class MovimientoCorteRepository:
             MovimientoCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
         )
         base = self._aplicar_filtros(
-            base, tipo, busqueda, corte, fecha_desde, fecha_hasta
+            base, tipo, busqueda, corte, fecha_desde, fecha_hasta, vigencia
         )
 
         conteo = self.db.query(func.count(MovimientoCorte.id)).join(
@@ -79,7 +88,7 @@ class MovimientoCorteRepository:
             MovimientoCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
         )
         total = self._aplicar_filtros(
-            conteo, tipo, busqueda, corte, fecha_desde, fecha_hasta
+            conteo, tipo, busqueda, corte, fecha_desde, fecha_hasta, vigencia
         ).scalar() or 0
 
         query = base.options(joinedload(MovimientoCorte.estado_diario_origen))

@@ -1,7 +1,8 @@
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, OnInit, inject, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
+import { VigenciaCausa } from '@core/models/causa.model';
 import { CausaCorte, TipoCorteCausa } from '@core/models/causa.model';
 import {
   ChipFiltro,
@@ -25,12 +26,15 @@ import { CausaService } from './services/causa.service';
   imports: [CommonModule, FormsModule, FiltrosPanelComponent],
   template: `
     <div class="space-y-6">
-      <div>
-        <h1 class="text-2xl font-bold text-neutral-800">Mis Causas · Corte</h1>
-        <p class="text-neutral-500 mt-1">
-          {{ total() }} {{ total() === 1 ? 'causa' : 'causas' }} en Corte Suprema y Corte de
-          Apelaciones
-        </p>
+      <div class="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-neutral-800">{{ titulo() }}</h1>
+          <p class="text-neutral-500 mt-1">
+            {{ total() }} {{ total() === 1 ? 'causa' : 'causas' }} en Corte Suprema y Corte de
+            Apelaciones
+          </p>
+        </div>
+
       </div>
 
       <app-filtros-panel
@@ -39,6 +43,16 @@ import { CausaService } from './services/causa.service';
         (limpiar)="onLimpiarFiltros()"
         (quitar)="quitarFiltro($event)"
       >
+        <div>
+          <label class="form-label" for="cc-vigencia">Vigencia</label>
+          <select id="cc-vigencia" class="form-select" [(ngModel)]="filtroVigencia">
+            <option value="vigentes">Vigentes</option>
+            <option value="finalizadas">No vigentes</option>
+          </select>
+          <!-- Sin opción "todas" a propósito: mezclar causas vivas con
+               concluidas es lo que hace inútil el listado, y el título dice
+               cuál de las dos mitades se está mirando. -->
+        </div>
         <div>
           <label class="form-label" for="cc-busqueda">Búsqueda</label>
           <input
@@ -169,6 +183,29 @@ export class CausasCortesComponent implements OnInit {
   cortes = signal<CausaCorte[]>([]);
   cortesDisponibles = signal<string[]>([]);
   total = signal(0);
+
+  /**
+   * Qué mitad se está viendo. Por defecto las vigentes: son las que el estudio
+   * tramita, y una cartera con años de causas concluidas encima haría inútil el
+   * listado el primer día.
+   */
+  vigencia = signal<VigenciaCausa>('vigentes');
+  /**
+   * Lo que está elegido en el panel, que no es lo mismo que lo aplicado: el
+   * panel tiene botón "Aplicar", y mientras esté abierto la tabla y el título
+   * siguen mostrando la vigencia anterior.
+   */
+  filtroVigencia: VigenciaCausa = 'vigentes';
+
+  readonly VIGENCIAS: { clave: VigenciaCausa; etiqueta: string; titulo: string }[] = [
+    { clave: 'vigentes', etiqueta: 'Vigentes', titulo: 'Cartera cliente Vigentes' },
+    { clave: 'finalizadas', etiqueta: 'No vigentes', titulo: 'Cartera cliente Finalizada' },
+  ];
+
+  titulo = computed(
+    () => this.VIGENCIAS.find((v) => v.clave === this.vigencia())!.titulo
+  );
+
   pagina = signal(1);
   totalPaginas = signal(1);
   cargando = signal(true);
@@ -196,6 +233,7 @@ export class CausasCortesComponent implements OnInit {
         tipo: this.filtroTipo || undefined,
         busqueda: this.filtroBusqueda.trim() || undefined,
         corte: this.filtroCorte || undefined,
+        vigencia: this.vigencia(),
         page: this.pagina(),
         limit: this.porPagina,
       })
@@ -216,6 +254,9 @@ export class CausasCortesComponent implements OnInit {
   }
 
   onFiltrar(): void {
+    // Lo elegido en el panel pasa a ser lo aplicado: de acá salen la
+    // consulta, el título y el chip.
+    this.vigencia.set(this.filtroVigencia);
     // Cambiar un filtro vuelve a la primera página: quedarse en la 4 tras
     // filtrar muestra una tabla vacía que parece un error.
     this.pagina.set(1);
@@ -224,6 +265,8 @@ export class CausasCortesComponent implements OnInit {
   }
 
   onLimpiarFiltros(): void {
+    // Vuelve a Vigentes, que es el valor por defecto de la pantalla.
+    this.filtroVigencia = 'vigentes';
     this.filtroBusqueda = '';
     this.filtroTipo = '';
     this.filtroCorte = '';
@@ -237,6 +280,9 @@ export class CausasCortesComponent implements OnInit {
 
   quitarFiltro(clave: string): void {
     switch (clave) {
+      case 'vigencia':
+        this.filtroVigencia = 'vigentes';
+        break;
       case 'busqueda':
         this.filtroBusqueda = '';
         break;
@@ -263,6 +309,9 @@ export class CausasCortesComponent implements OnInit {
 
   private sincronizarChips(): void {
     const chips: ChipFiltro[] = [];
+    if (this.vigencia() === 'finalizadas') {
+      chips.push({ clave: 'vigencia', etiqueta: 'Vigencia', valor: 'No vigentes' });
+    }
     if (this.filtroBusqueda) {
       chips.push({ clave: 'busqueda', etiqueta: 'Búsqueda', valor: this.filtroBusqueda });
     }
@@ -275,4 +324,6 @@ export class CausasCortesComponent implements OnInit {
     }
     this.chipsFiltros.set(chips);
   }
+
+
 }

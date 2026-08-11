@@ -46,6 +46,7 @@ export class CausaService {
       tipo?: 'suprema' | 'apelaciones';
       busqueda?: string;
       corte?: string;
+      vigencia?: string;
       page?: number;
       limit?: number;
     } = {}

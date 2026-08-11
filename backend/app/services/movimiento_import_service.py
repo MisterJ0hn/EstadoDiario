@@ -39,6 +39,7 @@ from app.utils.excel_pjud import (
     recortar,
 )
 
+from app.services.cartera_sync_service import sincronizar_cartera
 from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
 
 logger = logging.getLogger(__name__)
@@ -333,6 +334,11 @@ class MovimientoImportService:
             por_materia[mov.materia or "(sin materia)"] = (
                 por_materia.get(mov.materia or "(sin materia)", 0) + 1
             )
+
+        # El cruce va ANTES del commit y en la misma transacción: si fallara,
+        # no queda un archivo importado y una cartera a medio actualizar.
+        self.db.flush()
+        sincronizar_cartera(self.db)
 
         self.db.commit()
         # `len(filas)` incluiría las de corte, que van a otra tabla: el número

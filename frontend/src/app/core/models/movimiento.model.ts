@@ -1,3 +1,4 @@
+import { VigenciaCausa } from './causa.model';
 /**
  * Módulo Movimientos: reporte del estado procesal de las causas.
  *
@@ -58,6 +59,8 @@ export interface MovimientoFiltros {
   busqueda?: string;
   rut?: string;
   origen_id?: number;
+  /** Interruptor de pantalla: qué mitad de la cartera se mira. */
+  vigencia?: VigenciaCausa;
   page?: number;
   limit?: number;
 }

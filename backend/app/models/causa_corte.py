@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, ForeignKey, String
+from sqlalchemy import Date, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import BaseTenant
@@ -61,6 +61,15 @@ class CausaCorte(BaseTenant):
     jurisdiccion_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("jurisdiccion.id"), index=True
     )
+
+    # ── Cruce con los otros dos reportes ──
+    # Mismo criterio que en `Causa`: de qué reporte salió la fila y cuándo la
+    # tocó el cruce. Las constantes viven en `app.models.causa` para que no haya
+    # dos listas de lo mismo.
+    origen_dato: Mapped[str] = mapped_column(
+        String(20), default="causas", server_default="causas"
+    )
+    enriquecida_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="causas_corte")
     jurisdiccion = relationship("Jurisdiccion")

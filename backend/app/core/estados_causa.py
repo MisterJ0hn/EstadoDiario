@@ -52,6 +52,42 @@ def esta_finalizada(estado: Optional[str]) -> bool:
 _LISTA_SQL = ", ".join(f"'{e}'" for e in ESTADOS_FINALIZADOS)
 
 
+# Valores del parámetro `vigencia` que aceptan los listados. Viven acá y no en
+# un repositorio porque ya son cuatro las pantallas que filtran por esto.
+VIGENTES = "vigentes"
+FINALIZADAS = "finalizadas"
+
+
+def condicion_vigencia(columna, vigencia: Optional[str]):
+    """Condición ORM de vigencia sobre la columna de estado indicada.
+
+    Sirve para las cuatro pantallas que filtran por esto: la cartera por
+    materia y por corte, y los movimientos por materia y por corte. Cada tabla
+    nombra distinto su columna de estado (`estado_causa`, `estado_procesal`),
+    así que se recibe la columna y no el modelo.
+
+    Devuelve None cuando no se pidió filtrar, para que quien llama pueda
+    encadenarlo sin ramas.
+
+    **El estado nulo cuenta como VIGENTE** y por eso el `is_(None)` explícito:
+    la hoja de Cobranza no trae la columna, y en SQL un `NOT IN` contra NULL no
+    es verdadero sino NULL, así que sin esa rama Cobranza no aparecería en
+    ninguno de los dos lados del filtro.
+    """
+    # Import local: este módulo lo consumen también los jobs, que arman SQL
+    # crudo y no deberían arrastrar SQLAlchemy solo por estar acá.
+    from sqlalchemy import func, or_
+
+    # `lower(btrim(...))`: el Excel del PJUD rellena la celda con espacios a la
+    # derecha ('Concluido                     ').
+    normalizado = func.lower(func.btrim(columna))
+    if vigencia == VIGENTES:
+        return or_(columna.is_(None), normalizado.notin_(ESTADOS_FINALIZADOS))
+    if vigencia == FINALIZADAS:
+        return normalizado.in_(ESTADOS_FINALIZADOS)
+    return None
+
+
 def sql_vigente(columna: str) -> str:
     """Condición SQL de causa VIGENTE sobre la columna de estado indicada."""
     return f"({columna} IS NULL OR LOWER(BTRIM({columna})) NOT IN ({_LISTA_SQL}))"

@@ -57,6 +57,10 @@ def listar_origenes(
     # Los archivos son del estudio. Lo que se acota por
     # jurisdicción es su contenido, al abrirlos.
     items, total, total_pages = repo.find_all_paginated(tipo, page, per_page)
+    # Cuáles de esta página entraron por la casilla. Se resuelve en UNA consulta
+    # sobre los ids de la página y no preguntando por archivo: son 20 filas por
+    # pantalla y serían 20 viajes a la base para pintar una columna.
+    por_correo = repo.ids_ingresados_por_correo([o.id for o in items])
     origenes = []
     for o in items:
         origenes.append(EstadoDiarioOrigenResponse(
@@ -69,6 +73,7 @@ def listar_origenes(
             fecha_carga=o.fecha_carga,
             usuario_carga=o.usuario_carga.usuario if o.usuario_carga else None,
             total_movimientos=repo.count_registros(o),
+            via="correo" if o.id in por_correo else "manual",
         ))
     return EstadoDiarioOrigenListResponse(
         total=total, page=page, total_pages=total_pages, origenes=origenes,

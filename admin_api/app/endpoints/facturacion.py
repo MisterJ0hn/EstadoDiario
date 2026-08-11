@@ -77,6 +77,11 @@ def listar_facturas(
         None, description="Nombre del cliente o número de factura, en el mismo campo"
     ),
     estado: str | None = Query(None, description="emitida | pagada | anulada"),
+    limite: int | None = Query(
+        None, ge=1, le=500,
+        description="Máximo de facturas, de la más nueva hacia atrás. La consola "
+                    "manda 12 cuando se mira UN cliente.",
+    ),
     db: Session = Depends(get_db_maestra),
 ):
     """De la más nueva a la más vieja, con el detalle de cada una.
@@ -96,6 +101,7 @@ def listar_facturas(
         cliente_activo=cliente_activo,
         busqueda=q,
         estado=estado,
+        limite=limite,
     )
     return FacturacionConsultaService(db).listar(filtro)
 

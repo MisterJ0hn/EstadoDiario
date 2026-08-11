@@ -100,6 +100,8 @@ export interface FiltroFacturas {
   /** Nombre del cliente o número de factura, en el mismo campo. */
   q?: string | null;
   estado?: EstadoFactura | null;
+  /** Tope de filas, de la más nueva hacia atrás. */
+  limite?: number | null;
 }
 
 // ── Generación ────────────────────────────────────────────

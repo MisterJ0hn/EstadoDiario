@@ -65,6 +65,9 @@ def perfil_cliente(usuario, cliente=None) -> UserInfo:
         info.cliente_rut = cliente.rut
         info.cliente_guid = cliente.guid
         info.cliente_logo = cliente.logo_data_uri
+        # Propiedad calculada del modelo: sale de la columna si el
+        # administrador la fijó, y si no del dominio de ingesta del sistema.
+        info.cliente_inbox = cliente.inbox
     return info
 
 

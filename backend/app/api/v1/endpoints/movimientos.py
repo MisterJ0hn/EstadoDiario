@@ -17,6 +17,7 @@ from app.core.config import UPLOAD_DIR
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.movimiento_corte_repository import MovimientoCorteRepository
+from app.core.estados_causa import FINALIZADAS, VIGENTES
 from app.repositories.movimiento_repository import MovimientoRepository
 from app.schemas.movimiento import (
     MovimientoCorteListResponse,
@@ -40,6 +41,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/movimientos", tags=["Movimientos"])
 
 
+def _vigencia(valor: str | None) -> str | None:
+    """Normaliza el parámetro `vigencia`, igual que en la cartera.
+
+    Cualquier cosa que no sea uno de los dos valores conocidos se trata como
+    "sin filtro" en vez de rechazarse: es un interruptor de pantalla, y un 422
+    por un query param mal escrito dejaría el listado en blanco en vez de
+    mostrar de más.
+    """
+    normalizado = (valor or "").strip().lower()
+    return normalizado if normalizado in (VIGENTES, FINALIZADAS) else None
+
+
+
 @router.get(
     "",
     response_model=MovimientoListResponse,
@@ -54,6 +68,9 @@ def listar_movimientos(
     origen_id: int | None = Query(None),
     fecha_desde: str | None = Query(None, description="Fecha del archivo (YYYY-MM-DD)"),
     fecha_hasta: str | None = Query(None),
+    vigencia: str | None = Query(
+        VIGENTES, description="vigentes | finalizadas | vacío para todas"
+    ),
     page: int | None = Query(None, ge=1),
     limit: int | None = Query(None, ge=1, le=500),
     db: Session = Depends(get_db_tenant),
@@ -69,6 +86,7 @@ def listar_movimientos(
         origen_id=origen_id,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
+        vigencia=_vigencia(vigencia),
         page=page,
         limit=limit,
     )
@@ -240,6 +258,9 @@ def listar_cortes(
     corte: str | None = Query(None, description="Nombre de la corte, coincidencia parcial"),
     fecha_desde: str | None = Query(None, description="Fecha del archivo (YYYY-MM-DD)"),
     fecha_hasta: str | None = Query(None),
+    vigencia: str | None = Query(
+        VIGENTES, description="vigentes | finalizadas | vacío para todas"
+    ),
     page: int | None = Query(None, ge=1),
     limit: int | None = Query(None, ge=1, le=500),
     db: Session = Depends(get_db_tenant),
@@ -259,6 +280,7 @@ def listar_cortes(
         corte=corte,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
+        vigencia=_vigencia(vigencia),
         page=page,
         limit=limit,
     )
