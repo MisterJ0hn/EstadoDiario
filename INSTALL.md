@@ -183,17 +183,21 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 Si se cambia `MAIL_ENCRYPTION_KEY` (o `BACKEND_SECRET_KEY`, de la que se deriva
 cuando la primera está vacía), hay que volver a escribir la contraseña en la UI.
 
-### Revisión diaria
+### Frecuencia de revisión
 
-La hora la fija el administrador en la UI. El crontab solo invoca el comando
-cada 15 minutos; el propio job decide si corresponde ejecutar:
+**La casilla se revisa en cada pasada del cron**, no una vez al día: el estado
+diario del PJUD no llega siempre a la misma hora, y una revisión única deja sin
+importar todo lo que llegue después. La frecuencia la fija el crontab: con la
+línea de abajo, cada 15 minutos; con `0 * * * *`, cada hora.
 
-**Dejar la hora vacía es una opción, no un olvido.** Esa casilla se revisa en
-*cada pasada del cron* en vez de una vez al día, así que la frecuencia pasa a
-ser la del crontab: con la línea de abajo, cada 15 minutos; si se cambia a
-`0 * * * *`, cada hora. Es lo que conviene a un estudio que recibe correo a
-cualquier hora. Ojo con la contracara: sin hora tampoco corre el control de
-"ya se ejecutó el turno de hoy", que está anclado a ella.
+Lo que la UI llama **"Revisar desde las"** es un piso, no una cita: antes de esa
+hora no se revisa, desde ella se revisa en cada pasada. Dejarla vacía es una
+opción legítima y significa "todo el día".
+
+Revisar de más no duplica nada. Hay cuatro barreras independientes: el IMAP se
+consulta con `UNSEEN`, lo procesado queda marcado como leído, el log descarta el
+adjunto ya importado (por `message_id` + nombre) y los importadores rechazan un
+archivo con el mismo RUT, fecha y tipo.
 
 ```bash
 # crontab -e  en el host

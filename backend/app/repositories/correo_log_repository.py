@@ -1,11 +1,10 @@
 import math
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.correo_log import CorreoLog, RESULTADO_CONEXION, RESULTADO_IMPORTADO
+from app.models.correo_log import CorreoLog, RESULTADO_IMPORTADO
 
 
 class CorreoLogRepository:
@@ -67,29 +66,13 @@ class CorreoLogRepository:
             query = query.filter(CorreoLog.usuario_id == usuario_id)
         return self.db.query(query.exists()).scalar()
 
-    def existe_corrida_desde(
-        self,
-        desde: datetime,
-        disparo: str = "programado",
-        usuario_id: Optional[int] = None,
-    ) -> bool:
-        """¿Ya hubo una corrida de este tipo después de `desde`, para esta
-        casilla?
-
-        El job la usa con la hora programada de hoy, de modo que el cron puede
-        invocarse cada 15 minutos sin repetir la importación del día. Con
-        casillas por usuario el filtro por dueño es obligatorio: si no, la
-        corrida del primer usuario daría por cumplido el turno de todos.
-
-        Las fallas de conexión no cuentan como corrida: si el servidor IMAP
-        estaba caído a la hora programada, el siguiente tick del cron debe
-        volver a intentarlo en vez de dar el día por perdido.
-        """
-        query = self.db.query(CorreoLog.id).filter(
-            CorreoLog.fecha >= desde,
-            CorreoLog.disparo == disparo,
-            CorreoLog.resultado != RESULTADO_CONEXION,
-        )
-        if usuario_id is not None:
-            query = query.filter(CorreoLog.usuario_id == usuario_id)
-        return self.db.query(query.exists()).scalar()
+    # Acá vivía `existe_corrida_desde`, que respondía "¿ya se revisó hoy?" y
+    # con la que el job hacía UNA revisión diaria por casilla. Se eliminó junto
+    # con esa regla: hacía perder correo, porque el estado diario no llega
+    # siempre a la misma hora y lo que llegaba después de la corrida del día
+    # esperaba hasta el día siguiente. Ahora se revisa en cada pasada del cron
+    # (ver `app/jobs/revisar_correo.py`).
+    #
+    # Se borra en vez de dejarla sin usar: un método que promete controlar la
+    # corrida del día, vivo y sin llamadores, es una trampa para el que venga
+    # después a preguntarse por qué no surte efecto.

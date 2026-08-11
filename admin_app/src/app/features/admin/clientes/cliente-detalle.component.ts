@@ -371,12 +371,12 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                              placeholder="INBOX" autocomplete="off" />
                     </div>
                     <div>
-                      <label class="form-label" for="imap-hora">Hora de revisión</label>
+                      <label class="form-label" for="imap-hora">Revisar desde las</label>
                       <input id="imap-hora" type="time" class="form-input" [(ngModel)]="inboxModelo.hora_ejecucion" />
                       <p class="text-xs text-neutral-500 mt-1">
-                        Con una hora, se revisa una vez al día a partir de ella. Vacío = se
-                        revisa en <strong>cada pasada del cron</strong> (cada 15 minutos con la
-                        configuración estándar).
+                        La casilla se revisa <strong>cada 15 minutos</strong>, no una vez al día.
+                        Esta hora es un piso: antes de ella no se revisa. Vacío = se revisa todo
+                        el día.
                       </p>
                     </div>
                   </div>

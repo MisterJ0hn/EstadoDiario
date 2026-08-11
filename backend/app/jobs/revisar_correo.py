@@ -4,15 +4,16 @@ Uso:
     python -m app.jobs.revisar_correo          # respeta la hora configurada
     python -m app.jobs.revisar_correo --forzar # ejecuta de inmediato
 
-La hora la fija el administrador desde la UI, no el crontab. Por eso el cron
-invoca este comando cada 15 minutos y es el propio job el que decide si
-corresponde correr: si todavía no llega la hora de hoy, o si ya hubo una
-corrida programada después de esa hora, termina sin hacer nada.
+**La casilla se revisa en cada pasada del cron**, no una vez al día: el estado
+diario del PJUD no llega siempre a la misma hora, y una revisión única deja sin
+importar todo lo que llegue después. La cadencia la fija el crontab.
 
-**Dejar la hora vacía es una opción, no un olvido**: esa casilla se revisa en
-cada pasada del cron. La cadencia pasa a ser entonces la del crontab —con la
-línea de abajo, cada 15 minutos— en vez de una vez al día. Es lo que quiere un
-estudio al que le llega correo a cualquier hora.
+Lo que la UI llama "hora de revisión" es un **piso**: antes de esa hora no se
+revisa, desde ella se revisa en cada pasada. Vacía, se revisa todo el día.
+
+Revisar de más no duplica nada: el IMAP se consulta con UNSEEN, lo procesado
+queda marcado como leído, y tanto el log (`ya_importado`) como los importadores
+descartan lo repetido.
 
 Entrada sugerida en el crontab del host:
 
@@ -57,41 +58,39 @@ def corresponde_ejecutar(db_tenant, config, usuario_destino_id) -> tuple[bool, s
     if not config.activo:
         return False, "La ingesta por correo está desactivada"
 
-    # Sin hora configurada, la casilla se revisa CADA VEZ que corre el cron:
-    # la cadencia pasa a ser la del crontab (cada 15 minutos, cada hora, la que
-    # sea). Es una opción de verdad y no un caso degenerado — un estudio que
-    # recibe correo a cualquier hora no quiere una revisión diaria, quiere que
-    # se mire seguido.
-    #
-    # Ojo con lo que se salta: sin hora tampoco corre el control de "ya se
-    # ejecutó el turno de hoy", que está anclado a esa hora. Es coherente —lo
-    # pedido es revisar en cada pasada— pero significa que la frecuencia la
-    # decide el crontab y nadie más. Si el cron quedara cada minuto, la casilla
-    # se consultaría cada minuto.
+    # Sin hora, se revisa todo el día en cada pasada del cron.
     if not config.hora_ejecucion:
         return True, "Sin hora configurada: se revisa en cada pasada del cron"
 
+    # Con hora, la hora es un PISO y no una cita: desde ella, se revisa también
+    # en cada pasada.
+    #
+    # Antes había además un control de "ya se corrió el turno de hoy" que la
+    # convertía en una revisión diaria única. Se sacó porque hacía perder
+    # correo: el estado diario del PJUD no llega siempre a la misma hora, y el
+    # que llegaba después de la corrida del día se quedaba sin importar hasta
+    # el día siguiente. Justamente lo que la ingesta automática viene a evitar.
+    #
+    # Revisar de más es inofensivo, y no por descuido sino porque hay cuatro
+    # barreras independientes contra reprocesar el mismo correo:
+    #   1. el IMAP se consulta con UNSEEN, así que lo ya visto no vuelve;
+    #   2. `marcar_como_leido` le pone \Seen a lo procesado;
+    #   3. `ya_importado(message_id, nombre_archivo)` descarta el adjunto
+    #      repetido aunque el mensaje reaparezca como no leído;
+    #   4. los importadores rechazan un archivo con el mismo (rut, fecha, tipo).
     tz = _zona()
     ahora_local = datetime.now(tz)
-    programada_local = ahora_local.replace(
+    desde_local = ahora_local.replace(
         hour=config.hora_ejecucion.hour,
         minute=config.hora_ejecucion.minute,
         second=0,
         microsecond=0,
     )
 
-    if ahora_local < programada_local:
+    if ahora_local < desde_local:
         return False, f"Aún no son las {config.hora_ejecucion.strftime('%H:%M')}"
 
-    # ¿Ya se corrió para el turno de hoy, en ESTA casilla?
-    #if CorreoLogRepository(db_tenant).existe_corrida_desde(
-    #    programada_local.astimezone(ZoneInfo("UTC")),
-    #    disparo="programado",
-    #    usuario_id=usuario_destino_id,
-    #):
-    #    return False, "La revisión de hoy ya se ejecutó"
-
-    return True, "Corresponde ejecutar"
+    return True, f"Corresponde ejecutar (desde las {config.hora_ejecucion.strftime('%H:%M')})"
 
 
 def _primer_usuario(db_tenant) -> int | None:

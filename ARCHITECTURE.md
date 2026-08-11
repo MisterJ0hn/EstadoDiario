@@ -719,9 +719,12 @@ base lista se saltan.
 0  4 1 * *    docker exec ed_backend python -m app.jobs.cerrar_facturacion
 ```
 
-La hora de la revisión de correo la fija cada cliente desde la UI, no el
-crontab: por eso el cron corre cada 15 minutos y es el job el que decide si le
-toca.
+La revisión de correo corre en **cada pasada** del cron y no una vez al día: el
+estado diario no llega siempre a la misma hora, y una revisión única dejaba sin
+importar todo lo que llegara después. La hora que fija cada cliente desde la UI
+es un piso —antes de ella no se revisa—, no una cita. Repetir es inofensivo:
+el IMAP se consulta con `UNSEEN`, lo procesado se marca leído, y el log y los
+importadores descartan lo repetido.
 
 ## Migración desde la versión de una sola base
 
