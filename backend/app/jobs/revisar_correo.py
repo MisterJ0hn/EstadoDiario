@@ -84,12 +84,12 @@ def corresponde_ejecutar(db_tenant, config, usuario_destino_id) -> tuple[bool, s
         return False, f"Aún no son las {config.hora_ejecucion.strftime('%H:%M')}"
 
     # ¿Ya se corrió para el turno de hoy, en ESTA casilla?
-    if CorreoLogRepository(db_tenant).existe_corrida_desde(
-        programada_local.astimezone(ZoneInfo("UTC")),
-        disparo="programado",
-        usuario_id=usuario_destino_id,
-    ):
-        return False, "La revisión de hoy ya se ejecutó"
+    #if CorreoLogRepository(db_tenant).existe_corrida_desde(
+    #    programada_local.astimezone(ZoneInfo("UTC")),
+    #    disparo="programado",
+    #    usuario_id=usuario_destino_id,
+    #):
+    #    return False, "La revisión de hoy ya se ejecutó"
 
     return True, "Corresponde ejecutar"
 
