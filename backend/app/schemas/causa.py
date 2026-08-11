@@ -31,6 +31,16 @@ class CausaResponse(BaseModel):
     fecha_archivo: date | None = None
     nombre_archivo: str | None = None
 
+    # ── Cruce con los otros reportes ──
+    # Última vez que la causa apareció en algún reporte, y en cuál. Nulo = nunca
+    # se la vio fuera del Excel de la cartera.
+    ultima_actividad: date | None = None
+    origen_actividad: str | None = None
+    # La próxima audiencia agendada, desde hoy. Se resuelve al consultar, no se
+    # guarda: deja de ser próxima cuando pasa el día, sin que entre ningún
+    # archivo.
+    proxima_audiencia: date | None = None
+
     @classmethod
     def from_model(cls, c) -> "CausaResponse":
         origen = c.estado_diario_origen
@@ -50,6 +60,10 @@ class CausaResponse(BaseModel):
             rut=origen.rut if origen else None,
             fecha_archivo=origen.fecha if origen else None,
             nombre_archivo=origen.nombre_archivo if origen else None,
+            ultima_actividad=c.ultima_actividad,
+            origen_actividad=c.origen_actividad,
+            # La cuelga el repositorio sobre el objeto; en otros usos no está.
+            proxima_audiencia=getattr(c, "proxima_audiencia", None),
         )
 
 

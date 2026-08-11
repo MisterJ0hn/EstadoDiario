@@ -84,6 +84,10 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     ("causa", "enriquecida_en", "TIMESTAMPTZ"),
     ("causa_corte", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
     ("causa_corte", "enriquecida_en", "TIMESTAMPTZ"),
+    # Última vez que la causa apareció en algún reporte. Nula en las filas ya
+    # cargadas hasta que corra el cruce: no se puede deducir de la nada.
+    ("causa", "ultima_actividad", "DATE"),
+    ("causa", "origen_actividad", "VARCHAR(20)"),
 ]
 
 # Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`
@@ -119,7 +123,10 @@ INDICES_NUEVOS_MAESTRA: list[tuple[str, ...]] = [
     ("ix_factura_periodo", "factura", "periodo"),
     ("ix_factura_estado", "factura", "estado"),
 ]
-INDICES_NUEVOS_TENANT: list[tuple[str, ...]] = []
+INDICES_NUEVOS_TENANT: list[tuple[str, ...]] = [
+    # Se ordena y se filtra por esta columna en el listado de la cartera.
+    ("ix_causa_ultima_actividad", "causa", "ultima_actividad"),
+]
 
 # Los nombres son los que usa SQLAlchemy para un `index=True` (ix_<tabla>_<col>):
 # si no coincidieran, create_all() intentaría crearlos de nuevo en una base

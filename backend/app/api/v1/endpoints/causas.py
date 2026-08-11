@@ -10,7 +10,7 @@ Sin filtro de visibilidad: dentro de un estudio todos ven todo.
 import logging
 import os
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
@@ -232,6 +232,17 @@ def listar(
     vigencia: str | None = Query(
         VIGENTES, description="vigentes | finalizadas | vacío para todas"
     ),
+    sin_actividad_meses: int | None = Query(
+        None, ge=1, le=120,
+        description="Solo las que no aparecen en ningún reporte hace más de N meses",
+    ),
+    con_audiencia_dias: int | None = Query(
+        None, ge=0, le=365,
+        description="Solo las que tienen audiencia dentro de los próximos N días",
+    ),
+    orden: str | None = Query(
+        None, description="actividad | audiencia. Por defecto, fecha de ingreso.",
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
@@ -243,6 +254,13 @@ def listar(
     items, total, pagina, total_pages = CausaRepository(db).find_filtered(
         materia=materia, estado_causa=estado_causa, tribunal=tribunal,
         busqueda=busqueda, origen_id=origen_id, vigencia=_vigencia(vigencia),
+        sin_actividad_meses=sin_actividad_meses,
+        con_audiencia_hasta=(
+            date.today() + timedelta(days=con_audiencia_dias)
+            if con_audiencia_dias is not None
+            else None
+        ),
+        orden=orden,
         page=page, limit=limit,
     )
     return CausaListResponse(
