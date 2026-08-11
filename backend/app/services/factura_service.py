@@ -126,7 +126,10 @@ class FacturaService:
                     condiciones.append(Factura.numero == int(solo_digitos))
                 query = query.filter(or_(*condiciones))
 
-        query = query.order_by(Factura.numero.desc())
+        # Por PERÍODO primero: el listado se lee por mes, y "las últimas" de un
+        # cliente son los meses más recientes, no los correlativos más altos.
+        # Los dos coinciden salvo que se haya regenerado un período viejo.
+        query = query.order_by(Factura.periodo.desc().nullslast(), Factura.numero.desc())
         if filtro.limite and filtro.limite > 0:
             query = query.limit(filtro.limite)
         return query.all()

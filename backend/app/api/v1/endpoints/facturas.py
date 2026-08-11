@@ -81,7 +81,11 @@ def listar_mis_facturas(
     """
     facturas = (
         _de_la_sesion(db, tenant)
-        .order_by(Factura.numero.desc())
+        # Por PERÍODO y no por correlativo: "las últimas" son los meses más
+        # recientes. En producción los dos suben juntos —se genera una por mes—
+        # pero si se regenera un período viejo su número queda alto y con el
+        # otro orden se colaría al principio del listado.
+        .order_by(Factura.periodo.desc().nullslast(), Factura.numero.desc())
         .limit(ULTIMAS)
         .all()
     )

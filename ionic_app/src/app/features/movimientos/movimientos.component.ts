@@ -36,9 +36,9 @@ import {
       <!-- Header -->
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">{{ titulo() }}</h1>
+          <h1 class="text-2xl font-bold text-neutral-800">Movimientos</h1>
           <p class="text-neutral-500 mt-1">
-            Estado procesal de las causas — {{ total() }} registros encontrados
+            {{titulo()}} — {{ total() }} registros encontrados
           </p>
         </div>
 

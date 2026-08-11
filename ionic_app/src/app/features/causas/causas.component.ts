@@ -27,9 +27,9 @@ import { CausaService } from './services/causa.service';
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">{{ titulo() }}</h1>
+          <h1 class="text-2xl font-bold text-neutral-800">Mis Causas</h1>
           <p class="text-neutral-500 mt-1">
-            {{ total() }} causas encontradas
+           {{ titulo() }} - {{ total() }} causas encontradas
           </p>
         </div>
 
