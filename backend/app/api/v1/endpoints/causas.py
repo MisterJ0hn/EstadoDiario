@@ -19,7 +19,7 @@ from app.core.config import UPLOAD_DIR
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
-from app.repositories.causa_repository import CausaRepository
+from app.repositories.causa_repository import FINALIZADAS, VIGENTES, CausaRepository
 from app.schemas.causa import (
     CargarCausasResponse,
     CausaCorteListResponse,
@@ -34,6 +34,18 @@ from app.services.causa_import_service import CausaImportService, parse_nombre_a
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/causas", tags=["Causas"])
+
+
+def _vigencia(valor: str | None) -> str | None:
+    """Normaliza el parámetro `vigencia` de la cartera.
+
+    Cualquier cosa que no sea uno de los dos valores conocidos se trata como
+    "sin filtro" en vez de rechazarse: es un interruptor de pantalla, y un 422
+    por un query param mal escrito dejaría el listado en blanco en vez de
+    mostrar de más.
+    """
+    normalizado = (valor or "").strip().lower()
+    return normalizado if normalizado in (VIGENTES, FINALIZADAS) else None
 
 
 # ── Carga ─────────────────────────────────────────────────
@@ -183,6 +195,9 @@ def resumen(
     tribunal: str | None = Query(None),
     busqueda: str | None = Query(None),
     origen_id: int | None = Query(None),
+    vigencia: str | None = Query(
+        VIGENTES, description="vigentes | finalizadas | vacío para todas"
+    ),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -191,12 +206,12 @@ def resumen(
     repo = CausaRepository(db)
     conteos = repo.contar_por_materia(
         estado_causa=estado_causa, tribunal=tribunal,
-        busqueda=busqueda, origen_id=origen_id,
+        busqueda=busqueda, origen_id=origen_id, vigencia=_vigencia(vigencia),
     )
     return CausaResumenResponse(
         total=sum(t for _, t in conteos),
         por_materia=[ConteoMateria(materia=m, total=t) for m, t in conteos],
-        estados_causa=repo.listar_estados_causa(),
+        estados_causa=repo.listar_estados_causa(origen_id),
     )
 
 
@@ -211,14 +226,21 @@ def listar(
     tribunal: str | None = Query(None),
     busqueda: str | None = Query(None, description="Carátula, rol o RUC"),
     origen_id: int | None = Query(None),
+    vigencia: str | None = Query(
+        VIGENTES, description="vigentes | finalizadas | vacío para todas"
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
+    """Sin `origen_id`, devuelve **solo el último archivo de causas**: el
+    reporte trae la cartera completa cada vez, y sumar todos los que se
+    cargaron mostraría la misma causa tantas veces como se haya importado."""
     items, total, pagina, total_pages = CausaRepository(db).find_filtered(
         materia=materia, estado_causa=estado_causa, tribunal=tribunal,
-        busqueda=busqueda, origen_id=origen_id, page=page, limit=limit,
+        busqueda=busqueda, origen_id=origen_id, vigencia=_vigencia(vigencia),
+        page=page, limit=limit,
     )
     return CausaListResponse(
         total=total,

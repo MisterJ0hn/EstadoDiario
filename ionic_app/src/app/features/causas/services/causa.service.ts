@@ -32,6 +32,10 @@ export class CausaService {
         tribunal: filtros.tribunal,
         busqueda: filtros.busqueda,
         origen_id: filtros.origen_id,
+        // La vigencia SÍ va: es un interruptor de toda la pantalla, no una
+        // pestaña. Sin esto los contadores de cada materia contarían la
+        // cartera completa y no cuadrarían con las filas de la tabla.
+        vigencia: filtros.vigencia,
       }),
     });
   }

@@ -30,6 +30,27 @@ export interface Cliente {
   /** Qué falló, cuando `aprovisionamiento` es `error`. */
   aprovisionamiento_detalle: string | null;
   total_usuarios: number;
+  /**
+   * Causas de materia VIGENTES del último archivo de causas que cargó el
+   * cliente: las mismas que su gente ve en "Mis Causas · Materia".
+   *
+   * Es del último archivo y no de todos porque el Excel de Causas trae la
+   * cartera completa cada vez: sumarlos daría la cartera multiplicada por la
+   * cantidad de veces que se cargó el reporte.
+   *
+   * `0` también cuando su base de datos no respondió, así que no distingue
+   * "sin causas" de "no se pudo consultar".
+   */
+  causas_activas: number;
+  /**
+   * Datos comerciales para la cabecera de la orden de compra. Opcionales: el
+   * cliente ya existe sin ellos y la orden omite lo que falte en vez de
+   * imprimir una etiqueta con la línea vacía al lado.
+   */
+  giro: string | null;
+  direccion: string | null;
+  comuna: string | null;
+  ciudad: string | null;
   tipo: TipoCliente;
   /** Tope de usuarios contratado. Null en los patrocinadores, donde es 1. */
   cal: number | null;
@@ -96,6 +117,11 @@ export interface ClienteUpdate {
   correo: string;
   /** Ampliar o reducir lo contratado. No puede quedar bajo los usuarios activos. */
   cal?: number | null;
+  /** Cabecera de la orden de compra. Vacío = se guarda nulo y no se imprime. */
+  giro?: string | null;
+  direccion?: string | null;
+  comuna?: string | null;
+  ciudad?: string | null;
   activo: boolean;
 }
 

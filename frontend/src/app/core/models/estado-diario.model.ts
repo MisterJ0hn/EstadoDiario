@@ -9,8 +9,20 @@ export interface JurisdiccionListResponse {
   jurisdicciones: Jurisdiccion[];
 }
 
-/** Tipo de archivo cargado: separa las pestañas de la vista Archivos. */
-export type TipoOrigen = 'estado_diario' | 'movimientos' | 'audiencias';
+/** Tipo de archivo cargado: separa las pestañas de la vista Archivos.
+ *
+ *  `causas` es el Excel de la cartera. Se carga desde su propia pantalla
+ *  ("Cargar Causas") y no desde "Cargar Archivo", pero es un archivo recibido
+ *  como los otros tres y por eso aparece en Bitácora: es ahí donde se
+ *  responde si un archivo llegó y qué trajo. */
+export type TipoOrigen = 'estado_diario' | 'movimientos' | 'audiencias' | 'causas';
+
+/** Los que se suben desde "Cargar Archivo".
+ *
+ *  Causas queda fuera porque tiene su propia pantalla: ese reporte no trae
+ *  fecha —es una foto de la cartera, no de un día— y su formulario no puede
+ *  pedir lo mismo que los otros tres. */
+export type TipoOrigenCargable = Exclude<TipoOrigen, 'causas'>;
 
 export interface EstadoDiarioOrigen {
   id: number;

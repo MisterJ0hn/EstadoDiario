@@ -17,11 +17,12 @@ import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model
           <h1 class="text-2xl font-bold text-neutral-800">Archivos</h1>
           <p class="text-neutral-500 mt-1">{{ subtitulo() }}</p>
         </div>
-        <a routerLink="/estado-diario/upload" class="btn-primary">
+        <a [routerLink]="activeTab() === 'causas' ? '/causas/cargar' : '/estado-diario/upload'"
+           class="btn-primary">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          Cargar Archivo
+          {{ activeTab() === 'causas' ? 'Cargar Causas' : 'Cargar Archivo' }}
         </a>
       </div>
 
@@ -139,11 +140,16 @@ export class OrigenesListComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  /** Los tres tipos de Excel que maneja el sistema; el `key` es el valor que espera el backend. */
+  /** Los cuatro tipos de Excel que maneja el sistema; el `key` es el valor que
+   *  espera el backend.
+   *
+   *  Causas va última porque es la que menos se consulta: se carga una vez y
+   *  reemplaza a la anterior, mientras que las otras tres llegan a diario. */
   readonly tabs: { key: TipoOrigen; label: string }[] = [
     { key: 'estado_diario', label: 'Estado Diario' },
     { key: 'movimientos', label: 'Movimientos' },
     { key: 'audiencias', label: 'Audiencias' },
+    { key: 'causas', label: 'Causas' },
   ];
 
   origenes = signal<EstadoDiarioOrigen[]>([]);
@@ -158,13 +164,17 @@ export class OrigenesListComponent implements OnInit {
     estado_diario: 'Archivos de estado diario cargados',
     movimientos: 'Archivos de movimientos cargados',
     audiencias: 'Archivos de audiencias cargados',
+    causas: 'Archivos de causas cargados — el más reciente es la cartera vigente',
   };
 
-  /** El contador de filas por archivo significa algo distinto en cada pestaña. */
+  /** El contador de filas por archivo significa algo distinto en cada pestaña.
+   *  En todas cuenta materia MÁS corte: son las dos clases de hoja que trae el
+   *  mismo Excel, y contar solo una dejaba la columna diciendo de menos. */
   private readonly CONTADORES: Record<TipoOrigen, string> = {
     estado_diario: 'Estado Diario',
     movimientos: 'Movimientos',
     audiencias: 'Audiencias',
+    causas: 'Causas',
   };
 
   subtitulo = computed(() => this.SUBTITULOS[this.activeTab()]);
@@ -195,12 +205,13 @@ export class OrigenesListComponent implements OnInit {
 
   /**
    * "Ver" lleva a la vista que corresponde al tipo de archivo: el estado diario
-   * tiene su listado por origen, y los otros dos se filtran por `origen_id` en
+   * tiene su listado por origen, y los otros tres se filtran por `origen_id` en
    * su propio módulo.
    */
   verLink(o: EstadoDiarioOrigen): (string | number)[] {
     if (o.tipo === 'movimientos') return ['/movimientos'];
     if (o.tipo === 'audiencias') return ['/audiencias'];
+    if (o.tipo === 'causas') return ['/causas'];
     return ['/estado-diario/origen', o.id, 'movimientos'];
   }
 

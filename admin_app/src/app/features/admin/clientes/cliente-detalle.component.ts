@@ -7,7 +7,7 @@ import { Cliente, ClienteInbox, ClienteInboxUpdate } from '@core/models/admin.mo
 import { Usuario } from '@core/models/usuario.model';
 import { NotificationService } from '@core/services/notification.service';
 import { passwordCumplePolitica, reglasPassword } from '@core/utils/password';
-import { formatearRut, rutValido } from '@core/utils/rut';
+import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
 import { AdminClienteService } from '../services/admin-cliente.service';
 
 type Seccion = 'datos' | 'inbox' | 'usuarios';
@@ -209,6 +209,41 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
 
               <hr class="border-neutral-200" />
 
+              <!-- Datos comerciales. Van en la cabecera de la orden de compra
+                   y en ningún otro lado: sin ellos el sistema funciona igual,
+                   y por eso ninguno es obligatorio. -->
+              <div>
+                <h3 class="text-sm font-semibold text-neutral-800">Datos de facturación</h3>
+                <p class="text-xs text-neutral-500 mt-0.5">
+                  Encabezan la orden de compra. Lo que se deje vacío no se imprime.
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <label class="form-label" for="c-giro">Giro</label>
+                    <input id="c-giro" type="text" class="form-input" [(ngModel)]="datos.giro"
+                           placeholder="Servicios jurídicos" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label class="form-label" for="c-direccion">Dirección</label>
+                    <input id="c-direccion" type="text" class="form-input" [(ngModel)]="datos.direccion"
+                           placeholder="Av. Providencia 1234, of. 501" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label class="form-label" for="c-comuna">Comuna</label>
+                    <input id="c-comuna" type="text" class="form-input" [(ngModel)]="datos.comuna"
+                           placeholder="Providencia" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label class="form-label" for="c-ciudad">Ciudad</label>
+                    <input id="c-ciudad" type="text" class="form-input" [(ngModel)]="datos.ciudad"
+                           placeholder="Santiago" autocomplete="off" />
+                  </div>
+                </div>
+              </div>
+
+              <hr class="border-neutral-200" />
+
               <!-- Identificadores: se muestran porque el administrador los
                    necesita para soporte, pero no se editan: cambiarlos
                    dejaría la base de datos huérfana. -->
@@ -338,7 +373,11 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                     <div>
                       <label class="form-label" for="imap-hora">Hora de revisión</label>
                       <input id="imap-hora" type="time" class="form-input" [(ngModel)]="inboxModelo.hora_ejecucion" />
-                      <p class="text-xs text-neutral-500 mt-1">Vacío = se revisa varias veces al día.</p>
+                      <p class="text-xs text-neutral-500 mt-1">
+                        Con una hora, se revisa una vez al día a partir de ella. Vacío = se
+                        revisa en <strong>cada pasada del cron</strong> (cada 15 minutos con la
+                        configuración estándar).
+                      </p>
                     </div>
                   </div>
 
@@ -486,7 +525,7 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                         <th scope="col">Usuario</th>
                         <th scope="col">Nombre</th>
                         <th scope="col">Correo</th>
-                        <th scope="col">Rol</th>
+                        <th scope="col">RUT PJUD</th>
                         <th scope="col">Estado</th>
                         <th scope="col">Acciones</th>
                       </tr>
@@ -497,6 +536,14 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                           <td class="font-medium">{{ u.username }}</td>
                           <td>{{ (u.nombre || '') + ' ' + (u.apellido || '') | titlecase }}</td>
                           <td class="break-all">{{ u.email }}</td>
+                          <td class="whitespace-nowrap">
+                            @if (u.ruts.length) {
+                              {{ rutsBonitos(u) }}
+                            } @else {
+                              <span class="text-neutral-400"
+                                    title="Sin RUT propios: al importar se compara con el del estudio">—</span>
+                            }
+                          </td>
                           <td>
                             <span [class]="u.activo ? 'badge-success' : 'badge-neutral'">
                               {{ u.activo ? 'Activo' : 'Inactivo' }}
@@ -580,6 +627,52 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
               </div>
             </div>
 
+            <!-- RUT con los que esta persona recibe archivos del PJUD. Es lo
+                 que decide si al importar se le advierte que el archivo es de
+                 otro: el reporte se emite a nombre del abogado que lo pide, no
+                 del estudio. -->
+            <div>
+              <label class="form-label" for="u-rut">RUT que recibe del PJUD</label>
+              <div class="flex gap-2">
+                <input
+                  id="u-rut"
+                  type="text"
+                  class="form-input"
+                  [(ngModel)]="rutBorrador"
+                  (keydown.enter)="$event.preventDefault(); agregarRut()"
+                  placeholder="16.952.077-1"
+                  autocomplete="off"
+                  aria-describedby="u-rut-ayuda"
+                />
+                <button type="button" class="btn-secondary shrink-0" (click)="agregarRut()"
+                        [disabled]="!rutBorrador.trim()">
+                  Agregar
+                </button>
+              </div>
+              @if (errorRut()) {
+                <p class="text-xs text-danger-600 mt-1">{{ errorRut() }}</p>
+              }
+              <p id="u-rut-ayuda" class="text-xs text-neutral-500 mt-1">
+                Pueden ser varios: un abogado puede litigar además a nombre de una
+                sociedad. Sin ninguno, la advertencia al importar se compara con el RUT
+                del estudio.
+              </p>
+
+              @if (usuarioModelo.ruts.length) {
+                <ul class="flex flex-wrap gap-2 mt-2">
+                  @for (r of usuarioModelo.ruts; track r) {
+                    <li class="inline-flex items-center gap-2 rounded-full bg-neutral-100
+                               px-3 py-1 text-sm text-neutral-700">
+                      {{ rutBonito(r) }}
+                      <button type="button" (click)="quitarRut(r)"
+                              class="text-neutral-400 hover:text-danger-600"
+                              [attr.aria-label]="'Quitar el RUT ' + rutBonito(r)">&times;</button>
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+
             <div>
               <label class="form-label" for="u-password">
                 Contraseña
@@ -642,7 +735,7 @@ export class ClienteDetalleComponent implements OnInit {
   cliente = signal<Cliente | null>(null);
   errorCliente = signal<string | null>(null);
   guardando = signal(false);
-  datos = { nombre: '', rut: '', correo: '' };
+  datos = { nombre: '', rut: '', correo: '', giro: '', direccion: '', comuna: '', ciudad: '' };
 
   inbox = signal<ClienteInbox | null>(null);
   errorInbox = signal<string | null>(null);
@@ -677,7 +770,15 @@ export class ClienteDetalleComponent implements OnInit {
     this.service.get(this.clienteId).subscribe({
       next: (c) => {
         this.cliente.set(c);
-        this.datos = { nombre: c.nombre, rut: formatearRut(c.rut), correo: c.correo };
+        this.datos = {
+          nombre: c.nombre,
+          rut: formatearRut(c.rut),
+          correo: c.correo,
+          giro: c.giro ?? '',
+          direccion: c.direccion ?? '',
+          comuna: c.comuna ?? '',
+          ciudad: c.ciudad ?? '',
+        };
       },
       error: (e) => this.errorCliente.set(this.mensajeError(e)),
     });
@@ -758,6 +859,12 @@ export class ClienteDetalleComponent implements OnInit {
         nombre: this.datos.nombre.trim(),
         rut: this.datos.rut.trim(),
         correo: this.datos.correo.trim(),
+        // Vacío viaja como null: el backend distingue "sin dato" de cadena
+        // vacía y la orden de compra omite las líneas que no tienen valor.
+        giro: this.datos.giro.trim() || null,
+        direccion: this.datos.direccion.trim() || null,
+        comuna: this.datos.comuna.trim() || null,
+        ciudad: this.datos.ciudad.trim() || null,
         activo: actual.activo,
       })
       .subscribe({
@@ -902,6 +1009,10 @@ export class ClienteDetalleComponent implements OnInit {
 
   // ── Usuarios ───────────────────────────────────────────────────────────
 
+  /** Lo que se está escribiendo en el campo de RUT, antes de "Agregar". */
+  rutBorrador = '';
+  errorRut = signal('');
+
   private usuarioVacio() {
     return {
       username: '',
@@ -910,8 +1021,48 @@ export class ClienteDetalleComponent implements OnInit {
       nombre: '',
       apellido: '',
       telefono: '',
+      ruts: [] as string[],
       activo: true,
     };
+  }
+
+  /**
+   * Agrega el RUT escrito a la lista del usuario.
+   *
+   * Se valida el dígito verificador acá y no solo en el servidor porque un RUT
+   * mal tipeado no falla nunca: hace que la advertencia al importar no aparezca
+   * cuando debería, que es un error que nadie nota hasta que se cargó el
+   * archivo del abogado equivocado.
+   */
+  agregarRut(): void {
+    const escrito = this.rutBorrador.trim();
+    if (!escrito) return;
+
+    if (!rutValido(escrito)) {
+      this.errorRut.set('El RUT no es válido: revise el dígito verificador');
+      return;
+    }
+    // Se guarda normalizado (`12345678-9`) para que `16.952.077-1` y
+    // `169520771` no entren como dos RUT distintos.
+    const canonico = rutPlano(escrito);
+    if (this.usuarioModelo.ruts.includes(canonico)) {
+      this.errorRut.set('Ese RUT ya está en la lista');
+      return;
+    }
+
+    this.usuarioModelo.ruts = [...this.usuarioModelo.ruts, canonico];
+    this.rutBorrador = '';
+    this.errorRut.set('');
+  }
+
+  quitarRut(rut: string): void {
+    this.usuarioModelo.ruts = this.usuarioModelo.ruts.filter((r) => r !== rut);
+    this.errorRut.set('');
+  }
+
+  /** Los RUT de un usuario para la tabla, formateados y separados por coma. */
+  rutsBonitos(u: Usuario): string {
+    return u.ruts.map((r) => formatearRut(r)).join(', ');
   }
 
   cargarUsuarios(): void {
@@ -967,6 +1118,8 @@ export class ClienteDetalleComponent implements OnInit {
 
   abrirNuevoUsuario(): void {
     this.usuarioModelo = this.usuarioVacio();
+    this.rutBorrador = '';
+    this.errorRut.set('');
     // El primer usuario del estudio tiene que poder administrar al resto.
     this.editandoUsuario.set(null);
     this.errorUsuario.set('');
@@ -981,8 +1134,13 @@ export class ClienteDetalleComponent implements OnInit {
       nombre: u.nombre ?? '',
       apellido: u.apellido ?? '',
       telefono: u.telefono ?? '',
+      // Copia, no la misma referencia: cancelar el modal no puede dejar
+      // modificada la lista que se está mostrando en la tabla.
+      ruts: [...u.ruts],
       activo: u.activo,
     };
+    this.rutBorrador = '';
+    this.errorRut.set('');
     this.editandoUsuario.set(u.id);
     this.errorUsuario.set('');
     this.modalUsuario.set(true);
@@ -1021,6 +1179,11 @@ export class ClienteDetalleComponent implements OnInit {
       return 'El apellido debe ser una sola palabra. Indique solo el primer apellido.';
     }
     if (!this.usuarioModelo.email.trim()) return 'Indique el correo electrónico';
+    // Guardar con algo escrito en el campo de RUT lo tiraría sin decir nada, y
+    // quien lo escribió se va convencido de que lo dejó cargado.
+    if (this.rutBorrador.trim()) {
+      return 'Agregue el RUT que escribió con el botón «Agregar», o borre el campo.';
+    }
     if (this.usuarioModelo.password && !passwordCumplePolitica(this.usuarioModelo.password)) {
       const faltan = reglasPassword(this.usuarioModelo.password)
         .filter((r) => !r.cumple)
@@ -1047,6 +1210,7 @@ export class ClienteDetalleComponent implements OnInit {
       nombre: this.usuarioModelo.nombre.trim() || null,
       apellido: this.usuarioModelo.apellido.trim() || null,
       telefono: this.usuarioModelo.telefono.trim() || null,
+      ruts: this.usuarioModelo.ruts,
       activo: this.usuarioModelo.activo,
     };
 

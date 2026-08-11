@@ -54,6 +54,12 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     ("cliente", "cal", "INTEGER"),
     ("cliente", "logo", "TEXT"),
     ("cliente", "logo_mime", "VARCHAR(100)"),
+    # Datos comerciales para la cabecera de la factura. Nulos en los clientes
+    # anteriores: la factura los omite en vez de imprimir una línea vacía.
+    ("cliente", "giro", "VARCHAR(255)"),
+    ("cliente", "direccion", "VARCHAR(255)"),
+    ("cliente", "comuna", "VARCHAR(100)"),
+    ("cliente", "ciudad", "VARCHAR(100)"),
 ]
 
 COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
@@ -99,7 +105,7 @@ INDICES_UNICOS_MAESTRA: list[tuple[str, str, str]] = [
 INDICES_UNICOS_TENANT: list[tuple[str, str, str]] = []
 
 
-# Las 17 tablas que debe tener la base de un cliente. Es una verificación, no
+# Las 18 tablas que debe tener la base de un cliente. Es una verificación, no
 # la fuente: las crea BaseTenant.metadata. Si alguien declara un modelo con la
 # Base equivocada, la base del cliente queda incompleta y esto lo delata al
 # aprovisionar en vez de a las semanas, con un "relation does not exist".
@@ -121,6 +127,7 @@ TABLAS_TENANT = (
     "reporte_plantilla",
     "usuario",
     "usuario_password_historial",
+    "usuario_rut",
 )
 
 

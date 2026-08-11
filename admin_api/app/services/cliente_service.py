@@ -26,6 +26,7 @@ from app.core.database import (
     olvidar_engine_tenant,
     sesion_tenant,
 )
+from app.core.estados_causa import sql_vigente
 from app.core.exceptions import BadRequestException, ConflictException, NotFoundException
 from app.core.hash_busqueda import normalizar_rut
 from app.models.maestra.cliente import Cliente
@@ -42,6 +43,24 @@ from admin_api.app.schemas.cliente import (
 from app.services import aprovisionamiento_service
 
 logger = logging.getLogger(__name__)
+
+# Los dos números que la consola muestra de cada cliente, en una sola consulta
+# contra su base. Las causas activas son las de MATERIA vigentes del último
+# archivo de causas: es la cartera que el estudio ve en "Mis Causas" y la misma
+# que se factura a $1 (ver `app.services.facturacion_service`).
+_SQL_RESUMEN_CLIENTE = text(
+    f"""
+    SELECT
+        (SELECT COUNT(*) FROM usuario WHERE activo) AS usuarios_activos,
+        (SELECT COUNT(*) FROM causa
+          WHERE estado_diario_origen_id = (
+                SELECT id FROM estado_diario_origen
+                 WHERE tipo = 'causas'
+                 ORDER BY fecha DESC, id DESC
+                 LIMIT 1)
+            AND {sql_vigente('estado_causa')})      AS causas_activas
+    """
+)
 
 
 class ClienteService:
@@ -127,6 +146,7 @@ class ClienteService:
                         nombre=u.nombre,
                         apellido=u.apellido,
                         telefono=u.telefono,
+                        ruts=u.ruts,
                     ),
                 )
                 creados += 1
@@ -259,6 +279,14 @@ class ClienteService:
         cliente.nombre = datos.nombre.strip()
         cliente.correo = datos.correo
 
+        # Datos de la cabecera de la orden de compra. Se guardan vacíos como
+        # NULL: una cadena vacía haría que la orden imprimiera la etiqueta con
+        # la línea en blanco al lado, que se lee como un dato perdido.
+        cliente.giro = (datos.giro or "").strip() or None
+        cliente.direccion = (datos.direccion or "").strip() or None
+        cliente.comuna = (datos.comuna or "").strip() or None
+        cliente.ciudad = (datos.ciudad or "").strip() or None
+
         # El RUT es la credencial de login del estudio y tiene UNIQUE por
         # `rut_hash`: si ya es de otro cliente, el login quedaría ambiguo (no
         # se sabría a qué base entrar), así que se rechaza antes de guardar.
@@ -345,16 +373,36 @@ class ClienteService:
         Devuelve 0 si su base no está lista o no responde: es un dato de apoyo
         y no puede tumbar la ficha ni el listado.
         """
+        return self._resumen_tenant(cliente)[0]
+
+    def _resumen_tenant(self, cliente: Cliente) -> tuple[int, int]:
+        """(usuarios activos, causas activas) en UNA sola consulta a su base.
+
+        Van juntos porque los pide el mismo lugar —cada fila del listado de
+        clientes— y separarlos duplicaría la cantidad de conexiones abiertas
+        contra bases distintas: con cincuenta clientes son cincuenta viajes de
+        más por cada carga de la pantalla.
+
+        Las causas activas son la cartera VIGENTE del último archivo de causas
+        cargado. Sin acotar al último archivo, un estudio que cargó el Excel
+        tres veces aparecería con el triple de causas de las que tiene.
+
+        `(0, 0)` si la base no está lista o no responde: es un dato de apoyo y
+        no puede tumbar la ficha ni el listado.
+        """
         if cliente.estado_aprovisionamiento != Cliente.APROV_LISTO:
-            return 0
+            return 0, 0
         try:
             with sesion_tenant(cliente.guid) as db:
-                return db.execute(text("SELECT COUNT(*) FROM usuario WHERE activo")).scalar() or 0
+                fila = db.execute(_SQL_RESUMEN_CLIENTE).first()
         except Exception as e:
             logger.warning(
-                "No se pudo contar los usuarios del cliente %s: %s", cliente.guid, e
+                "No se pudo consultar la base del cliente %s: %s", cliente.guid, e
             )
-            return 0
+            return 0, 0
+        if fila is None:
+            return 0, 0
+        return int(fila[0] or 0), int(fila[1] or 0)
 
     # Tope del logo YA EN BASE64. 400 KB de base64 son ~300 KB de imagen: de
     # sobra para un logo y poco para que moleste, porque este dato viaja en la
@@ -398,6 +446,7 @@ class ClienteService:
         return self.a_response(cliente)
 
     def a_response(self, cliente: Cliente) -> ClienteResponse:
+        usuarios, causas_activas = self._resumen_tenant(cliente)
         return ClienteResponse(
             id=cliente.cliente_id,
             nombre=cliente.nombre,
@@ -406,6 +455,10 @@ class ClienteService:
             correo=cliente.correo,
             tipo=cliente.tipo,
             cal=cliente.cal,
+            giro=cliente.giro,
+            direccion=cliente.direccion,
+            comuna=cliente.comuna,
+            ciudad=cliente.ciudad,
             logo=cliente.logo_data_uri,
             guid=cliente.guid,
             inbox=self.inbox_por_defecto(cliente),
@@ -413,5 +466,6 @@ class ClienteService:
             fecha_creacion=cliente.fecha_creacion,
             aprovisionamiento=cliente.estado_aprovisionamiento,
             aprovisionamiento_detalle=cliente.error_aprovisionamiento,
-            total_usuarios=self.total_usuarios(cliente),
+            total_usuarios=usuarios,
+            causas_activas=causas_activas,
         )

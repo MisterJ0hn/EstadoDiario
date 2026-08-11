@@ -42,6 +42,9 @@ class UsuarioService:
             apellido=usuario.apellido,
             telefono=usuario.telefono,
             activo=usuario.activo,
+            # Descifrados uno por uno, igual que el resto: la propiedad `rut`
+            # de cada fila hace el trabajo.
+            ruts=[r.rut for r in usuario.ruts],
             debe_cambiar_password=usuario.debe_cambiar_password,
             fecha_creacion=usuario.fecha_creacion,
         )

@@ -4,9 +4,14 @@ import math
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.audiencia import Audiencia
+from app.models.causa import Causa
+from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.models.estado_diario import EstadoDiario
+from app.models.estado_diario_corte import EstadoDiarioCorte
 from app.models.movimiento import Movimiento
+from app.models.movimiento_corte import MovimientoCorte
 
 
 class EstadoDiarioOrigenRepository:
@@ -94,18 +99,39 @@ class EstadoDiarioOrigenRepository:
         self.db.delete(origen)
         self.db.commit()
 
+    # Qué tablas alimenta cada tipo de archivo. Son DOS por tipo y no una: el
+    # Excel del PJUD trae las hojas por materia y además las de corte, y cada
+    # grupo va a su propia tabla porque no comparten columnas.
+    TABLAS_POR_TIPO = {
+        EstadoDiarioOrigen.TIPO_ESTADO_DIARIO: (EstadoDiario, EstadoDiarioCorte),
+        EstadoDiarioOrigen.TIPO_MOVIMIENTOS: (Movimiento, MovimientoCorte),
+        EstadoDiarioOrigen.TIPO_CAUSAS: (Causa, CausaCorte),
+        EstadoDiarioOrigen.TIPO_AUDIENCIAS: (Audiencia,),
+    }
+
     def count_registros(self, origen: EstadoDiarioOrigen) -> int:
-        """Cuántas filas trajo el archivo. Cuál tabla contar depende del tipo:
-        los de movimientos no tienen filas en `estado_diario`.
+        """Cuántas filas trajo el archivo, **materia más corte**.
+
+        Contar solo la tabla de materia dejaba la columna de Bitácora diciendo
+        menos de lo que el archivo traía: un estado diario con 40 movimientos y
+        12 causas de corte se veía como 40, y quien buscaba las 12 concluía que
+        no habían entrado.
+
+        Las audiencias se deduplican entre cargas traslapadas y su
+        `estado_diario_origen_id` apunta al ÚLTIMO archivo que las trajo: el
+        número de un archivo viejo baja cuando llega uno nuevo que repite esas
+        audiencias. Es correcto y a la vez sorprendente, así que conviene
+        saberlo antes de salir a buscar el "error".
         """
-        if origen.tipo == EstadoDiarioOrigen.TIPO_MOVIMIENTOS:
-            return (
-                self.db.query(func.count(Movimiento.id))
-                .filter(Movimiento.estado_diario_origen_id == origen.id)
+        tablas = self.TABLAS_POR_TIPO.get(origen.tipo)
+        if not tablas:
+            return 0
+        total = 0
+        for modelo in tablas:
+            total += (
+                self.db.query(func.count(modelo.id))
+                .filter(modelo.estado_diario_origen_id == origen.id)
                 .scalar()
+                or 0
             )
-        return (
-            self.db.query(func.count(EstadoDiario.id))
-            .filter(EstadoDiario.estado_diario_origen_id == origen.id)
-            .scalar()
-        )
+        return total

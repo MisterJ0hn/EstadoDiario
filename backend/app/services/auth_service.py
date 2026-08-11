@@ -53,6 +53,9 @@ def perfil_cliente(usuario, cliente=None) -> UserInfo:
         apellido=usuario.apellido,
         telefono=usuario.telefono,
         activo=usuario.activo,
+        # Los RUT con los que recibe archivos del PJUD. Van en el perfil para
+        # que la advertencia al importar se pueda mostrar sin otra petición.
+        ruts=[r.rut for r in usuario.ruts],
         debe_cambiar_password=usuario.debe_cambiar_password,
     )
     if cliente is not None:

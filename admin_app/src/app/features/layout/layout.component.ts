@@ -56,7 +56,11 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
   },
   {
     titulo: 'Plataforma',
-    items: [{ ruta: '/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje }],
+    items: [
+      { ruta: '/facturacion', etiqueta: 'Facturación', icono: ICONO.barras },
+      { ruta: '/ordenes-compra', etiqueta: 'Órdenes de compra', icono: ICONO.bitacora },
+      { ruta: '/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje },
+    ],
   },
 ];
 

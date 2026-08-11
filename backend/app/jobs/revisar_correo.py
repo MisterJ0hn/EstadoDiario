@@ -9,6 +9,11 @@ invoca este comando cada 15 minutos y es el propio job el que decide si
 corresponde correr: si todavía no llega la hora de hoy, o si ya hubo una
 corrida programada después de esa hora, termina sin hacer nada.
 
+**Dejar la hora vacía es una opción, no un olvido**: esa casilla se revisa en
+cada pasada del cron. La cadencia pasa a ser entonces la del crontab —con la
+línea de abajo, cada 15 minutos— en vez de una vez al día. Es lo que quiere un
+estudio al que le llega correo a cualquier hora.
+
 Entrada sugerida en el crontab del host:
 
     */15 * * * * docker exec ed_backend python -m app.jobs.revisar_correo >> /var/log/estado_diario_correo.log 2>&1
@@ -51,8 +56,20 @@ def corresponde_ejecutar(db_tenant, config, usuario_destino_id) -> tuple[bool, s
     """
     if not config.activo:
         return False, "La ingesta por correo está desactivada"
+
+    # Sin hora configurada, la casilla se revisa CADA VEZ que corre el cron:
+    # la cadencia pasa a ser la del crontab (cada 15 minutos, cada hora, la que
+    # sea). Es una opción de verdad y no un caso degenerado — un estudio que
+    # recibe correo a cualquier hora no quiere una revisión diaria, quiere que
+    # se mire seguido.
+    #
+    # Ojo con lo que se salta: sin hora tampoco corre el control de "ya se
+    # ejecutó el turno de hoy", que está anclado a esa hora. Es coherente —lo
+    # pedido es revisar en cada pasada— pero significa que la frecuencia la
+    # decide el crontab y nadie más. Si el cron quedara cada minuto, la casilla
+    # se consultaría cada minuto.
     if not config.hora_ejecucion:
-        return False, "No hay hora de ejecución configurada"
+        return True, "Sin hora configurada: se revisa en cada pasada del cron"
 
     tz = _zona()
     ahora_local = datetime.now(tz)

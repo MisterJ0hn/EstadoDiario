@@ -61,6 +61,26 @@ export const routes: Routes = [
         ],
       },
       {
+        // Facturación: qué se le cobra a cada cliente por su cartera. Va suelta
+        // y no bajo /clientes porque se mira por período —todos los clientes de
+        // un mes— y no cliente por cliente.
+        path: 'facturacion',
+        loadComponent: () =>
+          import('./features/admin/facturacion/facturacion.component').then(
+            (m) => m.FacturacionComponent
+          ),
+      },
+      {
+        // Las órdenes de compra son el DOCUMENTO; /facturacion es el cálculo.
+        // Van en pantallas distintas porque se usan en momentos distintos: el
+        // cálculo se mira todo el mes, la orden se emite una vez.
+        path: 'ordenes-compra',
+        loadComponent: () =>
+          import('./features/admin/facturacion/ordenes-compra.component').then(
+            (m) => m.OrdenesCompraComponent
+          ),
+      },
+      {
         // Un solo módulo con paneles: se configuran juntos al montar el
         // sistema y casi nunca después.
         path: 'configuracion',

@@ -49,6 +49,24 @@ class Cliente(BaseMaestra):
     # normal: la política es de plataforma y esto es la excepción.
     dias_retencion_log: Mapped[Optional[int]] = mapped_column(Integer)
 
+    # ── Datos de facturación ──
+    # Van en la cabecera del documento de cobro. Todos opcionales: el cliente
+    # ya existe sin ellos y no se puede exigir un giro para poder operar. La
+    # factura los imprime si están y los omite si no.
+    #
+    # No van cifrados, a diferencia del RUT y el correo: son datos comerciales
+    # públicos de una empresa (los mismos que van impresos en la factura), no
+    # datos personales. Cifrarlos costaría no poder buscarlos ni ordenarlos sin
+    # ganar nada.
+    #
+    # OJO: la factura **copia** estos valores al emitirse. Cambiar la dirección
+    # acá no reescribe las facturas ya emitidas, que es justamente lo que se
+    # espera de una factura.
+    giro: Mapped[Optional[str]] = mapped_column(String(255))
+    direccion: Mapped[Optional[str]] = mapped_column(String(255))
+    comuna: Mapped[Optional[str]] = mapped_column(String(100))
+    ciudad: Mapped[Optional[str]] = mapped_column(String(100))
+
     # ── Estado del aprovisionamiento de su base de datos ──
     # Crear una base es una operación larga que puede fallar a la mitad (el rol
     # sin permiso de CREATEDB, el servidor sin espacio). Sin este estado, un

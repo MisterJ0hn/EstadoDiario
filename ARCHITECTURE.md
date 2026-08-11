@@ -24,7 +24,7 @@ base de datos por cliente**.
                     │                                       │
                     │  estado_diario_<guid>   (cliente A)   │
                     │  estado_diario_<guid>   (cliente B)   │
-                    │   └ las 13 tablas operativas          │
+                    │   └ las 18 tablas operativas          │
                     └───────────────────────────────────────┘
 ```
 
@@ -47,7 +47,7 @@ si no calza, la request se rechaza con 403.
 Hay dos `DeclarativeBase` separadas porque `usuario` existe en las dos bases con
 columnas distintas: `BaseMaestra` (base principal) y `BaseTenant` (base de
 cliente). Con un solo `MetaData` serían la misma tabla y `create_all()` crearía
-las 13 tablas del cliente dentro de la base principal.
+las 18 tablas del cliente dentro de la base principal.
 
 ### Esquema sin Alembic
 
@@ -129,6 +129,48 @@ cada campo por el que se busca lleva al lado un `*_hash` (HMAC, `UNIQUE`) y las
 consultas van por ahí. Ver `app/core/hash_busqueda.py`. Los setters de los
 modelos cifran y calculan el hash solos; el resto del código trabaja en claro.
 
+### El RUT del archivo no es el del estudio
+
+`usuario_rut` guarda los RUT con los que **cada persona** recibe los reportes
+del PJUD. Existe porque el Poder Judicial emite cada archivo a nombre del
+abogado que lo pide: un estudio con cinco abogados recibe archivos con cinco
+RUT distintos y ninguno es el de la ficha del cliente.
+
+Es lo que decide si al importar se advierte que el archivo parece de otro.
+Antes se comparaba contra `cliente.rut`, y eso dejaba a todo el estudio salvo
+al titular con una advertencia permanente, que es la forma más rápida de que
+una advertencia deje de leerse.
+
+Son varios por persona porque un abogado puede litigar además a nombre de una
+sociedad. Los carga la plataforma en la ficha del usuario; **sin ninguno se
+sigue comparando contra el RUT del estudio**, que es el comportamiento
+anterior: el aviso pierde precisión pero no desaparece.
+
+El RUT va cifrado como el resto de los datos personales, más una copia
+normalizada en claro (`rut_normalizado`) para poder comparar sin descifrar la
+lista entera. No lleva hash de búsqueda porque nunca se busca por él: siempre
+se llega desde el usuario.
+
+### La cartera de causas es una foto, no un incremental
+
+El Excel de Causas trae **todas** las causas del estudio cada vez que se emite.
+Cada carga crea su propio `estado_diario_origen` e inserta la cartera completa
+de nuevo, así que sumar las filas de todos los archivos multiplica la cartera
+por la cantidad de veces que se cargó el reporte.
+
+Por eso las consultas de cartera se acotan al **último archivo** salvo que se
+pida uno concreto (`ultimo_origen_causas_id`, en `causa_repository`). Vale para
+"Mis Causas", para el contador de causas activas de la consola y, sobre todo,
+para la facturación: sin eso se cobraría de más.
+
+Qué causa está vigente lo define `app/core/estados_causa.py`, en un solo lugar
+porque lo consultan tres consumidores que no comparten código: el filtro de la
+pantalla (ORM), el contador de la consola y el cierre de facturación (SQL
+crudo, una base por cliente). Terminadas son `Concluido` y `Fallada o
+Concluida`; **el estado nulo cuenta como vigente**, porque la hoja de Cobranza
+no trae esa columna y tratarlo como terminado borraría Cobranza entera de la
+cartera y de la factura.
+
 ## Backend - Clean Architecture
 
 ```
@@ -149,6 +191,7 @@ backend/
 │   │   └── logging_config.py
 │   ├── models/                     # Tablas de la base del CLIENTE (BaseTenant)
 │   │   ├── usuario.py              #   campos cifrados + hash de búsqueda
+│   │   ├── usuario_rut.py          #   RUT con los que recibe archivos del PJUD
 │   │   ├── password_historial.py   #   últimas contraseñas, para no repetirlas
 │   │   ├── jurisdiccion.py
 │   │   ├── estado_diario_origen.py
@@ -162,6 +205,8 @@ backend/
 │   │       ├── usuario_admin.py    #   administrador de la plataforma
 │   │       ├── password_historial_admin.py  # su historial de contraseñas
 │   │       ├── configuracion_sistema.py
+│   │       ├── facturacion_cierre.py   #  lo cobrado a un cliente en un mes
+│   │       ├── factura.py          #   la orden de compra emitida + su PDF
 │   │       └── configuracion_*.py  #   correo, smtp, google, whatsapp
 │   ├── schemas/                    # Pydantic DTOs
 │   ├── repositories/               # Acceso a datos
@@ -170,7 +215,7 @@ backend/
 │   │   ├── password_service.py     # Cambio de clave + historial (los dos)
 │   │   ├── password_reset_service.py     # Recuperación por correo
 │   │   ├── cliente_service.py      # Alta y ficha del cliente
-│   │   ├── aprovisionamiento_service.py  # CREATE DATABASE + 13 tablas
+│   │   ├── aprovisionamiento_service.py  # CREATE DATABASE + 18 tablas
 │   │   ├── admin_cliente_service.py      # Operar SOBRE un cliente
 │   │   └── admin_dashboard_service.py
 │   ├── api/v1/
@@ -183,6 +228,7 @@ backend/
 │       ├── revisar_correo.py
 │       ├── enviar_recordatorios_whatsapp.py
 │       ├── purgar_logs.py
+│       ├── cerrar_facturacion.py   # El día 1: congela el mes que terminó
 │       └── migrar_a_multitenant.py # Un solo uso: ver "Migración"
 ├── Dockerfile
 └── requirements.txt
@@ -436,11 +482,16 @@ frontend/src/app/
 
    usuario                → administrador de la PLATAFORMA (no opera causas)
    configuracion_sistema  → parámetros globales, una sola fila
+   facturacion_cierre     → lo cobrado a un cliente en un mes, congelado
+                            (cliente_id, periodo) UNIQUE
+   factura / factura_linea → la orden de compra emitida y su detalle por mes,
+                            con el PDF entregado y los datos del cliente
+                            COPIADOS (numero UNIQUE)
 ```
 
 ### Base de cada cliente (`estado_diario_<guid>`)
 
-Las 13 tablas operativas. El esquema es idéntico en todas; lo que cambia es a
+Las 18 tablas operativas. El esquema es idéntico en todas; lo que cambia es a
 cuál se conecta la request.
 
 ```
@@ -522,6 +573,12 @@ principal; algunas operaciones abren además la base del cliente indicado.
 | POST     | /api/v1/admin/clientes/{id}/inbox/probar          | Probar la conexión IMAP              |
 | GET/POST | /api/v1/admin/clientes/{id}/usuarios              | Usuarios, **en la base del cliente** |
 | PUT      | /api/v1/admin/clientes/{id}/usuarios/{uid}        | Editar / resetear clave              |
+| GET      | /api/v1/admin/facturacion                         | Detalle y totales de un período      |
+| GET      | /api/v1/admin/facturacion/clientes/{id}           | Historial facturado de un cliente    |
+| POST     | /api/v1/admin/facturacion/cerrar                  | Cerrar un período a mano             |
+| GET/POST | /api/v1/admin/facturacion/facturas                | Órdenes de compra: listar / emitir   |
+| GET      | /api/v1/admin/facturacion/facturas/{id}/pdf       | Descargar el PDF guardado            |
+| POST     | /api/v1/admin/facturacion/facturas/{id}/anular    | Anular sin liberar el número         |
 
 ### Dentro del estudio
 
@@ -571,6 +628,84 @@ consola de Twilio debe quedar configurado con la **URL pública** del sitio
   recordatorio nuevo (copia del original) y finalizando el anterior.
 - Cada llamada, aceptada o rechazada, queda en `api_llamado_estado_diario`.
 
+## Facturación
+
+Se cobra por cantidad de causas de la cartera vigente de cada cliente:
+
+| Qué | Precio por causa |
+|-----|------------------|
+| Materia (Civil, Laboral, Penal, Cobranza, Familia) | $1 |
+| Corte de Apelaciones | $2 |
+| Corte Suprema | $3 |
+
+Las de materia se cuentan **solo si están vigentes**; las de corte se cuentan
+todas. No es un descuido: "Fallada" en una corte dice que se falló ese recurso,
+no que la causa salió de la cartera del estudio, y el reporte deja de traerla
+cuando eso pasa.
+
+**El cierre es el día 1 y se guarda.** Por lo de la sección anterior —la
+cartera es una foto que se reemplaza— el período de marzo no se puede
+reconstruir en junio: ese archivo ya no está en la base. Así que el día 1 se
+cuenta una vez, se calcula el monto y se escribe una fila por cliente en
+`facturacion_cierre` (base principal). Lo que se factura después sale de ahí y
+no de volver a contar: una factura emitida no puede cambiar de monto porque el
+estudio cerró tres causas.
+
+El cierre del día 1 factura **el mes que terminó**: correr el job el 1 de
+agosto crea el período `2026-07-01`.
+
+Cada fila guarda las tres cantidades **y las tarifas vigentes al cierre**. Sin
+las cantidades, una factura discutida no se puede explicar; sin las tarifas,
+subir el precio reescribiría el monto de los meses ya cerrados.
+
+Un cliente cuya base no responde queda en estado `error` en vez de tumbar el
+cierre de los demás: es lo que distingue "este mes no tuvo causas" de "este mes
+no pudimos preguntarle", dos cosas que no se facturan igual. El job devuelve
+código 1 cuando hay alguno, para que el cron lo reporte.
+
+Es idempotente por el `UNIQUE (cliente_id, periodo)` más el salto de los que ya
+tienen cierre: dispararlo dos veces el día 1 no duplica ninguna factura.
+
+La consola muestra además el **período en curso como estimación**, contándolo
+al momento y marcado como tal. Es la pregunta que se hace el 20 del mes —cuánto
+va a salir la factura— y responder "no hay datos" haría parecer que el módulo
+no funciona.
+
+### La orden de compra
+
+Es el documento que se entrega. Cubre un **rango de fechas** y suma los cierres
+mensuales que caen dentro; se factura por mes completo, así que entra todo mes
+que se cruce con el rango. Un mes sin cierre **rechaza la emisión** en vez de
+contarse al momento: mezclar montos congelados con montos que cambian solos
+daría un documento que nadie puede después reconstruir.
+
+Todo lo que se imprime queda **copiado** en `factura`: la razón social, el RUT,
+el giro y la dirección del cliente, y las cantidades y tarifas de cada mes. Una
+orden emitida no puede cambiar porque el cliente se mudó o porque se rehízo un
+cierre.
+
+El PDF se guarda entero (`factura.pdf`) y se devuelve ESE al descargar, no uno
+regenerado: un cambio en el dibujo o en el formato de los números bastaría para
+que la copia que el cliente tiene en su correo y la que descarga hoy dejaran de
+ser el mismo documento.
+
+**Sobre "no modificable".** El PDF sale con la edición, la copia y las
+anotaciones bloqueadas por los permisos del formato, con una clave de
+propietario derivada de `BACKEND_SECRET_KEY` (no guardada). Eso **disuade, no
+impide**: los permisos de PDF los ignora cualquier herramienta libre y así está
+diseñado el formato. La garantía real es la copia guardada. Para que la
+alteración sea detectable sin tenerla al lado hace falta una firma digital con
+certificado, no más permisos.
+
+El correlativo es global y se asigna con `LOCK TABLE factura IN EXCLUSIVE MODE`
+en vez de una secuencia: **una secuencia deja huecos** cuando la transacción se
+deshace —los `nextval` no se revierten— y un talonario al que le falta el 47 es
+algo que después nadie puede explicar. Por lo mismo, anular no borra ni libera
+el número.
+
+No es un DTE del SII: no lleva folio autorizado (CAF) ni timbre electrónico, y
+el pie del PDF lo dice.
+
 ## Tareas programadas
 
 Todas recorren los clientes activos y abren una sesión por base. Un cliente con
@@ -581,6 +716,7 @@ base lista se saltan.
 */15 * * * *  docker exec ed_backend python -m app.jobs.revisar_correo
 */5  * * * *  docker exec ed_backend python -m app.jobs.enviar_recordatorios_whatsapp
 30 3 * * *    docker exec ed_backend python -m app.jobs.purgar_logs
+0  4 1 * *    docker exec ed_backend python -m app.jobs.cerrar_facturacion
 ```
 
 La hora de la revisión de correo la fija cada cliente desde la UI, no el

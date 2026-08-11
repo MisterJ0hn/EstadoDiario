@@ -7,6 +7,7 @@ from admin_api.app.endpoints import (
     configuracion_google,
     configuracion_smtp,
     configuracion_whatsapp,
+    facturacion,
 )
 
 # Mismo prefijo que la API de los estudios a propósito: las rutas no cambiaron
@@ -17,6 +18,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_admin.router)
 api_router.include_router(admin_sistema.router)
 api_router.include_router(clientes.router)
+api_router.include_router(facturacion.router)
 api_router.include_router(configuracion_google.router)
 api_router.include_router(configuracion_smtp.router)
 api_router.include_router(configuracion_whatsapp.router)

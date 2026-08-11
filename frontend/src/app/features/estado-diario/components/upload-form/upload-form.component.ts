@@ -5,8 +5,10 @@ import { Router } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { MovimientoService } from '@features/movimientos/services/movimiento.service';
 import { AudienciaService } from '@features/audiencias/services/audiencia.service';
+import { AuthService } from '@core/services/auth.service';
 import { NotificationService } from '@core/services/notification.service';
-import { TipoOrigen } from '@core/models/estado-diario.model';
+import { TipoOrigenCargable } from '@core/models/estado-diario.model';
+import { coincideConAlguno, formatearRut } from '@core/utils/rut';
 
 @Component({
   selector: 'app-upload-form',
@@ -63,26 +65,15 @@ import { TipoOrigen } from '@core/models/estado-diario.model';
             </div>
           </div>
 
+          <!-- El RUT y la fecha ya no se editan: salen del nombre del archivo.
+               Se muestran igual, como confirmación de lo que se va a enviar:
+               sin esto la carga sería una caja negra. -->
           @if (parsedInfo()) {
             <div class="alert-info">
               Datos detectados del archivo: RUT <strong>{{ parsedInfo()!.rut }}</strong>,
               Fecha <strong>{{ parsedInfo()!.fecha }}</strong>
             </div>
           }
-
-          <!-- RUT y Fecha auto-completados -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="form-label">RUT</label>
-              <input type="text" class="form-input" [(ngModel)]="rut" placeholder="Se extrae del archivo"
-                     [class.bg-accent-50]="parsedInfo()?.rut" />
-            </div>
-            <div>
-              <label class="form-label">Fecha del archivo</label>
-              <input type="date" class="form-input" [(ngModel)]="fecha"
-                     [class.bg-accent-50]="parsedInfo()?.fecha" />
-            </div>
-          </div>
 
           @if (errorMsg()) {
             <div class="alert-danger">{{ errorMsg() }}</div>
@@ -103,6 +94,51 @@ import { TipoOrigen } from '@core/models/estado-diario.model';
         </div>
       </div>
     </div>
+
+    <!-- El archivo parece ser de otro estudio. No se bloquea: puede ser un
+         nombre mal armado, o un archivo legítimo emitido a nombre de otro RUT.
+         Se avisa y decide quien carga. -->
+    @if (confirmandoRut()) {
+      <div class="modal-backdrop" (click)="cancelarCarga()">
+        <div class="modal-content max-w-md" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h3 class="text-lg font-semibold">El RUT no corresponde</h3>
+            <button (click)="cancelarCarga()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
+          </div>
+          <div class="modal-body space-y-4">
+            <div class="flex items-start gap-3">
+              <div class="shrink-0 w-10 h-10 rounded-full bg-warning-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-warning-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+              </div>
+              <div class="text-sm text-neutral-700 space-y-2">
+                <p>
+                  El archivo es del RUT <strong>{{ rutArchivo() }}</strong>, que no está
+                  entre los suyos:
+                  <strong>{{ rutsRegistrados() }}</strong>.
+                </p>
+                @if (!tieneRutsPropios()) {
+                  <p class="text-neutral-500">
+                    Su cuenta no tiene RUT propios registrados, así que se comparó con el
+                    del estudio. Pídale a la plataforma que le cargue los suyos.
+                  </p>
+                }
+                <p class="text-neutral-500">
+                  Si continúa, los datos se cargarán igual en su estudio. Revise que sea el
+                  archivo que quería subir.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button (click)="cancelarCarga()" class="btn-secondary">Cancelar</button>
+            <button (click)="continuarCarga()" class="btn-primary">Continuar de todos modos</button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class UploadFormComponent {
@@ -110,18 +146,25 @@ export class UploadFormComponent {
   private movimientoService = inject(MovimientoService);
   private audienciaService = inject(AudienciaService);
   private notification = inject(NotificationService);
+  private auth = inject(AuthService);
   private router = inject(Router);
 
+  // Ya no se editan a mano: salen del nombre del archivo y se muestran como
+  // confirmación. Siguen siendo lo que se manda al servidor.
   rut = '';
   fecha = '';
-  /** Los tres Excel del sistema tienen formatos y endpoints distintos. */
-  tipo: TipoOrigen = 'estado_diario';
+
+  /** Se pide confirmación porque el archivo parece de otro estudio. */
+  confirmandoRut = signal(false);
+  /** Los tres Excel de esta pantalla tienen formatos y endpoints distintos.
+   *  El de causas no está: se carga desde "Cargar Causas". */
+  tipo: TipoOrigenCargable = 'estado_diario';
   selectedFile = signal<File | null>(null);
   parsedInfo = signal<{ rut: string; fecha: string } | null>(null);
   uploading = signal(false);
   errorMsg = signal('');
 
-  private readonly EJEMPLOS: Record<TipoOrigen, string> = {
+  private readonly EJEMPLOS: Record<TipoOrigenCargable, string> = {
     estado_diario: 'estadoDiario_16952077__28072026.xls',
     movimientos: 'Movimientos_16952077__30_07_2026.xls',
     audiencias: 'Audiencias_16952077_03_08_2026_09_08_2026.xls',
@@ -146,6 +189,12 @@ export class UploadFormComponent {
 
   private setFile(file: File): void {
     this.selectedFile.set(file);
+    // Se limpian ANTES de parsear: `parseFilename` solo los escribe cuando el
+    // nombre calza con un patrón conocido, así que sin esto un archivo que no
+    // calza se subiría con el RUT y la fecha del archivo ANTERIOR. Con los
+    // campos a la vista eso se notaba; ahora que están ocultos, no.
+    this.rut = '';
+    this.fecha = '';
     this.parseFilename(file.name);
   }
 
@@ -225,11 +274,77 @@ export class UploadFormComponent {
     }
   }
 
+  /** RUT del archivo, para el aviso. Formateado con puntos. */
+  rutArchivo(): string {
+    return this.rut ? formatearRut(this.rut) : '(sin RUT en el nombre)';
+  }
+
+  /**
+   * Contra qué RUT se compara el del archivo.
+   *
+   * Primero los del usuario: el PJUD emite cada reporte a nombre del abogado
+   * que lo pide, así que el RUT del archivo es el suyo y no el del estudio.
+   * Un estudio con cinco abogados recibe archivos con cinco RUT distintos, y
+   * comparar contra el de la ficha del cliente dejaba a cuatro de ellos con
+   * una advertencia permanente que se aprendía a ignorar.
+   *
+   * Si la plataforma todavía no le cargó ninguno se cae al del estudio, que es
+   * lo que se hacía antes: el aviso pierde precisión pero no desaparece.
+   */
+  private rutsDeReferencia(): string[] {
+    const usuario = this.auth.user();
+    const propios = (usuario?.ruts ?? []).filter((r) => !!r);
+    if (propios.length) return propios;
+    return usuario?.cliente_rut ? [usuario.cliente_rut] : [];
+  }
+
+  /** Los RUT registrados, para nombrarlos en el aviso. */
+  rutsRegistrados(): string {
+    const referencias = this.rutsDeReferencia();
+    if (!referencias.length) return '(sin RUT registrado)';
+    return referencias.map((r) => formatearRut(r)).join(', ');
+  }
+
+  /** true si el aviso tiene que hablar del usuario y no del estudio. */
+  tieneRutsPropios(): boolean {
+    return (this.auth.user()?.ruts ?? []).some((r) => !!r);
+  }
+
+  /**
+   * ¿El archivo es de otro?
+   *
+   * Solo se opina cuando hay las dos puntas: un RUT leído del nombre y al
+   * menos uno registrado. Sin alguna de las dos no hay comparación posible y
+   * advertir sería ruido — el caso más común es un nombre de archivo que no
+   * calza con ningún patrón conocido, que ya se maneja aparte.
+   */
+  private esDeOtroEstudio(): boolean {
+    return !!this.rut && !coincideConAlguno(this.rut, this.rutsDeReferencia());
+  }
+
   onUpload(): void {
     this.errorMsg.set('');
 
     if (!this.selectedFile()) { this.errorMsg.set('Seleccione un archivo'); return; }
 
+    if (this.esDeOtroEstudio()) {
+      this.confirmandoRut.set(true);
+      return;
+    }
+    this.subir();
+  }
+
+  /** El usuario decidió cargar igual un archivo de otro RUT. */
+  continuarCarga(): void {
+    this.confirmandoRut.set(false);
+    this.subir();
+  }
+
+  cancelarCarga(): void {
+    this.confirmandoRut.set(false);
+  }
+
+  private subir(): void {
     this.uploading.set(true);
     const archivo = this.selectedFile()!;
     const rut = this.rut || undefined;

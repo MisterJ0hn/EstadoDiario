@@ -155,6 +155,9 @@ interface UsuarioBorrador {
                       <th scope="col">RUT</th>
                       <th scope="col">Casilla de ingesta</th>
                       <th scope="col">CAL</th>
+                      <th scope="col" title="Causas de materia vigentes del último archivo de causas cargado">
+                        Causas activas
+                      </th>
                       <th scope="col">Creado</th>
                       <th scope="col">Estado</th>
                       <th scope="col">Acciones</th>
@@ -171,6 +174,10 @@ interface UsuarioBorrador {
                         <td class="tabular-nums">{{ rutBonito(c.rut) }}</td>
                         <td class="text-neutral-600">{{ c.inbox }}</td>
                         <td class="tabular-nums">{{ c.total_usuarios }}</td>
+                        <!-- 0 puede ser "no tiene causas" o "no se pudo consultar su
+                             base": el backend no los distingue, así que la celda no
+                             puede afirmar ninguna de las dos. -->
+                        <td class="tabular-nums">{{ c.causas_activas }}</td>
                         <td>{{ c.fecha_creacion | date: 'dd-MM-yyyy' }}</td>
                         <td><span [class]="claseEstado(c)">{{ textoEstado(c) }}</span></td>
                         <td>
@@ -194,7 +201,7 @@ interface UsuarioBorrador {
                 </table>
               </div>
 
-              <!-- Móvil: 7 columnas no caben -->
+              <!-- Móvil: 8 columnas no caben -->
               <ul class="md:hidden space-y-3">
                 @for (c of clientes(); track c.id) {
                   <li class="rounded-lg border border-neutral-200 p-3">
@@ -213,6 +220,8 @@ interface UsuarioBorrador {
                       <dd class="text-neutral-700 break-all">{{ c.inbox }}</dd>
                       <dt class="text-neutral-500">Usuarios</dt>
                       <dd class="text-neutral-700 tabular-nums">{{ c.total_usuarios }}</dd>
+                      <dt class="text-neutral-500">Causas activas</dt>
+                      <dd class="text-neutral-700 tabular-nums">{{ c.causas_activas }}</dd>
                       <dt class="text-neutral-500">Creado</dt>
                       <dd class="text-neutral-700">{{ c.fecha_creacion | date: 'dd-MM-yyyy' }}</dd>
                     </dl>

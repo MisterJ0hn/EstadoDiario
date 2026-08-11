@@ -46,12 +46,23 @@ export interface CausaResumenResponse {
   estados_causa: string[];
 }
 
+/**
+ * Vigencia de una causa de la cartera.
+ *
+ * `vigentes` es todo lo que NO está concluido ni fallado —incluidas las que no
+ * informan estado, como las de Cobranza, cuya hoja no trae la columna—, y es
+ * lo que se ve por defecto: la cartera con la que el estudio trabaja hoy.
+ */
+export type VigenciaCausa = 'vigentes' | 'finalizadas';
+
 export interface CausaFiltros {
   materia?: string;
   estado_causa?: string;
   tribunal?: string;
   busqueda?: string;
   origen_id?: number;
+  /** Ausente = las dos. La pantalla siempre manda una de las dos. */
+  vigencia?: VigenciaCausa;
   page?: number;
   limit?: number;
 }

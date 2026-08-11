@@ -1,9 +1,9 @@
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 
-import { Causa, CausaFiltros, ConteoMateria } from '@core/models/causa.model';
+import { Causa, CausaFiltros, ConteoMateria, VigenciaCausa } from '@core/models/causa.model';
 import { NotificationService } from '@core/services/notification.service';
 import {
   ChipFiltro,
@@ -25,16 +25,44 @@ import { CausaService } from './services/causa.service';
   imports: [CommonModule, FormsModule, FiltrosPanelComponent],
   template: `
     <div class="space-y-6">
-      <div>
-        <h1 class="text-2xl font-bold text-neutral-800">Mis Causas · Materia</h1>
-        <p class="text-neutral-500 mt-1">
-          Cartera del estudio — {{ total() }} causas encontradas
-        </p>
+      <div class="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-neutral-800">{{ titulo() }}</h1>
+          <p class="text-neutral-500 mt-1">
+            {{ total() }} causas encontradas
+          </p>
+        </div>
+
+        <!-- Vigentes / Finalizadas. Va acá arriba y no dentro del panel de
+             filtros porque no es un filtro más: cambia QUÉ cartera se está
+             mirando, y por eso también cambia el título. -->
+        <div class="inline-flex rounded-lg border border-neutral-200 bg-white p-1" role="tablist"
+             aria-label="Vigencia de las causas">
+          @for (v of VIGENCIAS; track v.clave) {
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="vigencia() === v.clave"
+              (click)="seleccionarVigencia(v.clave)"
+              class="rounded-md px-4 py-1.5 text-sm font-medium transition-colors"
+              [class]="
+                vigencia() === v.clave
+                  ? 'bg-primary-600 text-white'
+                  : 'text-neutral-600 hover:text-neutral-800'
+              "
+            >
+              {{ v.etiqueta }}
+            </button>
+          }
+        </div>
       </div>
 
       @if (filtroOrigenId) {
         <div class="alert-info flex items-center justify-between gap-4">
-          <span>Mostrando solo las causas del archivo #{{ filtroOrigenId }}.</span>
+          <span>
+            Mostrando las causas del archivo #{{ filtroOrigenId }}, que puede no ser
+            el último cargado.
+          </span>
           <button (click)="quitarFiltroArchivo()" class="btn-secondary btn-sm shrink-0">
             Ver todas
           </button>
@@ -235,6 +263,22 @@ export class CausasComponent implements OnInit {
   /** null = pestaña "Todas". Se refleja en el query param `materia`. */
   materiaActiva = signal<string | null>(null);
 
+  /**
+   * Qué mitad de la cartera se está viendo. Por defecto las vigentes: son las
+   * que el estudio tramita, y una cartera con años de causas concluidas
+   * encima haría inútil el listado el primer día.
+   */
+  vigencia = signal<VigenciaCausa>('vigentes');
+
+  readonly VIGENCIAS: { clave: VigenciaCausa; etiqueta: string; titulo: string }[] = [
+    { clave: 'vigentes', etiqueta: 'Vigentes', titulo: 'Cartera cliente Vigentes' },
+    { clave: 'finalizadas', etiqueta: 'No vigentes', titulo: 'Cartera cliente Finalizada' },
+  ];
+
+  titulo = computed(
+    () => this.VIGENCIAS.find((v) => v.clave === this.vigencia())!.titulo
+  );
+
   filtroBusqueda = '';
   filtroEstadoCausa = '';
   filtroTribunal = '';
@@ -253,6 +297,12 @@ export class CausasComponent implements OnInit {
   ngOnInit(): void {
     const materia = this.route.snapshot.queryParamMap.get('materia');
     this.materiaActiva.set(materia || null);
+
+    // En la URL para que recargar o compartir el enlace muestre lo mismo.
+    const vigencia = this.route.snapshot.queryParamMap.get('vigencia');
+    if (vigencia === 'finalizadas' || vigencia === 'vigentes') {
+      this.vigencia.set(vigencia);
+    }
 
     const origenId = Number(this.route.snapshot.queryParamMap.get('origen_id'));
     this.filtroOrigenId = Number.isFinite(origenId) && origenId > 0 ? origenId : undefined;
@@ -319,12 +369,29 @@ export class CausasComponent implements OnInit {
     });
   }
 
+  seleccionarVigencia(vigencia: VigenciaCausa): void {
+    if (this.vigencia() === vigencia) return;
+    this.vigencia.set(vigencia);
+    // La materia se conserva: cambiar de vigencia no es cambiar de tema, y
+    // devolver a "Todas" haría perder la pestaña en la que se estaba.
+    this.pagina.set(1);
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { vigencia },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    this.cargar();
+    this.cargarResumen();
+  }
+
   private filtros(): CausaFiltros {
     return {
       busqueda: this.filtroBusqueda || undefined,
       estado_causa: this.filtroEstadoCausa || undefined,
       tribunal: this.filtroTribunal || undefined,
       origen_id: this.filtroOrigenId,
+      vigencia: this.vigencia(),
     };
   }
 

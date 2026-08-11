@@ -21,6 +21,7 @@ from app.core.security import get_password_hash
 from app.models.maestra.cliente import Cliente
 from app.models.password_historial import PasswordHistorial
 from app.models.usuario import Usuario
+from app.models.usuario_rut import UsuarioRut
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from admin_api.app.schemas.cliente import ClienteInbox, ClienteInboxUpdate
@@ -115,6 +116,29 @@ class AdminClienteService:
 
     # ── Usuarios del cliente (en SU base, no en la principal) ──
 
+    @staticmethod
+    def _sincronizar_ruts(usuario: Usuario, ruts: list[str]) -> None:
+        """Deja los RUT del usuario exactamente como vinieron.
+
+        Se reemplaza la lista entera en vez de calcular altas y bajas: los
+        cambios son de a uno o dos y el formulario siempre manda la lista
+        completa, así que la diferencia de eficiencia no existe y la de
+        claridad sí. El `clear()` funciona porque la relación va con
+        `delete-orphan`: las filas que salen se borran, no quedan huérfanas.
+
+        Los RUT llegan ya normalizados y validados por el esquema
+        (`validar_ruts`), así que acá no se vuelve a decidir qué es válido.
+        """
+        usuario.ruts.clear()
+        for rut in ruts:
+            fila = UsuarioRut()
+            # Por el setter: cifra y calcula la forma comparable.
+            fila.rut = rut
+            # Solo se agrega por la colección. Asignar además `fila.usuario`
+            # lo agregaría dos veces: `back_populates` ya sincroniza los dos
+            # lados de la relación.
+            usuario.ruts.append(fila)
+
     def listar_usuarios(self, cliente_id: int) -> list[UsuarioResponse]:
         cliente = self._cliente_operativo(cliente_id)
         with sesion_tenant(cliente.guid) as db_tenant:
@@ -169,6 +193,7 @@ class AdminClienteService:
             usuario.usuario = nombre_usuario
             usuario.correo = datos.email
             usuario.telefono = datos.telefono
+            self._sincronizar_ruts(usuario, datos.ruts)
 
             repo.create(usuario)
             # Después del create: la fila del historial necesita el id, que
@@ -226,6 +251,7 @@ class AdminClienteService:
             usuario.apellido = datos.apellido
             usuario.telefono = datos.telefono
             usuario.activo = datos.activo
+            self._sincronizar_ruts(usuario, datos.ruts)
 
             if datos.password:
                 usuario.password_hash = get_password_hash(datos.password)

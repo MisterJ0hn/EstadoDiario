@@ -47,7 +47,9 @@ router = APIRouter(prefix="/estado-diario", tags=["Estado Diario"])
 def listar_origenes(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    tipo: str | None = Query(None, description="estado_diario | movimientos"),
+    tipo: str | None = Query(
+        None, description="estado_diario | movimientos | audiencias | causas"
+    ),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):

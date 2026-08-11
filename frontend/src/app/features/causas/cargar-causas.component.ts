@@ -4,7 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { CargarCausasResponse } from '@core/models/causa.model';
+import { AuthService } from '@core/services/auth.service';
 import { NotificationService } from '@core/services/notification.service';
+import { coincideConAlguno, formatearRut } from '@core/utils/rut';
 import { CausaService } from './services/causa.service';
 
 /**
@@ -78,23 +80,21 @@ import { CausaService } from './services/causa.service';
             </p>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="form-label" for="rut">RUT (opcional)</label>
-              <input id="rut" type="text" class="form-input" [(ngModel)]="rut"
-                     placeholder="Se toma del nombre del archivo" />
-              <p class="text-xs text-neutral-500 mt-1">
-                Solo si el nombre no sigue el formato Causas_RUT.xlsx
-              </p>
+          <!-- El RUT y la fecha ya no se editan. El RUT sale del nombre del
+               archivo y la fecha es hoy: este reporte no trae fecha, es una
+               foto de la cartera al momento de emitirlo. Se muestran igual,
+               como confirmación de lo que se va a enviar. -->
+          @if (archivo()) {
+            <div class="alert-info">
+              @if (rutDetectado()) {
+                RUT detectado del archivo: <strong>{{ rutArchivo() }}</strong>.
+              } @else {
+                El nombre no sigue el formato <strong>{{ EJEMPLO_NOMBRE }}</strong>: el RUT lo
+                deducirá el servidor.
+              }
+              La fecha del reporte será <strong>hoy</strong>.
             </div>
-            <div>
-              <label class="form-label" for="fecha">Fecha del reporte</label>
-              <input id="fecha" type="date" class="form-input" [(ngModel)]="fecha" />
-              <p class="text-xs text-neutral-500 mt-1">
-                Este reporte no trae fecha; si la deja vacía se usa hoy.
-              </p>
-            </div>
-          </div>
+          }
 
           <div class="flex items-center gap-3">
             <button type="button" class="btn-primary" [disabled]="!archivo() || cargando()"
@@ -140,11 +140,57 @@ import { CausaService } from './services/causa.service';
         </div>
       </div>
     </div>
+
+    <!-- El archivo parece ser de otro estudio. No se bloquea: puede ser un
+         nombre mal armado, o un archivo legítimo emitido a nombre de otro RUT.
+         Se avisa y decide quien carga. -->
+    @if (confirmandoRut()) {
+      <div class="modal-backdrop" (click)="cancelarCarga()">
+        <div class="modal-content max-w-md" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h3 class="text-lg font-semibold">El RUT no corresponde</h3>
+            <button (click)="cancelarCarga()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
+          </div>
+          <div class="modal-body space-y-4">
+            <div class="flex items-start gap-3">
+              <div class="shrink-0 w-10 h-10 rounded-full bg-warning-100 flex items-center justify-center">
+                <svg class="w-5 h-5 text-warning-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+              </div>
+              <div class="text-sm text-neutral-700 space-y-2">
+                <p>
+                  El archivo es del RUT <strong>{{ rutArchivo() }}</strong>, que no está
+                  entre los suyos:
+                  <strong>{{ rutsRegistrados() }}</strong>.
+                </p>
+                @if (!tieneRutsPropios()) {
+                  <p class="text-neutral-500">
+                    Su cuenta no tiene RUT propios registrados, así que se comparó con el
+                    del estudio. Pídale a la plataforma que le cargue los suyos.
+                  </p>
+                }
+                <p class="text-neutral-500">
+                  Si continúa, la cartera se cargará igual en su estudio. Revise que sea el
+                  archivo que quería subir.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button (click)="cancelarCarga()" class="btn-secondary">Cancelar</button>
+            <button (click)="continuarCarga()" class="btn-primary">Continuar de todos modos</button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class CargarCausasComponent {
   private service = inject(CausaService);
   private notification = inject(NotificationService);
+  private auth = inject(AuthService);
   private router = inject(Router);
 
   /** Nombre de ejemplo, del que el servidor saca el RUT si no se indica. */
@@ -154,8 +200,11 @@ export class CargarCausasComponent {
   cargando = signal(false);
   resultado = signal<CargarCausasResponse | null>(null);
 
-  rut = '';
-  fecha = '';
+  /** RUT leído del nombre del archivo. Solo se usa para avisar si es de otro
+   *  estudio: al servidor no se le manda, lo saca del mismo nombre. */
+  rutDetectado = signal('');
+  /** Se pide confirmación porque el archivo parece de otro estudio. */
+  confirmandoRut = signal(false);
 
   elegirArchivo(evento: Event): void {
     const input = evento.target as HTMLInputElement;
@@ -172,19 +221,96 @@ export class CargarCausasComponent {
 
   private ponerArchivo(archivo: File): void {
     this.archivo.set(archivo);
+    this.rutDetectado.set(this.rutDelNombre(archivo.name));
     // Un resultado anterior junto a un archivo nuevo se lee como si fuera de
     // ese archivo.
     this.resultado.set(null);
+  }
+
+  /**
+   * `Causas_16952077-1.xlsx` → `16952077-1`.
+   *
+   * Es el mismo patrón que aplica el servidor en
+   * `causa_import_service.parse_nombre_archivo`. Acá se repite solo para poder
+   * avisar ANTES de subir; el RUT que se usa de verdad lo sigue sacando el
+   * servidor del mismo nombre, así que no hay dos fuentes que puedan divergir.
+   */
+  private rutDelNombre(nombreArchivo: string): string {
+    const sinExtension = nombreArchivo.replace(/\.[^.]+$/, '');
+    const m = sinExtension.match(/^Causas_(\d+(?:-?[0-9kK])?)_*$/i);
+    return m ? m[1] : '';
+  }
+
+  /** RUT del archivo y del estudio, para el aviso. Formateados con puntos. */
+  rutArchivo(): string {
+    const detectado = this.rutDetectado();
+    return detectado ? formatearRut(detectado) : '(sin RUT en el nombre)';
+  }
+
+  /**
+   * Contra qué RUT se compara el del archivo.
+   *
+   * Primero los del usuario: el PJUD emite cada reporte a nombre del abogado
+   * que lo pide, así que el RUT del archivo es el suyo y no el del estudio. Si
+   * la plataforma todavía no le cargó ninguno se cae al del estudio, que es lo
+   * que se hacía antes. Ver el mismo método en `upload-form`.
+   */
+  private rutsDeReferencia(): string[] {
+    const usuario = this.auth.user();
+    const propios = (usuario?.ruts ?? []).filter((r) => !!r);
+    if (propios.length) return propios;
+    return usuario?.cliente_rut ? [usuario.cliente_rut] : [];
+  }
+
+  /** Los RUT registrados, para nombrarlos en el aviso. */
+  rutsRegistrados(): string {
+    const referencias = this.rutsDeReferencia();
+    if (!referencias.length) return '(sin RUT registrado)';
+    return referencias.map((r) => formatearRut(r)).join(', ');
+  }
+
+  /** true si el aviso tiene que hablar del usuario y no del estudio. */
+  tieneRutsPropios(): boolean {
+    return (this.auth.user()?.ruts ?? []).some((r) => !!r);
+  }
+
+  /** Solo se opina con las dos puntas: sin alguna, advertir sería ruido. */
+  private esDeOtroEstudio(): boolean {
+    const detectado = this.rutDetectado();
+    return !!detectado && !coincideConAlguno(detectado, this.rutsDeReferencia());
   }
 
   cargar(): void {
     const archivo = this.archivo();
     if (!archivo || this.cargando()) return;
 
+    if (this.esDeOtroEstudio()) {
+      this.confirmandoRut.set(true);
+      return;
+    }
+    this.importar();
+  }
+
+  /** El usuario decidió cargar igual un archivo de otro RUT. */
+  continuarCarga(): void {
+    this.confirmandoRut.set(false);
+    this.importar();
+  }
+
+  cancelarCarga(): void {
+    this.confirmandoRut.set(false);
+  }
+
+  private importar(): void {
+    const archivo = this.archivo();
+    if (!archivo) return;
+
     this.cargando.set(true);
     this.resultado.set(null);
 
-    this.service.cargar(archivo, this.rut.trim() || undefined, this.fecha || undefined).subscribe({
+    // Ni RUT ni fecha: los dos campos se ocultaron y el servidor ya tiene el
+    // mismo criterio por omisión — el RUT sale del nombre y la fecha es hoy.
+    this.service.cargar(archivo).subscribe({
       next: (r) => {
         this.cargando.set(false);
         this.resultado.set(r);

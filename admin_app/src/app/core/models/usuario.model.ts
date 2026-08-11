@@ -6,6 +6,19 @@ export interface Usuario {
   apellido: string | null;
   telefono: string | null;
   activo: boolean;
+  /**
+   * RUT con los que esta persona recibe archivos del PJUD, en formato
+   * `12345678-9`.
+   *
+   * No son el RUT del estudio: el Poder Judicial emite cada reporte a nombre
+   * del abogado que lo pide, así que un estudio con cinco abogados recibe
+   * archivos con cinco RUT distintos. Son varios por persona porque un abogado
+   * puede litigar además a nombre de una sociedad.
+   *
+   * Con la lista vacía, el estudio sigue funcionando: la advertencia al
+   * importar cae al RUT del cliente, que es lo que se hacía antes.
+   */
+  ruts: string[];
   fecha_creacion: string;
 }
 
@@ -32,6 +45,8 @@ export interface UsuarioCreate {
   nombre: string | null;
   apellido: string | null;
   telefono?: string | null;
+  /** La lista COMPLETA: no hay endpoint para agregar o quitar uno solo. */
+  ruts: string[];
   activo: boolean;
 }
 
@@ -44,5 +59,7 @@ export interface UsuarioUpdate {
   nombre: string | null;
   apellido: string | null;
   telefono?: string | null;
+  /** Reemplaza a la lista anterior; mandarla vacía borra todos los RUT. */
+  ruts: string[];
   activo: boolean;
 }

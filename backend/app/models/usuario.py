@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, Boolean, DateTime
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.crypto import cifrar, descifrar
 from app.core.database import BaseTenant
@@ -57,6 +57,16 @@ class Usuario(BaseTenant):
     debe_cambiar_password: Mapped[bool] = mapped_column(Boolean, default=False)
     fecha_creacion: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    # Los RUT con los que esta persona recibe archivos del PJUD. Con cascada
+    # porque no son una entidad propia: fuera de su usuario un RUT suelto no
+    # significa nada. Ver `UsuarioRut`.
+    ruts = relationship(
+        "UsuarioRut",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+        order_by="UsuarioRut.id",
     )
 
     # ── Acceso en claro a los campos cifrados ──

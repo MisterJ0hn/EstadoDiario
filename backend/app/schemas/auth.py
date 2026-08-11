@@ -121,6 +121,13 @@ class UserInfo(BaseModel):
     # La sesión vale, pero el backend rechaza el resto hasta que se cambie.
     debe_cambiar_password: bool = False
 
+    # RUT con los que ESTA persona recibe archivos del PJUD. Viajan en la
+    # sesión porque la advertencia de "este archivo es de otro" se muestra al
+    # elegir el archivo, antes de subir nada: pedirlos por un endpoint aparte
+    # significaría o una petición por cada archivo elegido, o una caché que
+    # queda vieja cuando la plataforma agrega un RUT.
+    ruts: list[str] = []
+
     cliente_id: int | None = None
     cliente_nombre: str | None = None
     cliente_rut: str | None = None

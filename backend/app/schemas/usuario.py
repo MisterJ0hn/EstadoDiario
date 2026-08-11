@@ -80,6 +80,55 @@ class _ConEmail(_ConNombreApellido):
         return validado
 
 
+def validar_ruts(v: Optional[list[str]]) -> list[str]:
+    """Normaliza la lista de RUT de un usuario: limpia, valida y deduplica.
+
+    Se valida el dígito verificador porque un RUT mal tipeado acá no falla
+    nunca: solo hace que la advertencia de importación no aparezca cuando
+    debería, que es un error silencioso. El único formato que se acepta sin
+    dígito es ninguno — para eso está el módulo 11.
+    """
+    if not v:
+        return []
+    limpios: list[str] = []
+    for bruto in v:
+        rut = (bruto or "").strip()
+        if not rut:
+            continue
+        if not _rut_valido(rut):
+            raise ValueError(f"RUT inválido: {bruto}")
+        canonico = _rut_canonico(rut)
+        if canonico not in limpios:
+            limpios.append(canonico)
+    return limpios
+
+
+def _solo_alfanumericos(rut: str) -> str:
+    return "".join(c for c in rut if c.isalnum()).upper()
+
+
+def _rut_canonico(rut: str) -> str:
+    """`16.952.077-k` → `16952077-K`. Es como se guarda y como se muestra."""
+    limpio = _solo_alfanumericos(rut)
+    return f"{limpio[:-1]}-{limpio[-1]}"
+
+
+def _rut_valido(rut: str) -> bool:
+    """Módulo 11. Misma regla que `core/utils/rut.ts` en las tres SPA."""
+    limpio = _solo_alfanumericos(rut)
+    if len(limpio) < 2 or not limpio[:-1].isdigit():
+        return False
+    cuerpo, dv = limpio[:-1], limpio[-1]
+    suma = 0
+    multiplicador = 2
+    for digito in reversed(cuerpo):
+        suma += int(digito) * multiplicador
+        multiplicador = 2 if multiplicador == 7 else multiplicador + 1
+    resto = 11 - (suma % 11)
+    esperado = {11: "0", 10: "K"}.get(resto, str(resto))
+    return dv == esperado
+
+
 class UsuarioResponse(BaseModel):
     """El hash de la contraseña nunca sale del backend."""
 
@@ -90,6 +139,9 @@ class UsuarioResponse(BaseModel):
     apellido: str | None
     telefono: str | None = None
     activo: bool
+    # RUT con los que esta persona recibe archivos del PJUD. Ver `UsuarioRut`:
+    # no son el RUT del estudio, son los del abogado que pide los reportes.
+    ruts: list[str] = []
     # Clave provisoria pendiente de cambio (la puso un administrador).
     debe_cambiar_password: bool = False
     fecha_creacion: datetime
@@ -139,7 +191,23 @@ class UsuarioUpdate(_ConEmail):
 # eso.
 
 
-class UsuarioAdminCreate(_ConNombreApellido):
+class _ConRuts(_ConNombreApellido):
+    """Mixin: los RUT del usuario, en el alta y en la edición.
+
+    La lista COMPLETA reemplaza a la anterior; no hay endpoint para agregar o
+    quitar uno solo. Es lo que hace el formulario —se editan todos juntos y se
+    guarda— y evita el estado intermedio en el que media edición quedó aplicada.
+    """
+
+    ruts: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("ruts")
+    @classmethod
+    def _validar_ruts(cls, v: Optional[list[str]]) -> list[str]:
+        return validar_ruts(v)
+
+
+class UsuarioAdminCreate(_ConRuts):
     username: str = Field(..., min_length=3, max_length=100, pattern=r"^[A-Za-z0-9._-]+$")
     # Clave inicial: el usuario queda obligado a cambiarla al entrar.
     password: str = Field(..., min_length=8, max_length=128)
@@ -155,7 +223,7 @@ class UsuarioAdminCreate(_ConNombreApellido):
         return _validar_direccion(v)
 
 
-class UsuarioAdminUpdate(_ConNombreApellido):
+class UsuarioAdminUpdate(_ConRuts):
     # Ausente = conservar el nombre de usuario actual.
     username: Optional[str] = Field(
         default=None, min_length=3, max_length=100, pattern=r"^[A-Za-z0-9._-]+$"

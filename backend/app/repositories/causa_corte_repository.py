@@ -16,11 +16,32 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
+from app.repositories.causa_repository import ultimo_origen_causas_id
 
 
 class CausaCorteRepository:
     def __init__(self, db: Session):
         self.db = db
+
+    def _origen_de_la_cartera(
+        self, fecha_desde: Optional[str], fecha_hasta: Optional[str]
+    ) -> Optional[int]:
+        """A qué archivo acotar cuando no se pidió un rango de fechas.
+
+        Igual que en el listado por materia: el reporte de Causas trae la
+        cartera completa cada vez, así que sin acotar, un estudio que cargó el
+        Excel tres veces ve sus causas de corte tres veces.
+
+        Con un rango de fechas explícito no se acota nada: ahí la persona está
+        justamente comparando reportes de distintos días, y quedarse con el
+        último dejaría el filtro sin efecto.
+
+        `-1` cuando no hay ningún archivo cargado: mejor cero filas que la
+        tabla entera.
+        """
+        if fecha_desde or fecha_hasta:
+            return None
+        return ultimo_origen_causas_id(self.db) or -1
 
     @classmethod
     def _aplicar_filtros(
@@ -31,7 +52,10 @@ class CausaCorteRepository:
         corte: Optional[str],
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
+        origen_id: Optional[int] = None,
     ):
+        if origen_id is not None:
+            query = query.filter(CausaCorte.estado_diario_origen_id == origen_id)
         if tipo:
             query = query.filter(CausaCorte.tipo == tipo)
         if corte:
@@ -61,12 +85,13 @@ class CausaCorteRepository:
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
+        origen_id = self._origen_de_la_cartera(fecha_desde, fecha_hasta)
         base = self._aplicar_filtros(
             self.db.query(CausaCorte).join(
                 EstadoDiarioOrigen,
                 CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
             ),
-            tipo, busqueda, corte, fecha_desde, fecha_hasta,
+            tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id,
         )
         total = (
             self._aplicar_filtros(
@@ -74,7 +99,7 @@ class CausaCorteRepository:
                     EstadoDiarioOrigen,
                     CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
                 ),
-                tipo, busqueda, corte, fecha_desde, fecha_hasta,
+                tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id,
             ).scalar()
             or 0
         )
@@ -97,4 +122,21 @@ class CausaCorteRepository:
     def listar_cortes(self) -> list[str]:
         """Nombres de corte presentes, para el combo del filtro."""
         query = self.db.query(CausaCorte.corte).filter(CausaCorte.corte.isnot(None))
-        return sorted({fila[0] for fila in query.distinct().all() if fila[0]})
+        return sorted({fila[0].strip() for fila in query.distinct().all() if fila[0]})
+
+    def contar_por_tipo(self) -> dict[str, int]:
+        """{tipo: cuántas} en la cartera actual, para la facturación.
+
+        Las causas de corte **no se filtran por estado**: se facturan todas las
+        que estén en el archivo. Es una diferencia real con las de materia y no
+        un olvido — 'Fallada' en una corte significa que se falló el recurso,
+        no que la causa dejó de estar en la cartera del estudio.
+        """
+        origen_id = self._origen_de_la_cartera(None, None)
+        filas = (
+            self.db.query(CausaCorte.tipo, func.count(CausaCorte.id))
+            .filter(CausaCorte.estado_diario_origen_id == origen_id)
+            .group_by(CausaCorte.tipo)
+            .all()
+        )
+        return {tipo: int(total or 0) for tipo, total in filas}

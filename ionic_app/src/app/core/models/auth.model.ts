@@ -28,6 +28,16 @@ export interface UserInfo {
   apellido: string | null;
   telefono: string | null;
   activo: boolean;
+  /**
+   * RUT con los que ESTA persona recibe archivos del PJUD, formateados
+   * `12345678-9`. Los carga la plataforma en la ficha del usuario.
+   *
+   * No son el RUT del estudio: el Poder Judicial emite cada reporte a nombre
+   * del abogado que lo pide, así que un estudio con cinco abogados recibe
+   * archivos con cinco RUT distintos. Vacío = nunca se le cargó ninguno, y ahí
+   * la advertencia al importar cae al RUT del estudio.
+   */
+  ruts?: string[];
   /** Nulos cuando la sesión es del administrador de la plataforma. */
   cliente_id?: number | null;
   cliente_nombre?: string | null;
