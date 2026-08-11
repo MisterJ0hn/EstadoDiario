@@ -153,10 +153,10 @@ interface UsuarioBorrador {
                     <tr>
                       <th scope="col">Cliente</th>
                       <th scope="col">RUT</th>
-                      <th scope="col">Casilla de ingesta</th>
+                      <th scope="col">Casilla PJUD</th>
                       <th scope="col">CAL</th>
                       <th scope="col" title="Causas de materia vigentes del último archivo de causas cargado">
-                        Causas activas
+                        Causas
                       </th>
                       <th scope="col">Creado</th>
                       <th scope="col">Estado</th>

@@ -187,7 +187,7 @@ import { formatearRut } from '@core/utils/rut';
                     <thead>
                       <tr>
                         <th scope="col">Cliente</th>
-                        <th scope="col">Casilla de ingesta</th>
+                        <th scope="col">Casilla PJUD</th>
                         <th scope="col">CAL</th>
                         <th scope="col">Última importación</th>
                         <th scope="col">Movimientos ({{ d.dias }} d)</th>

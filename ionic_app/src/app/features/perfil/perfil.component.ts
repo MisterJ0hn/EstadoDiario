@@ -52,7 +52,7 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
                  los Excel del PJUD— y no tenía dónde consultarse: la configura
                  la plataforma, no el estudio. -->
             <div>
-              <span class="text-xs text-neutral-500 uppercase">Casilla de Importación</span>
+              <span class="text-xs text-neutral-500 uppercase">Casilla PJUD</span>
               <div class="flex items-center gap-2 mt-1 flex-wrap">
                 <code class="font-medium text-primary-700 break-all">{{ inbox }}</code>
                 <button type="button" (click)="copiarInbox(inbox)" class="btn-secondary btn-sm shrink-0">
