@@ -1,19 +1,25 @@
 /**
- * Build de producción: la SPA se sirve por Nginx y ese mismo Nginx redirige
- * `/api/` a `admin_api` (ver admin_app/nginx.conf). Por eso la URL es
- * **relativa**: SPA y API quedan en el mismo origen y el navegador no aplica
- * CORS, que es la trampa que dejó la separación en dos procesos.
+ * Build de producción de la consola.
  *
- * En desarrollo no aplica: ahí el dev-server (4401) y la API (8092) son
- * orígenes distintos y environment.ts sí usa la URL absoluta, con
- * `ADMIN_API_CORS_ORIGINS` permitiéndolo del otro lado.
+ * **Apunta a `localhost:8092`, y eso significa el equipo de quien abre la
+ * consola, no el servidor.** Es deliberado: la API de administración no se
+ * expone a internet, así que la consola solo funciona desde una máquina que
+ * tenga `admin_api` corriendo o alcanzable en ese puerto (en el propio
+ * servidor, o por un túnel SSH). Es la contracara de la decisión: nadie llega
+ * a los endpoints de la plataforma desde fuera, y a cambio la consola no se
+ * puede abrir desde cualquier navegador.
  *
- * Si se publica sin ese Nginx delante (la SPA en un hosting estático y la API
- * en otro host), hay que volver a poner acá la URL absoluta del servicio Y
- * agregar el origen de la SPA a `ADMIN_API_CORS_ORIGINS`. Las dos cosas o
- * ninguna: con una sola, la consola queda en blanco sin error de servidor.
+ * Antes era `/api/v1` relativa, asumiendo un Nginx que hiciera de proxy en el
+ * mismo origen. Si algún día se publica así, hay que volver a la relativa —o
+ * poner acá el dominio público— **y** agregar el origen de la SPA a
+ * `ADMIN_API_CORS_ORIGINS`. Las dos cosas o ninguna: con una sola, la consola
+ * queda en blanco sin error de servidor.
+ *
+ * Ojo con el esquema: si la consola se sirve por **https** y pide a
+ * `http://localhost:8092`, el navegador lo bloquea por contenido mixto.
+ * Sirviéndola por http, o abriéndola desde el disco, no hay problema.
  */
 export const environment = {
   production: true,
-  apiUrl: '/api/v1',
+  apiUrl: 'http://localhost:8092/api/v1',
 };
