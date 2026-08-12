@@ -230,6 +230,7 @@ backend/
 │       ├── purgar_logs.py
 │       ├── generar_facturacion.py  # El día 1: factura el mes que terminó
 │       ├── sincronizar_cartera.py  # Cruza los 3 reportes contra Mis Causas
+│       ├── suspender_morosos.py   # Suspende por mora (apagado por defecto)
 │       ├── migrar_facturas_mensuales.py # Un solo uso: cierres → facturas
 │       └── migrar_a_multitenant.py # Un solo uso: ver "Migración"
 ├── Dockerfile
@@ -796,6 +797,7 @@ base lista se saltan.
 30 3 * * *    docker exec ed_backend python -m app.jobs.purgar_logs
 0  4 1 * *    docker exec ed_backend python -m app.jobs.generar_facturacion
 15 2 * * *    docker exec ed_backend python -m app.jobs.sincronizar_cartera
+30 5 * * *    docker exec ed_backend python -m app.jobs.suspender_morosos
 ```
 
 La revisión de correo corre en **cada pasada** del cron y no una vez al día: el

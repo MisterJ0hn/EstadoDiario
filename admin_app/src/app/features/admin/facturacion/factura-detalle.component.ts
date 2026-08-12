@@ -192,11 +192,9 @@ import { nombreMes } from './periodo';
                        que dejó de cargar el Excel se ve igual que uno al día,
                        con la cartera de hace tres meses. -->
                   <div class="flex gap-2">
-                    <dt class="text-neutral-500 w-28 shrink-0">Cartera del</dt>
+                    <dt class="text-neutral-500 w-28 shrink-0">Periodo</dt>
                     <dd>
-                      {{ f.fecha_archivo_causas
-                          ? (f.fecha_archivo_causas | date: 'dd-MM-yyyy')
-                          : 'sin archivo cargado' }}
+                      {{ nombreMes(f.periodo) }}
                     </dd>
                   </div>
                 </dl>
@@ -228,9 +226,9 @@ import { nombreMes } from './periodo';
                       <thead>
                         <tr>
                           <th scope="col">Concepto</th>
-                          <th scope="col" class="text-right">Cantidad</th>
-                          <th scope="col" class="text-right">Valor U.</th>
-                          <th scope="col" class="text-right">Valor total</th>
+                          <th scope="col" style="text-align:right!important">Cantidad</th>
+                          <th scope="col" style="text-align:right!important">Valor U.</th>
+                          <th scope="col" style="text-align:right!important">Valor total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -242,11 +240,11 @@ import { nombreMes } from './periodo';
                                 <span class="text-neutral-500 text-xs ml-1">(corte)</span>
                               }
                             </td>
-                            <td class="tabular-nums text-right">{{ d.cantidad }}</td>
-                            <td class="tabular-nums text-right">
+                            <td class="tabular-nums" style="text-align:right!important">{{ d.cantidad }}</td>
+                            <td class="tabular-nums" style="text-align:right!important">
                               {{ d.valor_unitario | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                             </td>
-                            <td class="tabular-nums text-right font-semibold">
+                            <td class="tabular-nums font-semibold" style="text-align:right!important">
                               {{ d.valor_total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                             </td>
                           </tr>
@@ -255,11 +253,11 @@ import { nombreMes } from './periodo';
                       <tfoot>
                         <tr class="border-t-2 border-neutral-200">
                           <td class="font-semibold text-neutral-800 py-3">Total</td>
-                          <td class="tabular-nums text-right font-semibold py-3">
+                          <td class="tabular-nums font-semibold py-3" style="text-align:right!important">
                             {{ f.total_causas }}
                           </td>
                           <td></td>
-                          <td class="tabular-nums text-right py-3">
+                          <td class="tabular-nums py-3" style="text-align:right!important">
                             <span class="text-xl font-bold text-primary-700">
                               {{ f.total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                             </span>

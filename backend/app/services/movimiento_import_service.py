@@ -39,6 +39,7 @@ from app.utils.excel_pjud import (
     recortar,
 )
 
+from app.services import auditoria_service as auditoria
 from app.services.cartera_sync_service import sincronizar_cartera
 from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
 
@@ -340,6 +341,11 @@ class MovimientoImportService:
         self.db.flush()
         sincronizar_cartera(self.db)
 
+        auditoria.registrar(
+            self.db, auditoria.MODULO_MOVIMIENTOS, auditoria.ACCION_IMPORTAR,
+            usuario_id=usuario_id,
+            detalle=f"{origen.nombre_archivo or file_path}: {movimientos} movimientos, {cortes} de corte",
+        )
         self.db.commit()
         # `len(filas)` incluiría las de corte, que van a otra tabla: el número
         # que se informa tiene que ser el de filas realmente insertadas acá.

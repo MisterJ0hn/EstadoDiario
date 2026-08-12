@@ -13,6 +13,7 @@ firmado, así que nadie puede pedir la base de otro cambiándolo.
 """
 
 import logging
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from app.core.security import (
 )
 from app.repositories.cliente_repository import ClienteRepository
 from app.repositories.usuario_repository import UsuarioRepository
+from app.services import auditoria_service as auditoria
 from app.schemas.auth import TokenResponse, UserInfo
 
 logger = logging.getLogger(__name__)
@@ -99,7 +101,9 @@ class AuthClienteService:
         self.db_maestra = db_maestra
         self.clientes = ClienteRepository(db_maestra)
 
-    def login(self, rut: str, usuario: str, password: str) -> TokenResponse:
+    def login(
+        self, rut: str, usuario: str, password: str, ip: Optional[str] = None
+    ) -> TokenResponse:
         cliente = self.clientes.find_by_rut(rut)
         if not cliente or not cliente.activo:
             # Un cliente suspendido no entra: sus datos siguen intactos en su
@@ -118,10 +122,31 @@ class AuthClienteService:
                 logger.warning(
                     "Login fallido para el usuario %s del cliente %s", usuario, cliente.guid
                 )
+                # Se registra en la MISMA sesión y se confirma acá: el `finally`
+                # la cierra sin commit, y un intento fallido tiene que quedar
+                # aunque la petición termine en 401.
+                auditoria.registrar(
+                    db_tenant, auditoria.MODULO_AUTH, auditoria.ACCION_LOGIN_FALLIDO,
+                    usuario_id=registro.id if registro is not None else None, ip=ip,
+                    detalle=f"usuario: {usuario}"
+                    + ("" if registro else " (no existe)"),
+                )
+                db_tenant.commit()
                 raise UnauthorizedException("Credenciales inválidas")
 
             if not registro.activo:
+                auditoria.registrar(
+                    db_tenant, auditoria.MODULO_AUTH, auditoria.ACCION_LOGIN_FALLIDO,
+                    usuario_id=registro.id, ip=ip, detalle="usuario desactivado",
+                )
+                db_tenant.commit()
                 raise UnauthorizedException("Usuario desactivado")
+
+            auditoria.registrar(
+                db_tenant, auditoria.MODULO_AUTH, auditoria.ACCION_LOGIN,
+                usuario_id=registro.id, ip=ip,
+            )
+            db_tenant.commit()
 
             token_data = {
                 "sub": str(registro.id),

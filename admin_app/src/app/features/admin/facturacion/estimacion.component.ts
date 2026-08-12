@@ -154,8 +154,8 @@ import { nombreMes } from './periodo';
                       <th scope="col"><span class="sr-only">Desglose</span></th>
                       <th scope="col">Cliente</th>
                       <th scope="col">RUT</th>
-                      <th scope="col" class="text-right">Causas</th>
-                      <th scope="col" class="text-right">Estimado</th>
+                      <th scope="col" style="text-align:right!important">Causas</th>
+                      <th scope="col" style="text-align:right!important">Estimado</th>
                       <th scope="col">Cartera del</th>
                     </tr>
                   </thead>
@@ -191,8 +191,8 @@ import { nombreMes } from './periodo';
                           }
                         </td>
                         <td class="tabular-nums whitespace-nowrap">{{ rutBonito(c.cliente_rut) }}</td>
-                        <td class="tabular-nums text-right">{{ c.total_causas }}</td>
-                        <td class="tabular-nums text-right font-semibold">
+                        <td class="tabular-nums" style="text-align:right!important">{{ c.total_causas }}</td>
+                        <td class="tabular-nums font-semibold" style="text-align:right!important">
                           {{ c.total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                         </td>
                         <td class="text-neutral-600 whitespace-nowrap">
@@ -214,20 +214,20 @@ import { nombreMes } from './periodo';
                                 <thead>
                                   <tr class="text-neutral-500">
                                     <th scope="col" class="text-left font-medium py-1">Concepto</th>
-                                    <th scope="col" class="text-right font-medium py-1">Cantidad</th>
-                                    <th scope="col" class="text-right font-medium py-1">Valor U.</th>
-                                    <th scope="col" class="text-right font-medium py-1">Valor total</th>
+                                    <th scope="col" class="font-medium py-1" style="text-align:right!important">Cantidad</th>
+                                    <th scope="col" class="font-medium py-1" style="text-align:right!important">Valor U.</th>
+                                    <th scope="col" class="font-medium py-1" style="text-align:right!important">Valor total</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   @for (l of c.detalles; track l.concepto) {
                                     <tr>
                                       <td class="py-1">{{ l.concepto }}</td>
-                                      <td class="py-1 text-right tabular-nums">{{ l.cantidad }}</td>
-                                      <td class="py-1 text-right tabular-nums">
+                                      <td class="py-1 tabular-nums" style="text-align:right!important">{{ l.cantidad }}</td>
+                                      <td class="py-1 tabular-nums" style="text-align:right!important">
                                         {{ l.valor_unitario | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                                       </td>
-                                      <td class="py-1 text-right tabular-nums font-medium">
+                                      <td class="py-1 tabular-nums font-medium" style="text-align:right!important">
                                         {{ l.valor_total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                                       </td>
                                     </tr>

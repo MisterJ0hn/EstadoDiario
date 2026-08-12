@@ -25,6 +25,21 @@ export function nombreMes(periodo: string | null | undefined): string {
   return `${MESES[Number(mes) - 1] ?? mes} ${anio}`;
 }
 
+/**
+ * El nombre corto del mes, 1-12. `9` → `sep`.
+ *
+ * Sale de recortar el nombre largo, que en castellano funciona para los doce.
+ * Así no hay una segunda lista que mantener en sincronía con la primera.
+ */
+export function mesCorto(mes: number): string {
+  return (MESES[mes - 1] ?? '').slice(0, 3);
+}
+
+/** `2026, 7` → `2026-07-01`, que es como viaja un período. */
+export function periodoDe(anio: number, mes: number): string {
+  return `${anio}-${`${mes}`.padStart(2, '0')}-01`;
+}
+
 /** El primer día del mes, `desplazamiento` meses desde hoy, en ISO. */
 export function mesDe(desplazamiento: number): string {
   const hoy = new Date();

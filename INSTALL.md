@@ -290,7 +290,11 @@ meter `localhost` en la llave de producción degrada los puntajes reales.
 
 ## Purga de la Bitácora
 
-`log_actividades` registra una fila por acción y crece rápido. La política de
+`log_actividades` registra una fila por acción y crece rápido. Resolver un
+movimiento y dejarlo pendiente también quedan registrados (`marcar_leido` y
+`marcar_pendiente`), y son las acciones más frecuentes del día a día: en un
+estudio con movimiento alto la bitácora crece varios miles de filas al mes, así
+que la purga no es opcional. La política de
 permanencia se fija en **Administración de la plataforma → Sistema** (con
 override por cliente en su ficha) y la aplica un job nocturno, base por base:
 
@@ -338,6 +342,40 @@ Dos cosas que conviene saber al mirar el resultado:
 Una causa agregada por el cruce **se factura igual que las demás**. Queda marcada
 con `origen_dato` para poder explicar de dónde salió.
 
+## Suspensión automática por mora
+
+Un cliente con facturas impagas se suspende solo pasados N días desde la emisión
+de la más antigua. El plazo se fija en **Administración → Configuración**, no en
+el código: es una decisión comercial.
+
+**Viene apagada** (`0 días`). Suspender es lo más agresivo que hace el sistema
+—los abogados del estudio no pueden entrar, la ingesta por correo lo salta y no
+salen sus recordatorios— así que no puede empezar a ocurrir porque alguien
+desplegó una versión nueva. La pantalla de configuración avisa a cuántos
+clientes afectaría el plazo guardado antes de que nadie lo aplique.
+
+```bash
+# Ver a quién suspendería, sin tocar nada
+docker exec ed_backend python -m app.jobs.suspender_morosos --simular
+# Aplicarlo
+docker exec ed_backend python -m app.jobs.suspender_morosos
+
+# En el crontab del host, una vez al día
+30 5 * * * docker exec ed_backend python -m app.jobs.suspender_morosos >> /var/log/estado_diario_mora.log 2>&1
+```
+
+Dos cosas que conviene saber:
+
+- **Se cuenta desde la emisión**, porque la factura no lleva fecha de
+  vencimiento: es el único dato que consta.
+- **Nadie se reactiva solo.** Pagar no levanta la suspensión: un cliente puede
+  estar suspendido por otro motivo, y revertirlo automáticamente sería deshacer
+  una decisión que no se tomó ahí. Reactivar sigue siendo manual, desde Clientes.
+
+El botón de suspender a mano quedó oculto en la consola. El código y su modal
+siguen en su sitio: para volver a habilitarlo se cambia una condición en
+`clientes-list.component.ts`.
+
 ## Facturación Mensual
 
 Se cobra por cantidad de causas de la cartera vigente: una línea por materia
@@ -376,6 +414,29 @@ con filtros por período, RUT, cliente activo/inactivo, nombre y número. La
 estimación del mes en curso (antes de que existan las facturas) está en
 **Facturación → Estimar el mes**, y las tarifas de cada cliente en su ficha →
 **Tarifas**.
+
+### Rediseño del documento
+
+El PDF de una factura se escribe **una sola vez**, al emitirla, y no se regenera
+al descargarlo: eso es lo que garantiza que la copia que el cliente tiene en su
+correo y la que baja hoy sean el mismo archivo. Hay dos excepciones.
+
+La primera es automática: el documento lleva una cinta con el estado —NO PAGADA,
+PAGADA, ANULADA— y esa cinta es el único dato que cambia después de emitido, así
+que marcar pagada o anular vuelve a dibujar el PDF guardado. No se recalcula
+nada: número, líneas y total salen de la factura tal como quedó.
+
+La segunda es a mano, cuando cambia el diseño y hay facturas viejas con el
+anterior:
+
+```bash
+docker exec ed_backend python -m app.jobs.redibujar_facturas --simular
+docker exec ed_backend python -m app.jobs.redibujar_facturas
+```
+
+Acepta `--desde AAAA-MM`, `--hasta AAAA-MM` y `--numero` (repetible). **No va al
+crontab**: reescribe el PDF de documentos ya entregados, así que conviene correr
+primero `--simular`, que no escribe nada.
 
 ### Migración desde la versión anterior
 

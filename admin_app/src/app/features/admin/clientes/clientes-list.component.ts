@@ -38,7 +38,7 @@ interface UsuarioBorrador {
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Clientes</h1>
           <p class="text-neutral-500 mt-1">
-            Todos los estudios de la plataforma, activos y suspendidos
+            Activos y suspendidos
           </p>
         </div>
         <button type="button" (click)="abrirAlta()" class="btn-primary shrink-0">Nuevo cliente</button>
@@ -189,11 +189,19 @@ interface UsuarioBorrador {
                                  desde allá se puede quitar y ver todas. -->
                             <a routerLink="/facturacion" [queryParams]="{ cliente: c.id }"
                                class="btn-secondary btn-sm">Facturas</a>
-                            @if (c.activo) {
+                            <a routerLink="/bitacora" [queryParams]="{ cliente: c.id }"
+                               class="btn-secondary btn-sm">Bitácora</a>
+                            <!-- Suspender ya no se hace a mano: lo decide la
+                                 mora, con el plazo que se fija en
+                                 Administración → Configuración. El botón y su
+                                 modal se conservan enteros por si hay que
+                                 volver a habilitarlo; lo único que cambia es
+                                 esta condición. -->
+                            @if (false) {
                               <button type="button" class="btn-secondary btn-sm" (click)="pedirSuspender(c)">
                                 Suspender
                               </button>
-                            } @else {
+                            } @else if (!c.activo) {
                               <button type="button" class="btn-secondary btn-sm" (click)="reactivar(c)"
                                       [disabled]="guardando()">
                                 Reactivar
@@ -235,9 +243,11 @@ interface UsuarioBorrador {
                       <a [routerLink]="['/clientes', c.id]" class="btn-outline btn-sm">Ver ficha</a>
                       <a routerLink="/facturacion" [queryParams]="{ cliente: c.id }"
                          class="btn-secondary btn-sm">Facturas</a>
-                      @if (c.activo) {
+                      <a routerLink="/bitacora" [queryParams]="{ cliente: c.id }"
+                         class="btn-secondary btn-sm">Bitácora</a>
+                      @if (false) {
                         <button type="button" class="btn-secondary btn-sm" (click)="pedirSuspender(c)">Suspender</button>
-                      } @else {
+                      } @else if (!c.activo) {
                         <button type="button" class="btn-secondary btn-sm" (click)="reactivar(c)"
                                 [disabled]="guardando()">Reactivar</button>
                       }

@@ -16,7 +16,7 @@ se la resetea otro administrador desde la consola.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,7 @@ from app.schemas.auth import (
 )
 from app.schemas.comunes import OperacionResponse
 from app.services import password_reset_service, password_service
+from app.services import auditoria_service as auditoria
 from app.services.auth_service import (
     AuthClienteService,
     perfil_cliente,
@@ -88,7 +89,11 @@ def config_recaptcha():
         401: {"description": "Credenciales inválidas"},
     },
 )
-def login(body: LoginClienteRequest, db: Session = Depends(get_db_maestra)):
+def login(
+    body: LoginClienteRequest,
+    request: Request,
+    db: Session = Depends(get_db_maestra),
+):
     """Login de TRES campos: RUT del cliente, usuario y contraseña.
 
     El RUT se resuelve en la base principal y define a qué base de datos entra
@@ -96,7 +101,9 @@ def login(body: LoginClienteRequest, db: Session = Depends(get_db_maestra)):
     que recibe este endpoint es la maestra porque al llegar todavía no se sabe
     de qué cliente se trata.
     """
-    return AuthClienteService(db).login(body.rut, body.username, body.password)
+    return AuthClienteService(db).login(
+        body.rut, body.username, body.password, ip=auditoria.ip_de(request)
+    )
 
 
 @router.post(

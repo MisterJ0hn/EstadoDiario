@@ -222,6 +222,14 @@ export interface ClienteInboxUpdate {
 export interface ConfiguracionSistema {
   /** Días que se conserva el log de actividades antes de purgarse. */
   retencion_log_dias: number;
+  /** Días de mora tras los cuales el cliente se suspende solo. 0 = apagada. */
+  dias_mora_suspension?: number;
+  /** Cuántos clientes activos caerían hoy con ese plazo. */
+  clientes_en_mora?: number;
+  /** Tarifas de lista: lo que se cobra sin valores propios del cliente. */
+  tarifa_materia?: number;
+  tarifa_apelaciones?: number;
+  tarifa_suprema?: number;
   ultima_purga: string | null;
   /** Registros que hay hoy en el log, para dimensionar el cambio. */
   registros_log: number;
@@ -231,6 +239,14 @@ export interface ConfiguracionSistema {
 
 export interface ConfiguracionSistemaUpdate {
   retencion_log_dias: number;
+  /** Días de mora tras los cuales el cliente se suspende solo. 0 = apagada. */
+  dias_mora_suspension?: number;
+  /** Cuántos clientes activos caerían hoy con ese plazo. */
+  clientes_en_mora?: number;
+  /** Tarifas de lista: lo que se cobra sin valores propios del cliente. */
+  tarifa_materia?: number;
+  tarifa_apelaciones?: number;
+  tarifa_suprema?: number;
 }
 
 /** Respuesta genérica de las operaciones de la consola. */

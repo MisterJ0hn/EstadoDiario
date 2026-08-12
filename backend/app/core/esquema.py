@@ -71,6 +71,15 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     ("factura", "origen_detalle", "VARCHAR(500)"),
     ("factura", "origen_causas_id", "INTEGER"),
     ("factura", "fecha_archivo_causas", "DATE"),
+    # Suspensión automática por mora. Arranca en 0 —apagada— también en las
+    # instalaciones que ya existen: nadie la pidió, así que no puede empezar a
+    # suspender clientes por el solo hecho de actualizar.
+    ("configuracion_sistema", "dias_mora_suspension", "INTEGER DEFAULT 0"),
+    # Tarifas de lista. Los DEFAULT son los valores que estaban en el código,
+    # así que una instalación que actualiza sigue cobrando exactamente igual.
+    ("configuracion_sistema", "tarifa_materia", "NUMERIC(14,2) DEFAULT 1"),
+    ("configuracion_sistema", "tarifa_apelaciones", "NUMERIC(14,2) DEFAULT 2"),
+    ("configuracion_sistema", "tarifa_suprema", "NUMERIC(14,2) DEFAULT 3"),
 ]
 
 COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [

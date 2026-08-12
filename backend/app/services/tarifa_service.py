@@ -6,8 +6,12 @@ todos a la vez. Por eso hay una tabla (`TarifaCliente`) y este servicio, que es
 lo único que sabe resolverla.
 
 **Un cliente sin configurar factura igual.** Ausencia de fila no es precio cero:
-es "cobre lo de la plataforma" (`TARIFAS_POR_DEFECTO`). Obligar a sembrar tres
-filas por cliente nuevo funcionaría hasta el día en que se agregue un cuarto
+es "cobre lo de la plataforma", que ahora es un valor configurable desde
+Administración → Configuración y ya no una constante del código: subir el precio
+de lista no puede exigir un despliegue. Las constantes que quedan
+(`TARIFAS_POR_DEFECTO`) son solo la semilla de la primera fila de configuración.
+
+Obligar a sembrar tres filas por cliente nuevo funcionaría hasta el día en que se agregue un cuarto
 concepto y haya que rellenar a mano todos los clientes que existan — y hasta ese
 día, un alta a la que se le olvidó la configuración se facturaría en $0 sin que
 nadie lo note.
@@ -50,10 +54,15 @@ class TarifasDeCliente:
 
     Se arma una vez por cliente y se pregunta N veces —una por materia—, en vez
     de consultar la base por cada línea del detalle.
+
+    Lleva dentro las tarifas de la plataforma además de las del cliente: la
+    resolución es `materia:<nombre>` → `materia` → plataforma, y las tres tienen
+    que estar a mano para responder sin volver a la base.
     """
 
-    def __init__(self, configuradas: Dict[str, Decimal]):
+    def __init__(self, configuradas: Dict[str, Decimal], plataforma: Dict[str, Decimal]):
         self._configuradas = configuradas
+        self._plataforma = plataforma
 
     def de_materia(self, materia: Optional[str]) -> Decimal:
         """Precio por causa de esa materia. `materia:Familia` pisa a `materia`."""
@@ -71,14 +80,41 @@ class TarifasDeCliente:
 
     def _valor(self, concepto: str) -> Decimal:
         valor = self._configuradas.get(concepto)
-        return valor if valor is not None else TARIFAS_POR_DEFECTO[concepto]
+        if valor is not None:
+            return valor
+        # La de la plataforma, y si esa faltara, la semilla del código: el
+        # cálculo no puede quedarse sin precio y facturar en cero.
+        return self._plataforma.get(concepto, TARIFAS_POR_DEFECTO[concepto])
 
 
 class TarifaService:
     def __init__(self, db_maestra: Session):
         self.db = db_maestra
+        # Se lee una vez por instancia: el cierre mensual resuelve las tarifas
+        # de cincuenta clientes seguidos y la configuración es una sola fila que
+        # no cambia en medio del proceso.
+        self._plataforma: Optional[Dict[str, Decimal]] = None
 
     # ── Lectura ───────────────────────────────────────────
+
+    def por_defecto(self) -> Dict[str, Decimal]:
+        """Las tarifas de la plataforma, desde la configuración del sistema.
+
+        Es lo que se cobra a quien no tiene valores propios, y es también lo que
+        la pantalla de tarifas muestra como referencia.
+        """
+        if self._plataforma is None:
+            from app.repositories.configuracion_sistema_repository import (
+                ConfiguracionSistemaRepository,
+            )
+
+            config = ConfiguracionSistemaRepository(self.db).get_or_create()
+            self._plataforma = {
+                CONCEPTO_MATERIA: Decimal(config.tarifa_materia or 0),
+                CONCEPTO_APELACIONES: Decimal(config.tarifa_apelaciones or 0),
+                CONCEPTO_SUPREMA: Decimal(config.tarifa_suprema or 0),
+            }
+        return dict(self._plataforma)
 
     def resolver(self, cliente_id: int) -> TarifasDeCliente:
         """Las tarifas vigentes del cliente, listas para facturar.
@@ -95,7 +131,10 @@ class TarifaService:
         # En minúsculas: la materia viene del Excel y "Familia" y "familia" son
         # la misma. Cotejar tal cual haría que una tarifa específica dejara de
         # aplicarse el día que el Poder Judicial cambie una mayúscula.
-        return TarifasDeCliente({f.concepto.lower(): Decimal(f.valor_unitario) for f in filas})
+        return TarifasDeCliente(
+            {f.concepto.lower(): Decimal(f.valor_unitario) for f in filas},
+            self.por_defecto(),
+        )
 
     def resolver_varios(self, cliente_ids: List[int]) -> Dict[int, TarifasDeCliente]:
         """Lo mismo para muchos clientes, en una sola consulta.
@@ -122,7 +161,10 @@ class TarifaService:
         # ninguna fila: quien llama indexa por cliente_id sin comprobar, y un
         # KeyError acá dejaría a un cliente sin facturar por no tener tarifas
         # propias — que es justo el caso normal.
-        return {cid: TarifasDeCliente(conf) for cid, conf in por_cliente.items()}
+        plataforma = self.por_defecto()
+        return {
+            cid: TarifasDeCliente(conf, plataforma) for cid, conf in por_cliente.items()
+        }
 
     def listar(self, cliente_id: int) -> List[TarifaCliente]:
         """Lo configurado para el cliente, tal cual está en la base.
@@ -138,11 +180,6 @@ class TarifaService:
             .order_by(TarifaCliente.concepto)
             .all()
         )
-
-    @staticmethod
-    def por_defecto() -> Dict[str, Decimal]:
-        """Las tarifas de la plataforma, para mostrarlas como referencia."""
-        return dict(TARIFAS_POR_DEFECTO)
 
     # ── Escritura ─────────────────────────────────────────
 

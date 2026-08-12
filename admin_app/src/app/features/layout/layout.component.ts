@@ -50,7 +50,7 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
   {
     titulo: null,
     items: [
-      { ruta: '/dashboard', etiqueta: 'Clientes activos', icono: ICONO.grafico },
+      { ruta: '/dashboard', etiqueta: 'Dashboard', icono: ICONO.grafico },
       { ruta: '/clientes', etiqueta: 'Clientes', icono: ICONO.edificio },
     ],
   },
@@ -61,6 +61,7 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
       // La estimación del mes en curso cuelga de acá adentro, que es donde se
       // busca cuando ya se está mirando la facturación.
       { ruta: '/facturacion', etiqueta: 'Facturación', icono: ICONO.barras },
+      { ruta: '/bitacora', etiqueta: 'Bitácora', icono: ICONO.bitacora },
       { ruta: '/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje },
     ],
   },
@@ -187,7 +188,7 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h2 class="text-base md:text-lg font-semibold text-neutral-800 truncate">Estado Diario CRM</h2>
+          <h2 class="text-base md:text-lg font-semibold text-neutral-800 truncate">Movimientos PJUD</h2>
 
           <!-- Con varios estudios en la misma plataforma, saber en cuál se está
                parado deja de ser un adorno: va fijo en la barra superior. -->

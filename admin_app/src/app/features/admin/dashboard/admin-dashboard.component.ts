@@ -25,7 +25,7 @@ import { formatearRut } from '@core/utils/rut';
       <!-- Encabezado + filtros en una sola fila que acota toda la página -->
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-neutral-800">Clientes activos</h1>
+          <h1 class="text-2xl font-bold text-neutral-800">Dashboard</h1>
           <p class="text-neutral-500 mt-1">
             @if (datos(); as d) {
               Actividad del {{ fechaLarga(d.desde) }} al {{ fechaLarga(d.hasta) }}

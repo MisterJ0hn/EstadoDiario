@@ -13,10 +13,24 @@ from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_agenda_repository import EstadoDiarioAgendaRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from app.repositories.api_log_repository import ApiLogRepository
+from app.services import auditoria_service as auditoria
 from app.services.google_calendar_service import GoogleCalendarService
 from app.services.whatsapp_service import WhatsappService
 
 logger = logging.getLogger(__name__)
+
+
+def _describir(ed: EstadoDiario) -> str:
+    """Cómo se nombra un movimiento en la bitácora.
+
+    El id solo no sirve: quien lee la bitácora desde la consola no tiene cómo
+    resolverlo a una causa. Con el ROL y el caratulado la línea se entiende sin
+    abrir nada más.
+    """
+    partes = [p for p in (ed.rol, ed.caratulado, ed.tribunal) if p]
+    if not partes:
+        return f"movimiento #{ed.id}"
+    return f"movimiento #{ed.id} · " + " · ".join(partes)
 
 
 class EstadoDiarioService:
@@ -134,6 +148,7 @@ class EstadoDiarioService:
         estado_diario_id: int,
         usuario_id: Optional[int] = None,
         observacion: Optional[str] = None,
+        ip: Optional[str] = None,
     ):
         """`usuario_id` es quién ejecuta la acción: queda registrado como
         autor de la resolución. No es un permiso — dentro de un estudio todos
@@ -154,6 +169,15 @@ class EstadoDiarioService:
         if observacion is not None:
             observacion = observacion.strip()
             ed.observacion_resuelto = observacion or None
+
+        # Antes del save: `registrar` no confirma, se suma a esta transacción.
+        detalle = f"Resuelto {_describir(ed)}"
+        if ed.observacion_resuelto:
+            detalle += f" — {ed.observacion_resuelto}"
+        auditoria.registrar(
+            self.db, auditoria.MODULO_ESTADO_DIARIO, auditoria.ACCION_MARCAR_LEIDO,
+            usuario_id=usuario_id, ip=ip, detalle=detalle,
+        )
         self.repo.save()
 
         self._save_log(log, True, json.dumps({"exito": True}))
@@ -169,7 +193,12 @@ class EstadoDiarioService:
     def marcar_pendiente(self, estado_diario_id: int, nivel: str, username: Optional[str] = None,
                          mensaje: Optional[str] = None, fecha_hora: Optional[str] = None,
                          notificar_whatsapp: bool = False, whatsapp_telefono: Optional[str] = None,
-                         fecha_hora_whatsapp: Optional[str] = None):
+                         fecha_hora_whatsapp: Optional[str] = None,
+                         usuario_id: Optional[int] = None, ip: Optional[str] = None):
+        """`usuario_id` es quién aprieta el botón, que no siempre es el mismo
+        que `username`: se puede dejar pendiente y agendarle el recordatorio a
+        otra persona del estudio. En la bitácora va el primero, porque lo que
+        se pregunta es quién ejecutó la acción."""
         log = self._create_log("pendiente", json.dumps({
             "nivel": nivel, "username": username, "mensaje": mensaje, "fecha_hora": fecha_hora,
             "notificar_whatsapp": notificar_whatsapp,
@@ -234,6 +263,16 @@ class EstadoDiarioService:
             )
             self.db.add(agenda)
 
+        detalle = f"Pendiente (nivel {nivel}) {_describir(ed)}"
+        if agenda is not None:
+            detalle += f" — recordatorio {fecha_hora}"
+            if usuario is not None:
+                detalle += f" para {usuario.usuario}"
+        auditoria.registrar(
+            self.db, auditoria.MODULO_ESTADO_DIARIO, auditoria.ACCION_MARCAR_PENDIENTE,
+            usuario_id=usuario_id, ip=ip, detalle=detalle,
+        )
+
         self.db.commit()
 
         # Sincronización con Google Calendar: best-effort, no debe romper la
@@ -246,7 +285,8 @@ class EstadoDiarioService:
         self._save_log(log, True, json.dumps({"exito": True}))
         return {"exito": True}
 
-    def finalizar_agenda(self, agenda_id: int, marcar_resuelto: bool, current_user):
+    def finalizar_agenda(self, agenda_id: int, marcar_resuelto: bool, current_user,
+                         ip: Optional[str] = None):
         log = self._create_log("finalizar_agenda", json.dumps({
             "agenda_id": agenda_id, "marcar_resuelto": marcar_resuelto,
         }))
@@ -264,8 +304,9 @@ class EstadoDiarioService:
 
         if marcar_resuelto:
             # Mismo comportamiento que el botón "Resuelto" del resto de la
-            # app: no se duplica lógica, solo se reutiliza.
-            self.marcar_leido(agenda.estado_diario_id, current_user.id)
+            # app: no se duplica lógica, solo se reutiliza. La línea de bitácora
+            # la deja `marcar_leido`.
+            self.marcar_leido(agenda.estado_diario_id, current_user.id, ip=ip)
 
         # El evento se sincroniza en el calendario de quien lo creó, no en
         # el de quien lo finaliza (puede ser un admin finalizando por otro).
@@ -454,6 +495,15 @@ class EstadoDiarioService:
 
         if agenda.usuario_registro is not None:
             self.google_service.finalizar_evento(agenda, agenda.usuario_registro)
+
+        # También va a la bitácora: si no, el movimiento aparecería resuelto sin
+        # que nadie lo haya tocado en la aplicación. No hay IP de la persona,
+        # la petición viene de Twilio.
+        auditoria.registrar(
+            self.db, auditoria.MODULO_ESTADO_DIARIO, auditoria.ACCION_MARCAR_LEIDO,
+            usuario_id=agenda.usuario_registro_id,
+            detalle=f"Resuelto por WhatsApp {_describir(ed)}",
+        )
 
         self.db.commit()
         return f"Movimiento {ed.id} resuelto desde el recordatorio {agenda.id}"

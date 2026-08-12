@@ -8,6 +8,7 @@ from admin_api.app.endpoints import (
     configuracion_smtp,
     configuracion_whatsapp,
     facturacion,
+    logs,
 )
 
 # Mismo prefijo que la API de los estudios a propósito: las rutas no cambiaron
@@ -19,6 +20,9 @@ api_router.include_router(auth_admin.router)
 api_router.include_router(admin_sistema.router)
 api_router.include_router(clientes.router)
 api_router.include_router(facturacion.router)
+# Después de `clientes`: las dos cuelgan de /admin/clientes y la bitácora
+# usa una subruta fija (`/{id}/logs`), así que el orden no las cruza.
+api_router.include_router(logs.router)
 api_router.include_router(configuracion_google.router)
 api_router.include_router(configuracion_smtp.router)
 api_router.include_router(configuracion_whatsapp.router)

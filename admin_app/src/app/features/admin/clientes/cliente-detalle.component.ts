@@ -35,7 +35,7 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
             @if (cliente(); as c) {
               RUT {{ rutBonito(c.rut) }} · cliente desde el {{ c.fecha_creacion | date: 'dd-MM-yyyy' }}
             } @else {
-              Datos, casilla de ingesta y usuarios del estudio
+              Datos, correo PJUD y usuarios del estudio
             }
           </p>
         </div>
@@ -229,6 +229,8 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                        class="btn-outline btn-sm">Facturas</a>
                     <a [routerLink]="['/clientes', c.id, 'tarifas']"
                        class="btn-secondary btn-sm">Tarifas</a>
+                    <a routerLink="/bitacora" [queryParams]="{ cliente: c.id }"
+                       class="btn-secondary btn-sm">Bitácora</a>
                   </div>
                 </div>
 
@@ -739,7 +741,7 @@ export class ClienteDetalleComponent implements OnInit {
 
   readonly secciones: { clave: Seccion; etiqueta: string }[] = [
     { clave: 'datos', etiqueta: 'Datos del cliente' },
-    { clave: 'inbox', etiqueta: 'Casilla de ingesta' },
+    { clave: 'inbox', etiqueta: 'Correo PJUD' },
     { clave: 'usuarios', etiqueta: 'Usuarios' },
   ];
 

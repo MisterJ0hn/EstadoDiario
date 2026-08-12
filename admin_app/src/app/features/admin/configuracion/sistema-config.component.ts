@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, computed, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -42,6 +42,76 @@ import { AdminSistemaService } from '../services/admin-sistema.service';
         @if (config(); as c) {
         <div class="card">
           <div class="card-body space-y-5">
+            
+
+            <!-- Tarifas de lista. Van antes que la mora porque es lo que se
+                 consulta seguido; la mora se fija una vez y no se toca. -->
+            <div class="pb-5 mb-5 border-b border-neutral-200">
+              <h3 class="text-sm font-semibold text-neutral-800">Tarifas de la plataforma</h3>
+              <p class="text-xs text-neutral-500 mt-0.5 mb-3">
+                Precio por causa y por mes para los clientes que no tienen valores propios.
+              </p>
+
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label class="form-label" for="t-materia">Causas por materia</label>
+                  <input id="t-materia" type="number" class="form-input" min="0" step="1"
+                         [(ngModel)]="tarifaMateria" />
+                </div>
+                <div>
+                  <label class="form-label" for="t-apelaciones">Corte de Apelaciones</label>
+                  <input id="t-apelaciones" type="number" class="form-input" min="0" step="1"
+                         [(ngModel)]="tarifaApelaciones" />
+                </div>
+                <div>
+                  <label class="form-label" for="t-suprema">Corte Suprema</label>
+                  <input id="t-suprema" type="number" class="form-input" min="0" step="1"
+                         [(ngModel)]="tarifaSuprema" />
+                </div>
+              </div>
+
+              <p class="text-xs text-neutral-500 mt-2">
+                Rigen <strong>desde la próxima facturación</strong>: cada factura ya emitida
+                guarda el valor que usó y no cambia. Un cliente con tarifa propia sigue con la
+                suya — se fija en su ficha, botón <em>Tarifas</em>.
+              </p>
+            </div>
+
+            <!-- Suspensión automática por mora. Va junto a la retención de
+                 log porque las dos son políticas del sistema que se fijan una
+                 vez; lo que las distingue es que ésta puede dejar a un estudio
+                 sin acceso, y por eso avisa a cuántos afectaría. -->
+            <div class="pb-5 mb-5 border-b border-neutral-200">
+              <label class="form-label" for="mora">Suspender por mora a los</label>
+              <div class="flex flex-wrap items-center gap-2">
+                <input id="mora" type="number" class="form-input w-32" min="0" max="365"
+                       [(ngModel)]="diasMora" aria-describedby="ayuda-mora" />
+                <span class="text-sm text-neutral-700">días de la emisión</span>
+              </div>
+              <p id="ayuda-mora" class="text-xs text-neutral-500 mt-2">
+                Se cuenta desde la emisión de la factura impaga más antigua: el documento
+                no lleva fecha de vencimiento. Un cliente suspendido no vuelve solo aunque
+                pague — reactivarlo es una decisión que se toma a mano.
+              </p>
+
+              @if (diasMora === 0) {
+                <p class="text-xs text-neutral-500 mt-1">
+                  <strong>0 = apagada.</strong> Ningún cliente se suspende solo.
+                </p>
+              } @else {
+                <div class="alert-warning mt-3">
+                  <div class="flex-1 text-sm">
+                    @if (enMora() > 0) {
+                      Con el plazo guardado hoy hay
+                      <strong>{{ enMora() }} cliente(s)</strong> en condición de
+                      suspenderse. La suspensión la aplica el proceso diario, no este botón.
+                    } @else {
+                      Ningún cliente está en mora con el plazo guardado.
+                    }
+                  </div>
+                </div>
+              }
+            </div>
             <div class="alert-info">
               <div class="flex-1">
                 El log guarda quién hizo qué y cuándo: ingresos, importaciones, cambios de
@@ -49,7 +119,6 @@ import { AdminSistemaService } from '../services/admin-sistema.service';
                 Borrarlo antes de tiempo deja esos hechos sin respaldo.
               </div>
             </div>
-
             <div>
               <label class="form-label" for="retencion">Conservar el log durante</label>
               <div class="flex flex-wrap items-center gap-2">
@@ -165,6 +234,14 @@ export class SistemaConfigComponent implements OnInit {
   esError = signal(false);
 
   dias = 90;
+  /** Días de mora para la suspensión automática. 0 = apagada. */
+  diasMora = 0;
+  /** Tarifas de lista, en pesos por causa y por mes. */
+  tarifaMateria = 1;
+  tarifaApelaciones = 2;
+  tarifaSuprema = 3;
+  /** Cuántos caerían con el plazo GUARDADO, no con el que se está escribiendo. */
+  enMora = computed(() => this.config()?.clientes_en_mora ?? 0);
 
   ocupado = signal(false);
 
@@ -178,12 +255,27 @@ export class SistemaConfigComponent implements OnInit {
       next: (c) => {
         this.config.set(c);
         this.dias = c.retencion_log_dias;
+        this.diasMora = c.dias_mora_suspension ?? 0;
+        this.tarifaMateria = Number(c.tarifa_materia ?? 1);
+        this.tarifaApelaciones = Number(c.tarifa_apelaciones ?? 2);
+        this.tarifaSuprema = Number(c.tarifa_suprema ?? 3);
       },
       error: (e) => this.error.set(this.mensajeError(e)),
     });
   }
 
   guardar(): void {
+    const tarifas = [this.tarifaMateria, this.tarifaApelaciones, this.tarifaSuprema];
+    if (tarifas.some((t) => t === null || t === undefined || t < 0)) {
+      this.mensaje.set('Las tarifas no pueden ser negativas');
+      this.esError.set(true);
+      return;
+    }
+    if (this.diasMora < 0 || this.diasMora > 365) {
+      this.mensaje.set('Los días de mora deben estar entre 0 y 365 (0 = apagada)');
+      this.esError.set(true);
+      return;
+    }
     if (this.dias < 7 || this.dias > 3650) {
       this.mensaje.set('El plazo debe estar entre 7 y 3.650 días');
       this.esError.set(true);
@@ -194,7 +286,15 @@ export class SistemaConfigComponent implements OnInit {
     this.guardando.set(true);
     this.ocupado.set(true);
 
-    this.service.save({ retencion_log_dias: this.dias }).subscribe({
+    this.service
+      .save({
+        retencion_log_dias: this.dias,
+        dias_mora_suspension: this.diasMora,
+        tarifa_materia: this.tarifaMateria,
+        tarifa_apelaciones: this.tarifaApelaciones,
+        tarifa_suprema: this.tarifaSuprema,
+      })
+      .subscribe({
       next: (c) => {
         this.guardando.set(false);
         this.ocupado.set(false);

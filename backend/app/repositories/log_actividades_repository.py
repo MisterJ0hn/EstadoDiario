@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -37,6 +37,10 @@ class LogActividadesRepository:
         page: int = 1,
         per_page: int = 50,
         modulo: Optional[str] = None,
+        accion: Optional[str] = None,
+        desde: Optional[date] = None,
+        hasta: Optional[date] = None,
+        busqueda: Optional[str] = None,
     ) -> tuple[list[LogActividades], int, int]:
         """Página de la bitácora.
 
@@ -49,6 +53,18 @@ class LogActividadesRepository:
             query = query.filter(LogActividades.usuario_id == usuario_id)
         if modulo:
             query = query.filter(LogActividades.modulo == modulo)
+        if accion:
+            query = query.filter(LogActividades.accion == accion)
+        if desde:
+            query = query.filter(LogActividades.fecha_hora >= desde)
+        if hasta:
+            # El rango es inclusivo: quien escribe "hasta el 12" espera que
+            # entre lo del día 12, no que se corte a medianoche del 11.
+            query = query.filter(
+                LogActividades.fecha_hora < datetime.combine(hasta, time.max)
+            )
+        if busqueda:
+            query = query.filter(LogActividades.detalle.ilike(f"%{busqueda.strip()}%"))
 
         # count() sobre la consulta, no len() de las filas: contar en Python
         # obligaría a traerlas todas.
@@ -61,6 +77,23 @@ class LogActividadesRepository:
         )
         total_pages = (total + per_page - 1) // per_page
         return items, total, total_pages
+
+    def valores_de_filtro(self) -> tuple[list[str], list[str]]:
+        """Los módulos y acciones que EXISTEN en esta bitácora.
+
+        Se leen de los datos y no de una lista fija: cada estudio usa los
+        módulos que usa, y ofrecer opciones que nunca van a devolver nada hace
+        parecer que el filtro está roto.
+        """
+        modulos = [
+            m[0] for m in self.db.query(LogActividades.modulo).distinct()
+            .order_by(LogActividades.modulo).all() if m[0]
+        ]
+        acciones = [
+            a[0] for a in self.db.query(LogActividades.accion).distinct()
+            .order_by(LogActividades.accion).all() if a[0]
+        ]
+        return modulos, acciones
 
     def contar(self) -> int:
         """Cuántos registros tiene la bitácora. Para dimensionar la purga."""

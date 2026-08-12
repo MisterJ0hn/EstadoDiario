@@ -38,6 +38,7 @@ from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.causa_repository import CausaRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.services import auditoria_service as auditoria
 from app.services.cartera_sync_service import sincronizar_cartera
 from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
 from app.utils.excel_pjud import (
@@ -445,9 +446,13 @@ class CausaImportService:
         self.db.flush()
         sincronizar_cartera(self.db)
 
-        self.db.commit()
-
         causas = sum(por_materia.values())
+        auditoria.registrar(
+            self.db, auditoria.MODULO_CAUSAS, auditoria.ACCION_IMPORTAR,
+            usuario_id=usuario_id,
+            detalle=f"{origen.nombre_archivo or file_path}: {causas} causas, {cortes} de corte, {duplicadas} repetidas fusionadas",
+        )
+        self.db.commit()
         logger.info(
             "Importadas %d causas y %d de corte para origen %d (%s); "
             "%d filas repetidas del Excel se fusionaron",

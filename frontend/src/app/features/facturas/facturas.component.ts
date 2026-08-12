@@ -82,8 +82,8 @@ import { FacturaService } from './factura.service';
                     <th scope="col">N°</th>
                     <th scope="col">Período</th>
                     <th scope="col">Emitida</th>
-                    <th scope="col" class="text-right">Causas</th>
-                    <th scope="col" class="text-right">Total</th>
+                    <th scope="col" style="text-align:right!important">Causas</th>
+                    <th scope="col" style="text-align:right!important">Total</th>
                     <th scope="col">Estado</th>
                     <th scope="col"><span class="sr-only">Acciones</span></th>
                   </tr>
@@ -105,8 +105,8 @@ import { FacturaService } from './factura.service';
                       <td class="whitespace-nowrap text-neutral-600">
                         {{ f.fecha_emision | date: 'dd-MM-yyyy' }}
                       </td>
-                      <td class="tabular-nums text-right">{{ f.total_causas }}</td>
-                      <td class="tabular-nums text-right font-semibold">
+                      <td class="tabular-nums" style="text-align:right!important">{{ f.total_causas }}</td>
+                      <td class="tabular-nums font-semibold" style="text-align:right!important">
                         {{ f.total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                       </td>
                       <td>
@@ -137,20 +137,20 @@ import { FacturaService } from './factura.service';
                               <thead>
                                 <tr class="text-neutral-500">
                                   <th scope="col" class="text-left font-medium py-1">Concepto</th>
-                                  <th scope="col" class="text-right font-medium py-1">Cantidad</th>
-                                  <th scope="col" class="text-right font-medium py-1">Valor U.</th>
-                                  <th scope="col" class="text-right font-medium py-1">Valor total</th>
+                                  <th scope="col" class="font-medium py-1" style="text-align:right!important">Cantidad</th>
+                                  <th scope="col" class="font-medium py-1" style="text-align:right!important">Valor U.</th>
+                                  <th scope="col" class="font-medium py-1" style="text-align:right!important">Valor total</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 @for (d of f.detalles; track d.concepto) {
                                   <tr>
                                     <td class="py-1">{{ d.concepto }}</td>
-                                    <td class="py-1 text-right tabular-nums">{{ d.cantidad }}</td>
-                                    <td class="py-1 text-right tabular-nums">
+                                    <td class="py-1 tabular-nums" style="text-align:right!important">{{ d.cantidad }}</td>
+                                    <td class="py-1 tabular-nums" style="text-align:right!important">
                                       {{ d.valor_unitario | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                                     </td>
-                                    <td class="py-1 text-right tabular-nums font-medium">
+                                    <td class="py-1 tabular-nums font-medium" style="text-align:right!important">
                                       {{ d.valor_total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                                     </td>
                                   </tr>
