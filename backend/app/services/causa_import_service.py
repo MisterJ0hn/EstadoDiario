@@ -244,6 +244,35 @@ class CausaImportService:
         self.repo = CausaRepository(db)
         self.jurisdiccion_repo = JurisdiccionRepository(db)
 
+    def _descartar_cartera_deducida(self) -> None:
+        """Borra la cartera que el cruce armó sola, si la hay.
+
+        Se borra en vez de conservarse porque las dos no pueden convivir: la
+        cartera es una sola —la del último origen de tipo `causas`— y dejar la
+        deducida al lado significaría que, según la fecha de cada una, la que se
+        muestra y se factura podría ser la parcial. Sus causas se van con ella
+        por el `cascade` de la relación; lo que aportaron los otros reportes
+        vuelve a entrar en el cruce que corre al cerrar esta misma importación.
+        """
+        deducidas = (
+            self.db.query(EstadoDiarioOrigen)
+            .filter(
+                EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS,
+                EstadoDiarioOrigen.deducida.is_(True),
+            )
+            .all()
+        )
+        for origen in deducidas:
+            logger.info(
+                "Llegó el reporte de Causas: se descarta la cartera deducida %d",
+                origen.id,
+            )
+            self.db.delete(origen)
+        if deducidas:
+            # Antes de insertar la cartera nueva: el DELETE tiene que llegar a
+            # la base primero o la comprobación de duplicados la seguiría viendo.
+            self.db.flush()
+
     # ── Deduplicación ─────────────────────────────────────
     #
     # El Excel del PJUD trae la misma causa más de una vez. En una cartera real
@@ -338,6 +367,13 @@ class CausaImportService:
         nombre_archivo: Optional[str] = None,
     ) -> dict:
         """Importa el archivo de causas y devuelve el resumen de la carga."""
+        # El reporte real manda sobre la cartera que el cruce armó solo: esa era
+        # un reemplazo mientras no existía este archivo. Se descarta ANTES de la
+        # comprobación de duplicados porque si no, una cartera deducida creada
+        # hoy bloquearía la carga del reporte de hoy con un "ya existe" que el
+        # usuario no puede entender ni resolver (ese archivo no lo subió nadie).
+        self._descartar_cartera_deducida()
+
         existente = self.repo.find_origen(rut, fecha)
         if existente:
             raise ValueError(

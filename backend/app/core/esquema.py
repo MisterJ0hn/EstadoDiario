@@ -99,6 +99,9 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     ("causa", "enriquecida_en", "TIMESTAMPTZ"),
     ("causa_corte", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
     ("causa_corte", "enriquecida_en", "TIMESTAMPTZ"),
+    # Cartera armada por el cruce porque el estudio no ha cargado el reporte de
+    # Causas. FALSE en todo lo que ya existe: esos archivos los subió alguien.
+    ("estado_diario_origen", "deducida", "BOOLEAN DEFAULT FALSE"),
 ]
 
 # Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`

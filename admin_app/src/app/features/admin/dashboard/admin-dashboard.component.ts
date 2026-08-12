@@ -51,7 +51,7 @@ const MESES_CORTOS = [
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Dashboard</h1>
           <p class="text-neutral-500 mt-1">
-            Estado de los estudios que operan en la plataforma
+            Estadísticos de nuestros clientes
           </p>
         </div>
         <div class="flex items-end gap-3">

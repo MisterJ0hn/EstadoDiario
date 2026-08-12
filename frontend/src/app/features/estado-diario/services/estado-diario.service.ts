@@ -67,12 +67,12 @@ export class EstadoDiarioService {
     return this.http.delete<ApiResponse>(`${this.apiUrl}/origenes/${id}`);
   }
 
-  uploadFile(file: File, rut?: string, fecha?: string): Observable<ApiResponse & { origen_id?: number; movimientos_importados?: number; rut?: string; fecha?: string }> {
+  uploadFile(file: File, rut?: string, fecha?: string): Observable<ApiResponse & { origen_id?: number; movimientos_importados?: number; rut?: string; fecha?: string; aviso_cartera?: string | null; causas_agregadas?: number }> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('rut', rut || '');
     formData.append('fecha', fecha || '');
-    return this.http.post<ApiResponse & { origen_id?: number; movimientos_importados?: number; rut?: string; fecha?: string }>(
+    return this.http.post<ApiResponse & { origen_id?: number; movimientos_importados?: number; rut?: string; fecha?: string; aviso_cartera?: string | null; causas_agregadas?: number }>(
       `${this.apiUrl}/upload`,
       formData
     );

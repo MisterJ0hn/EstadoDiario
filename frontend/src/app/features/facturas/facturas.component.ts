@@ -44,7 +44,7 @@ interface AvisoPago {
       <div>
         <h1 class="text-2xl font-bold text-neutral-800">Mis Facturas</h1>
         <p class="text-neutral-500 mt-1">
-          Lo que se le cobra a su estudio por su cartera de causas — últimas 12
+          Orden de compra
         </p>
       </div>
 

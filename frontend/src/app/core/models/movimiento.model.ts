@@ -73,6 +73,12 @@ export interface MovimientoUploadResponse {
   origen_id?: number;
   movimientos_importados?: number;
   por_materia?: Record<string, number>;
+  /**
+   * Lo que el cruce tenga que advertir, o null. Hoy es una sola cosa: que la
+   * cartera se armó con estos reportes porque falta el de Causas.
+   */
+  aviso_cartera?: string | null;
+  causas_agregadas?: number;
 }
 
 // ── Causas de corte del reporte de Movimientos ───────────────────────────

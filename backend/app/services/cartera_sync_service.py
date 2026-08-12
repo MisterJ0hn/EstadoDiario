@@ -114,7 +114,10 @@ class ResultadoSync:
         # tribunal). Se cuentan y se informan en vez de descartarlas en
         # silencio: un número alto acá suele delatar datos mal clasificados.
         self.omitidas_sin_llave = 0
-        self.sin_cartera = False
+        # El cruce tuvo que armar la cartera porque el estudio no ha cargado el
+        # reporte de Causas. Lo lee la respuesta de la carga para poder
+        # advertirlo: esa cartera es parcial y se factura.
+        self.cartera_deducida = False
 
     @property
     def hubo_cambios(self) -> bool:
@@ -124,8 +127,11 @@ class ResultadoSync:
         )
 
     def __str__(self) -> str:
-        if self.sin_cartera:
-            return "sin archivo de causas: no hay cartera sobre la que cruzar"
+        deducida = (
+            " · cartera DEDUCIDA: el estudio no ha cargado el reporte de Causas"
+            if self.cartera_deducida
+            else ""
+        )
         omitidas = (
             f" · {self.omitidas_sin_llave} filas sin rol o sin tribunal, omitidas"
             if self.omitidas_sin_llave
@@ -135,7 +141,24 @@ class ResultadoSync:
             f"materia: {self.causas_creadas} creadas / {self.causas_actualizadas} "
             f"actualizadas · corte: {self.cortes_creadas} creadas / "
             f"{self.cortes_actualizadas} actualizadas · "
-            f"{self.estados_cambiados} estados{omitidas}"
+            f"{self.estados_cambiados} estados{omitidas}{deducida}"
+        )
+
+    def como_aviso(self) -> Optional[str]:
+        """Lo que hay que decirle a quien acaba de cargar un archivo, o None.
+
+        Solo devuelve texto cuando hay algo que el usuario tiene que saber; el
+        detalle completo vive en el log. Hoy eso es una cosa: que su cartera se
+        armó sola porque falta el reporte de Causas.
+        """
+        if not self.cartera_deducida:
+            return None
+        return (
+            f"Este estudio no tiene cargado el reporte de Causas, así que "
+            f"Mis Causas se armó con lo que traen los archivos cargados "
+            f"({self.causas_creadas + self.cortes_creadas} causas). Es una "
+            f"cartera parcial: cargue el reporte de Causas para reemplazarla "
+            f"por la completa."
         )
 
 
@@ -162,12 +185,8 @@ class CarteraSyncService:
 
         origen_cartera = self._origen_cartera()
         if origen_cartera is None:
-            # Sin Excel de Causas no hay cartera donde escribir. Se avisa en vez
-            # de inventar un origen: el que se creara acá pasaría a ser "la
-            # cartera" y se facturaría, aunque nadie haya cargado el reporte.
-            resultado.sin_cartera = True
-            logger.info("Cruce de cartera omitido: el cliente no tiene archivo de causas")
-            return resultado
+            origen_cartera = self._crear_cartera_deducida()
+            resultado.cartera_deducida = True
 
         self._sincronizar_materia(origen_cartera, resultado)
         self._sincronizar_corte(origen_cartera, resultado)
@@ -175,13 +194,66 @@ class CarteraSyncService:
         return resultado
 
     def _origen_cartera(self) -> Optional[EstadoDiarioOrigen]:
-        """El archivo de causas más reciente: la foto sobre la que se escribe."""
+        """La cartera sobre la que se escribe.
+
+        Mismo orden que `ultimo_origen_causas_id`, y tiene que seguir siéndolo:
+        si el cruce escribiera sobre una cartera distinta de la que muestra Mis
+        Causas, lo enriquecido no aparecería en ninguna pantalla. Una cargada le
+        gana a una deducida; después manda la fecha del reporte.
+        """
         return (
             self.db.query(EstadoDiarioOrigen)
             .filter(EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS)
-            .order_by(EstadoDiarioOrigen.fecha.desc(), EstadoDiarioOrigen.id.desc())
+            .order_by(
+                EstadoDiarioOrigen.deducida.asc(),
+                EstadoDiarioOrigen.fecha.desc(),
+                EstadoDiarioOrigen.id.desc(),
+            )
             .first()
         )
+
+    def _crear_cartera_deducida(self) -> EstadoDiarioOrigen:
+        """Arma la cartera con lo que traigan los otros reportes.
+
+        **Esto se decidió a sabiendas y conviene tenerlo escrito.** Hasta acá el
+        cruce se detenía sin cartera, porque el origen que se creara pasa a ser
+        *la* cartera: se muestra en Mis Causas y la facturación cuenta sus
+        causas vigentes. Con este cambio, un estudio que solo carga el estado
+        diario ve su cartera poblarse —y se le cobra por esas causas—, que es
+        lo que se pidió.
+
+        Lo que hay que saber al mirar el resultado:
+
+        - **Es parcial por construcción.** El estado diario de un día trae
+          decenas de causas; el reporte de Causas del mismo RUT, miles. Esta
+          cartera crece de a poco, con lo que se haya movido.
+        - **Queda marcada** (`deducida`), y cada causa lleva además su
+          `origen_dato`, así que siempre se puede explicar de dónde salió cada
+          fila y por qué se cobró.
+        - **La reemplaza el reporte real.** Cuando el estudio cargue el Excel de
+          Causas, ese archivo manda y esta cartera se descarta (ver
+          `CausaImportService.import_file`).
+
+        La fecha es la de hoy y no la del archivo que gatilla: es la fecha en
+        que esta foto se armó, y `ultimo_origen_causas_id` ordena por ella.
+        """
+        origen = EstadoDiarioOrigen(
+            tipo=EstadoDiarioOrigen.TIPO_CAUSAS,
+            fecha=self.ahora.date(),
+            fecha_carga=self.ahora,
+            nombre_archivo="(cartera deducida de los reportes cargados)",
+            deducida=True,
+        )
+        self.db.add(origen)
+        # `flush` y no `commit`: el cruce corre dentro de la transacción del
+        # importador, y el id hace falta ya para colgarle las causas.
+        self.db.flush()
+        logger.warning(
+            "El estudio no tiene reporte de Causas: se creó la cartera %d a "
+            "partir de los otros reportes. Es parcial y se factura.",
+            origen.id,
+        )
+        return origen
 
     # ── Primera instancia ─────────────────────────────────
 

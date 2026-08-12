@@ -28,6 +28,7 @@ from app.utils.nombre_archivo import (
 ED = EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
 MOV = EstadoDiarioOrigen.TIPO_MOVIMIENTOS
 AUD = EstadoDiarioOrigen.TIPO_AUDIENCIAS
+CAU = EstadoDiarioOrigen.TIPO_CAUSAS
 
 
 def config(**kwargs) -> ConfiguracionCorreo:
@@ -45,6 +46,7 @@ ARCHIVO = {
     ED: RAIZ / "datos" / "EstadoDiario17314741-4_15_07_2026.xls",
     MOV: RAIZ / "ejemplos" / "Movimientos_16952077__30_07_2026.xls",
     AUD: RAIZ / "ejemplos" / "Audiencias_16952077_03_08_2026_09_08_2026.xls",
+    CAU: RAIZ / "ejemplos" / "Causas_16952077-1.xlsx",
 }
 
 falta_ejemplo = pytest.mark.skipif(
@@ -151,9 +153,33 @@ def test_rut_en_texto_acepta_dv_k():
 # ── Detección del tipo: por contenido ─────────────────────
 
 @falta_ejemplo
-@pytest.mark.parametrize("tipo", [ED, MOV, AUD])
+@pytest.mark.parametrize("tipo", [ED, MOV, AUD, CAU])
 def test_reconoce_cada_reporte_por_sus_columnas(tipo):
     assert deteccion_archivo.detectar_tipo_por_contenido(str(ARCHIVO[tipo])) == tipo
+
+
+@falta_ejemplo
+def test_el_reporte_de_causas_no_pasa_por_movimientos():
+    """La regresión que dejó a un estudio con Mis Causas vacío.
+
+    Causas y Movimientos traen las mismas siete hojas y comparten las dos
+    columnas que marcaban movimientos, así que el archivo de Causas se detectaba
+    como movimientos. Con eso: el importador de movimientos lo ACEPTABA —su
+    parser acepta esas columnas—, la cartera nunca se cargaba y Mis Causas
+    quedaba vacío sin un solo error. Y la carga como estado diario lo rechazaba
+    diciendo "cárguelo como movimientos", que empujaba justo hacia el hoyo.
+    """
+    error = deteccion_archivo.verificar_contenido(str(ARCHIVO[CAU]), MOV)
+
+    assert error is not None
+    assert "causas" in error
+
+
+@falta_ejemplo
+def test_el_reporte_de_movimientos_sigue_pasando_por_movimientos():
+    # La marca decisiva de causas no puede cerrarle la puerta al reporte que sí
+    # es de movimientos: los dos traen 'institucion' y 'estado causa'.
+    assert deteccion_archivo.verificar_contenido(str(ARCHIVO[MOV]), MOV) is None
 
 
 @falta_ejemplo

@@ -75,33 +75,15 @@ const SPLIT_LINE = { lineStyle: { color: COLOR.eje, width: 1, type: 'solid' } };
   imports: [FormsModule, RouterLink, GraficoComponent],
   template: `
     <div class="space-y-6">
-      <!-- Encabezado + fila de filtros: una sola fila arriba que acota TODA la
-           página; no hay filtros dentro de cada tarjeta. -->
+      <!-- Encabezado. El filtro de período NO va acá: las tarjetas de abajo
+           son del estado actual del estudio y no se acotan a una ventana. El
+           selector vive junto a los gráficos, que son lo único que gobierna. -->
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Dashboard de gestión</h1>
-          <p class="text-neutral-500 mt-1">
-            @if (datos(); as d) {
-              Período del {{ fechaLarga(d.desde) }} al {{ fechaLarga(d.hasta) }}
-            } @else {
-              Resumen del trabajo del estudio
-            }
-          </p>
+          <p class="text-neutral-500 mt-1">Resumen del trabajo del estudio</p>
         </div>
         <div class="flex items-end gap-3">
-          <div>
-            <label class="form-label" for="periodo">Período</label>
-            <select
-              id="periodo"
-              class="form-select w-auto"
-              [ngModel]="dias()"
-              (ngModelChange)="cambiarPeriodo($event)"
-            >
-              @for (opcion of opcionesPeriodo; track opcion) {
-                <option [ngValue]="opcion">Últimos {{ opcion }} días</option>
-              }
-            </select>
-          </div>
           <button type="button" class="btn-secondary" (click)="cargar()" [disabled]="cargando()">
             {{ cargando() ? 'Actualizando...' : 'Actualizar' }}
           </button>
@@ -145,52 +127,71 @@ const SPLIT_LINE = { lineStyle: { color: COLOR.eje, width: 1, type: 'solid' } };
                 <p class="text-3xl font-semibold text-neutral-800 mt-1">
                   {{ miles(d.kpis.sin_revisar) }}
                 </p>
-                <p class="text-xs text-neutral-400 mt-1">Acumulado, no solo del período</p>
+                <p class="text-xs text-neutral-400 mt-1">Acumulado, desde siempre</p>
+              </div>
+            </div>
+            <!-- Verde claro: la cartera que el estudio está trabajando. -->
+            <div class="card bg-accent-50 border-accent-200">
+              <div class="card-body">
+                <p class="text-sm text-accent-800">Causas activas</p>
+                <p class="text-3xl font-semibold text-accent-900 mt-1">
+                  {{ miles(d.kpis.causas_activas) }}
+                </p>
+                <p class="text-xs text-accent-700 mt-1">Sin duplicados, cartera actual</p>
+              </div>
+            </div>
+            <!-- Rojo claro: no es una alarma, es el otro lado de la cartera.
+                 Las dos cifras son disjuntas y suman el total de causas. -->
+            <div class="card bg-danger-50 border-danger-200">
+              <div class="card-body">
+                <p class="text-sm text-danger-800">Causas finalizadas</p>
+                <p class="text-3xl font-semibold text-danger-800 mt-1">
+                  {{ miles(d.kpis.causas_finalizadas) }}
+                </p>
+                <p class="text-xs text-danger-700 mt-1">Sin duplicados, cartera actual</p>
               </div>
             </div>
             <div class="card">
               <div class="card-body">
-                <p class="text-sm text-neutral-500">Resueltos en el período</p>
-                <p class="text-3xl font-semibold text-accent-700 mt-1">
-                  {{ miles(d.kpis.resueltos_periodo) }}
-                </p>
-                <p class="text-xs text-neutral-400 mt-1">
-                  De {{ miles(d.kpis.recibidos_periodo) }} recibidos
-                </p>
-              </div>
-            </div>
-            <div class="card">
-              <div class="card-body">
-                <p class="text-sm text-neutral-500">Recordatorios vigentes</p>
+                <p class="text-sm text-neutral-500">Audiencias no asistidas</p>
                 <p class="text-3xl font-semibold text-neutral-800 mt-1">
-                  {{ miles(d.kpis.recordatorios_vigentes) }}
+                  {{ miles(d.kpis.audiencias_no_asistidas) }}
                 </p>
-                <p class="text-xs text-neutral-400 mt-1">Sin finalizar</p>
+                <!-- El texto dice lo que el número ES hoy. Cuando el PJUD (o el
+                     estudio) entregue la asistencia, cambia el filtro del
+                     backend y esta línea. -->
+                <p class="text-xs text-neutral-400 mt-1">
+                  Por ahora, todas las audiencias cargadas
+                </p>
               </div>
             </div>
-            <div
-              class="card"
-              [class.border-danger-300]="d.kpis.recordatorios_atrasados > 0"
-              [class.bg-danger-50]="d.kpis.recordatorios_atrasados > 0"
-            >
-              <div class="card-body">
-                <p class="text-sm text-neutral-500 flex items-center gap-1.5">
-                  @if (d.kpis.recordatorios_atrasados > 0) {
-                    <svg class="w-4 h-4 text-danger-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                    </svg>
-                  }
-                  Recordatorios atrasados
-                </p>
-                <p
-                  class="text-3xl font-semibold mt-1"
-                  [class]="d.kpis.recordatorios_atrasados > 0 ? 'text-danger-700' : 'text-neutral-800'"
-                >
-                  {{ miles(d.kpis.recordatorios_atrasados) }}
-                </p>
-                <p class="text-xs text-neutral-400 mt-1">Vencidos y sin finalizar</p>
-              </div>
+          </div>
+
+          <!-- El período vive acá, encabezando los gráficos, porque son lo
+               único que acota: las tarjetas de arriba son del estado actual del
+               estudio. En la cabecera de la página parecía gobernarlo todo.
+               Va FUERA del @if de abajo a propósito: si el período no trae
+               datos, el mensaje invita a ampliarlo y el control tiene que
+               seguir a la vista para poder hacerlo. -->
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 class="font-semibold text-neutral-800">Gráficos del período</h2>
+              <p class="text-sm text-neutral-500">
+                Del {{ fechaLarga(d.desde) }} al {{ fechaLarga(d.hasta) }}
+              </p>
+            </div>
+            <div>
+              <label class="form-label" for="periodo">Período</label>
+              <select
+                id="periodo"
+                class="form-select w-auto"
+                [ngModel]="dias()"
+                (ngModelChange)="cambiarPeriodo($event)"
+              >
+                @for (opcion of opcionesPeriodo; track opcion) {
+                  <option [ngValue]="opcion">Últimos {{ opcion }} días</option>
+                }
+              </select>
             </div>
           </div>
 

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_db_tenant, get_usuario_actual
+from app.core.estados_causa import FINALIZADAS, VIGENTES
 from app.models.usuario import Usuario
 from app.repositories.metricas_repository import (
     NIVELES,
@@ -176,6 +177,12 @@ def obtener_dashboard(
 
     kpis = DashboardKpis(
         sin_revisar=repo.contar_sin_revisar(),
+        # Las tres de abajo NO miran el período: son el estado del estudio
+        # ahora. La cartera es una foto que se reemplaza con cada carga del
+        # Excel, así que acotarla a "los últimos 30 días" no significaría nada.
+        causas_activas=repo.contar_causas_cartera(VIGENTES),
+        causas_finalizadas=repo.contar_causas_cartera(FINALIZADAS),
+        audiencias_no_asistidas=repo.contar_audiencias_no_asistidas(),
         pendientes=repo.contar_pendientes(),
         resueltos_periodo=repo.contar_resueltos(desde, hasta),
         recibidos_periodo=repo.contar_recibidos(desde, hasta),
