@@ -123,6 +123,70 @@ def _sembrar_administrador_inicial() -> None:
         db.close()
 
 
+def _sembrar_historial_estado() -> None:
+    """Punto de partida del historial de estado de los clientes que ya existen.
+
+    La tabla `cliente_estado_historial` nace vacía, y la serie mensual del
+    dashboard sale de ella: sin esto, un cliente dado de alta hace ocho meses
+    no aparecería en ningún mes del gráfico.
+
+    Por cada cliente sin historial se escriben una o dos líneas, y **solo lo que
+    consta de verdad**:
+
+    - el alta, fechada con `cliente.fecha_creacion`;
+    - si hoy está suspendido, la suspensión fechada **ahora**, no en el pasado.
+      Cuándo se lo suspendió no lo sabe nadie —no se registraba— y ponerle una
+      fecha inventada convertiría el gráfico en ficción. Queda como un cambio
+      del día de la actualización, que es cuando efectivamente se supo.
+
+    Idempotente: un cliente que ya tiene historial no se toca.
+    """
+    from app.models.maestra.cliente import Cliente
+    from app.models.maestra.cliente_estado_historial import ClienteEstadoHistorial
+
+    db = SesionMaestra()
+    try:
+        con_historial = {
+            fila[0] for fila in db.query(ClienteEstadoHistorial.cliente_id).distinct()
+        }
+        nuevos = 0
+        for cliente in db.query(Cliente).all():
+            if cliente.cliente_id in con_historial:
+                continue
+            db.add(
+                ClienteEstadoHistorial(
+                    cliente_id=cliente.cliente_id,
+                    estado=ClienteEstadoHistorial.ESTADO_ACTIVO,
+                    motivo=ClienteEstadoHistorial.MOTIVO_ALTA,
+                    actor="estado inicial",
+                    fecha=cliente.fecha_creacion,
+                )
+            )
+            if not cliente.activo:
+                db.add(
+                    ClienteEstadoHistorial.de(
+                        cliente.cliente_id,
+                        activo=False,
+                        motivo=ClienteEstadoHistorial.MOTIVO_MANUAL,
+                        actor="estado inicial",
+                    )
+                )
+            nuevos += 1
+
+        if nuevos:
+            db.commit()
+            logger.info(
+                "Historial de estado sembrado para %d cliente(s) que ya existían", nuevos
+            )
+    except Exception as e:
+        db.rollback()
+        # No es motivo para no arrancar: sin esto el gráfico queda corto, pero
+        # la consola funciona igual.
+        logger.error("No se pudo sembrar el historial de estado: %s", e)
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def on_startup():
     # Solo la base principal. Poner al día las bases de los clientes le toca al
@@ -132,6 +196,7 @@ def on_startup():
     logger.info("Creando/actualizando el esquema de la base principal...")
     aplicar_esquema_maestra(engine_maestro)
     _sembrar_administrador_inicial()
+    _sembrar_historial_estado()
     recaptcha.advertir_configuracion_incompleta()
     logger.info("API de administración iniciada - Ambiente: %s", settings.APP_ENV)
 

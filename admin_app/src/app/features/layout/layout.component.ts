@@ -61,7 +61,10 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
       // La estimación del mes en curso cuelga de acá adentro, que es donde se
       // busca cuando ya se está mirando la facturación.
       { ruta: '/facturacion', etiqueta: 'Facturación', icono: ICONO.barras },
-      { ruta: '/bitacora', etiqueta: 'Bitácora', icono: ICONO.bitacora },
+      // La bitácora NO va en el menú: se entra desde la ficha del cliente. La
+      // pantalla exige elegir un cliente antes de mostrar nada —los registros
+      // viven una base por estudio— así que llegar desde el menú obligaba a
+      // elegirlo dos veces. La ruta /bitacora sigue existiendo.
       { ruta: '/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje },
     ],
   },

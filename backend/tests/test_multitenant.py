@@ -131,6 +131,11 @@ def test_la_base_principal_no_lleva_datos_operativos():
     # principal y todos los clientes la compartirían.
     assert sorted(BaseMaestra.metadata.tables) == [
         "cliente",
+        # Cada vez que un cliente pasó de activo a suspendido o al revés. Es
+        # dato COMERCIAL de la plataforma —de ahí sale la serie mensual del
+        # dashboard de la consola— y no operativo del estudio: el estudio no
+        # tiene nada que hacer con la fecha en que se lo suspendió.
+        "cliente_estado_historial",
         "configuracion_correo",
         "configuracion_google",
         "configuracion_sistema",

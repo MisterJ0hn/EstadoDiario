@@ -40,7 +40,14 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
           </p>
         </div>
         @if (cliente(); as c) {
-          <span [class]="claseEstado(c) + ' shrink-0'">{{ textoEstado(c) }}</span>
+          <div class="flex items-center gap-3 shrink-0">
+            <!-- Única entrada a la bitácora desde que salió del menú: va acá,
+                 en la cabecera de la ficha, y no enterrada entre los datos de
+                 facturación. -->
+            <a routerLink="/bitacora" [queryParams]="{ cliente: c.id }"
+               class="btn-secondary btn-sm">Log de cliente</a>
+            <span [class]="claseEstado(c)">{{ textoEstado(c) }}</span>
+          </div>
         }
       </div>
 
@@ -229,8 +236,6 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
                        class="btn-outline btn-sm">Facturas</a>
                     <a [routerLink]="['/clientes', c.id, 'tarifas']"
                        class="btn-secondary btn-sm">Tarifas</a>
-                    <a routerLink="/bitacora" [queryParams]="{ cliente: c.id }"
-                       class="btn-secondary btn-sm">Bitácora</a>
                   </div>
                 </div>
 

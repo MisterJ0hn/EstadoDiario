@@ -159,15 +159,27 @@ export interface ClienteConProblema {
   detalle: string | null;
 }
 
+/** Cuántos clientes había en cada estado al cerrar un mes. */
+export interface PuntoEvolucionClientes {
+  /** `AAAA-MM`. Es una etiqueta de mes, no una fecha. */
+  mes: string;
+  activos: number;
+  suspendidos: number;
+}
+
 export interface AdminDashboard {
   dias: number;
   /** `YYYY-MM-DD` */
   desde: string;
   hasta: string;
+  /**
+   * El estado de la plataforma HOY. **No dependen del filtro de período**: son
+   * una foto del momento, y el período solo acota la tabla de actividad.
+   */
   kpis: {
     clientes_activos: number;
     clientes_suspendidos: number;
-    usuarios_habilitados: number;
+    usuarios_activos: number;
     /** Activos que no reciben archivos hace más de `umbral_sin_importar` días. */
     clientes_sin_importar: number;
   };
@@ -175,6 +187,14 @@ export interface AdminDashboard {
   aprovisionamientos_en_curso: number;
   aprovisionamientos_con_error: ClienteConProblema[];
   clientes: ClienteActividad[];
+  /** Últimos 12 meses, del más viejo al más nuevo. Tampoco depende del período. */
+  evolucion_clientes: PuntoEvolucionClientes[];
+  /**
+   * Desde cuándo hay historial de suspensiones de verdad. Antes de esa fecha
+   * solo constan las altas, y la pantalla lo advierte en vez de dejar creer
+   * que nadie estuvo suspendido.
+   */
+  historial_desde: string | null;
 }
 
 // ── Casilla de ingesta del cliente ───────────────────────────────────────

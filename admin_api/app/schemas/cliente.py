@@ -260,11 +260,29 @@ class ClienteConProblema(BaseModel):
 
 
 class DashboardKpis(BaseModel):
+    """El estado de la plataforma HOY, no el del período elegido.
+
+    Ninguno de estos cuatro depende del filtro de período: cuántos clientes hay
+    y en qué estado están es una foto del momento, y acotarla a "los últimos 30
+    días" no significaría nada. El período solo acota la tabla de actividad por
+    cliente.
+    """
+
     clientes_activos: int
     clientes_suspendidos: int
-    usuarios_habilitados: int
+    usuarios_activos: int
     # Activos que no reciben archivos hace más de `umbral_sin_importar` días.
     clientes_sin_importar: int
+
+
+class PuntoEvolucionClientes(BaseModel):
+    """Cuántos clientes había en cada estado al cerrar un mes."""
+
+    # `AAAA-MM`. Texto y no date: es una etiqueta de mes, no un día, y mandarlo
+    # como fecha invita a que el navegador lo corra un día por zona horaria.
+    mes: str
+    activos: int
+    suspendidos: int
 
 
 class AdminDashboard(BaseModel):
@@ -276,6 +294,13 @@ class AdminDashboard(BaseModel):
     aprovisionamientos_en_curso: int
     aprovisionamientos_con_error: list[ClienteConProblema]
     clientes: list[ClienteActividad]
+    # Los últimos 12 meses cerrados más el corriente, del más viejo al más
+    # nuevo. Tampoco depende del filtro de período.
+    evolucion_clientes: list[PuntoEvolucionClientes] = []
+    # Desde cuándo hay historial de suspensiones de verdad. Antes de esta fecha
+    # el gráfico solo sabe de altas, así que la pantalla lo advierte en vez de
+    # dejar creer que nadie estuvo suspendido.
+    historial_desde: date | None = None
 
 
 # ── Casilla de ingesta del cliente ────────────────────────

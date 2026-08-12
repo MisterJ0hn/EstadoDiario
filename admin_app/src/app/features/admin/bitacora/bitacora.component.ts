@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { Cliente } from '@core/models/admin.model';
 import { FiltroLogs, LogActividad } from '@core/models/log.model';
@@ -27,20 +27,24 @@ import { LogService } from './log.service';
  *
  * **Se elige un cliente antes de ver nada.** Los registros están repartidos —una
  * base por estudio— así que no hay una consulta "de todos" que no sea recorrer
- * cincuenta bases. Se llega con el cliente puesto desde su ficha, o se elige
- * acá arriba.
+ * cincuenta bases.
+ *
+ * **No cuelga del menú**: se entra desde la ficha del cliente, que es donde ya
+ * se sabe de quién se está hablando. El selector de acá arriba se queda para
+ * poder saltar a otro estudio sin volver, y porque la ruta también se abre
+ * directo desde un enlace pegado en un ticket de soporte.
  */
 @Component({
   selector: 'app-bitacora',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, FiltrosPanelComponent],
+  imports: [CommonModule, FormsModule, FiltrosPanelComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Bitácora de actividad</h1>
           <p class="text-neutral-500 mt-1">
-            Qué se hizo dentro del sistema de cada cliente
+            Log de cliente
           </p>
         </div>
         <div class="min-w-[16rem]">

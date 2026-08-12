@@ -24,6 +24,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.maestra.cliente import Cliente
+from app.models.maestra.cliente_estado_historial import ClienteEstadoHistorial
 from app.models.maestra.factura import Factura
 from app.repositories.cliente_repository import ClienteRepository
 from app.repositories.configuracion_sistema_repository import (
@@ -119,6 +120,18 @@ class MoraService:
             )
             if not simular:
                 m.cliente.activo = False
+                # El historial es de donde sale la serie mensual del dashboard,
+                # y esta es la única suspensión que ocurre sola: sin la línea,
+                # el gráfico mostraría al cliente activo hasta que alguien lo
+                # tocara a mano. El actor es el job, no un nulo.
+                self.db.add(
+                    ClienteEstadoHistorial.de(
+                        m.cliente.cliente_id,
+                        activo=False,
+                        motivo=ClienteEstadoHistorial.MOTIVO_MORA,
+                        actor="job de mora",
+                    )
+                )
                 self.clientes.save(m.cliente)
 
         if morosos and not simular:

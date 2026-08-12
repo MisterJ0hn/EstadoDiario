@@ -9,6 +9,7 @@ aunque el proceso solo haya importado uno (los jobs, por ejemplo).
 
 from app.models.maestra import (  # noqa: F401
     cliente,
+    cliente_estado_historial,
     configuracion_correo,
     configuracion_google,
     configuracion_sistema,
