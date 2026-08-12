@@ -332,6 +332,12 @@ class ClienteService:
         """
         cliente = self.obtener_entidad(cliente_id)
         cliente.activo = False
+        # Esta suspensión la decidió una persona, así que **no** lleva la marca
+        # de mora: sin ella, pagar una factura con Webpay no lo reactiva. Se
+        # limpia en vez de dejarla como estaba porque un cliente que el job
+        # suspendió y el operador volvió a suspender a mano ya es un caso del
+        # operador. Ver `PagoService._reactivar_si_corresponde`.
+        cliente.suspendido_por_mora = False
         self.repo.save(cliente)
         # Solo cierra el pool: sin esto quedarían conexiones abiertas contra un
         # cliente que ya no debería atender a nadie.
@@ -344,6 +350,10 @@ class ClienteService:
         cliente sigue con su información como la dejó."""
         cliente = self.obtener_entidad(cliente_id)
         cliente.activo = True
+        # Queda sin deuda pendiente a efectos de la marca: si el job vuelve a
+        # suspenderlo, la escribirá de nuevo. Dejarla puesta en un cliente
+        # activo no rompe nada hoy, pero es un dato que miente.
+        cliente.suspendido_por_mora = False
         self.repo.save(cliente)
         logger.info("Cliente %s reactivado", cliente.guid)
         return self.a_response(cliente)

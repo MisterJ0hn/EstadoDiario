@@ -9,6 +9,7 @@ import {
   FiltroFacturas,
   GenerarPeriodoRequest,
   GenerarPeriodoResponse,
+  PagoListResponse,
   Tarifa,
   TarifaUpsertRequest,
   TarifasCliente,
@@ -63,6 +64,16 @@ export class FacturacionService {
 
   marcarPagada(id: number, pagada: boolean): Observable<Factura> {
     return this.http.post<Factura>(`${this.apiUrl}/facturas/${id}/pagada`, { pagada });
+  }
+
+  /**
+   * Los intentos de pago con Webpay de una factura, del más nuevo al más viejo.
+   *
+   * Trae también los rechazados y los abandonados: son la mitad de lo que hay
+   * que mirar cuando el estudio dice que pagó y la factura sigue emitida.
+   */
+  pagos(id: number): Observable<PagoListResponse> {
+    return this.http.get<PagoListResponse>(`${this.apiUrl}/facturas/${id}/pagos`);
   }
 
   /**

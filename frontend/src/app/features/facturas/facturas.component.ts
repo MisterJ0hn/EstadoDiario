@@ -1,9 +1,12 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { FacturaCliente } from '@core/models/factura.model';
+import { ResultadoPago } from '@core/models/pago.model';
 import { NotificationService } from '@core/services/notification.service';
 import { FacturaService } from './factura.service';
+import { PagoService } from './pago.service';
 
 /**
  * Mis Facturas: lo que la plataforma le cobra a este estudio.
@@ -18,7 +21,20 @@ import { FacturaService } from './factura.service';
  * El detalle se abre por fila en vez de en otra pantalla: son siete líneas y la
  * pregunta ("¿por qué me cobraron esto?") se responde justo al lado del monto
  * que la disparó.
+ *
+ * **Lo único que el estudio sí puede hacer es pagar.** El botón aparece solo si
+ * la plataforma tiene Webpay encendido y solo en las facturas emitidas. Al
+ * volver de Transbank se llega a esta misma pantalla con el resultado en la
+ * URL: la factura ya viene marcada pagada desde el backend, así que el aviso
+ * se muestra y la lista se recarga.
  */
+/** El aviso que se muestra al volver de Webpay, ya resuelto a clase y textos. */
+interface AvisoPago {
+  clase: string;
+  titulo: string;
+  mensaje: string;
+}
+
 @Component({
   selector: 'app-facturas',
   standalone: true,
@@ -31,6 +47,21 @@ import { FacturaService } from './factura.service';
           Lo que se le cobra a su estudio por su cartera de causas — últimas 12
         </p>
       </div>
+
+      <!-- Resultado del pago, al volver de Webpay. Va arriba de todo: el
+           usuario viene de otro sitio y lo primero que necesita saber es si
+           le cobraron. -->
+      @if (avisoPago(); as aviso) {
+        <div [class]="aviso.clase">
+          <div class="flex-1">
+            <p class="font-medium">{{ aviso.titulo }}</p>
+            <p class="text-sm mt-1">{{ aviso.mensaje }}</p>
+          </div>
+          <button type="button" class="btn-outline btn-sm shrink-0" (click)="cerrarAviso()">
+            Cerrar
+          </button>
+        </div>
+      }
 
       @if (error()) {
         <div class="alert-danger">
@@ -116,7 +147,13 @@ import { FacturaService } from './factura.service';
                         </span>
                       </td>
                       <td>
-                        <div class="flex justify-end">
+                        <div class="flex justify-end gap-2">
+                          @if (puedePagar(f)) {
+                            <button type="button" class="btn-primary btn-sm"
+                                    (click)="pagar(f)" [disabled]="pagando() !== null">
+                              {{ pagando() === f.id ? 'Redirigiendo...' : 'Pagar' }}
+                            </button>
+                          }
                           <button type="button" class="btn-outline btn-sm"
                                   (click)="descargar(f)" [disabled]="descargando() === f.id">
                             {{ descargando() === f.id ? '...' : 'PDF' }}
@@ -173,6 +210,10 @@ import { FacturaService } from './factura.service';
             <p class="text-xs text-neutral-500 mt-3">
               El PDF se descarga tal como se emitió. No constituye documento tributario
               del SII.
+              @if (pagoHabilitado()) {
+                El pago se procesa en Webpay: los datos de su tarjeta no pasan por
+                este sitio.
+              }
             </p>
           </div>
         </div>
@@ -182,7 +223,10 @@ import { FacturaService } from './factura.service';
 })
 export class FacturasComponent implements OnInit {
   private service = inject(FacturaService);
+  private pagoService = inject(PagoService);
   private notification = inject(NotificationService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
 
   facturas = signal<FacturaCliente[]>([]);
   totalMonto = signal(0);
@@ -192,13 +236,101 @@ export class FacturasComponent implements OnInit {
   /** Qué fila tiene el detalle abierto. Una sola: son largas. */
   abierta = signal<number | null>(null);
 
+  /** Si la plataforma tiene el pago en línea encendido. Lo dice el backend. */
+  pagoHabilitado = signal(false);
+  /** Qué factura se está mandando a Webpay, para no disparar dos veces. */
+  pagando = signal<number | null>(null);
+  avisoPago = signal<AvisoPago | null>(null);
+
   private readonly MESES = [
     'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
     'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
   ];
 
   ngOnInit(): void {
+    this.leerResultadoDePago();
     this.cargar();
+    // Si falla, el botón no aparece: es preferible a mostrarlo y que dé error
+    // al apretarlo.
+    this.pagoService.disponible().subscribe({
+      next: (r) => this.pagoHabilitado.set(r.habilitado),
+      error: () => this.pagoHabilitado.set(false),
+    });
+  }
+
+  /**
+   * Lee el desenlace que dejó el backend en la URL al volver de Webpay y la
+   * limpia.
+   *
+   * Se limpia con `replaceUrl` para que recargar la página no vuelva a mostrar
+   * el aviso de un pago que ya pasó, y para que la URL no quede con un
+   * resultado viejo si el usuario la comparte o la deja en favoritos.
+   */
+  private leerResultadoDePago(): void {
+    const params = this.route.snapshot.queryParamMap;
+    const resultado = params.get('pago') as ResultadoPago | null;
+    if (!resultado) return;
+
+    const numero = params.get('factura');
+    const mensaje = params.get('mensaje') || '';
+    const reactivado = params.get('reactivado') === '1';
+
+    const titulos: Record<ResultadoPago, string> = {
+      exito: numero ? `Factura ${numero} pagada` : 'Pago recibido',
+      rechazado: 'El pago fue rechazado',
+      anulado: 'El pago no se completó',
+      error: 'No pudimos confirmar el pago',
+    };
+    const clases: Record<ResultadoPago, string> = {
+      exito: 'alert-success',
+      rechazado: 'alert-danger',
+      anulado: 'alert-info',
+      error: 'alert-danger',
+    };
+
+    this.avisoPago.set({
+      clase: clases[resultado] ?? 'alert-info',
+      titulo: titulos[resultado] ?? 'Resultado del pago',
+      mensaje: reactivado
+        ? `${mensaje} Su cuenta quedó activa de nuevo.`
+        : mensaje,
+    });
+
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {},
+      replaceUrl: true,
+    });
+  }
+
+  cerrarAviso(): void {
+    this.avisoPago.set(null);
+  }
+
+  /** Solo las emitidas y no anuladas se pueden pagar, y solo con Webpay encendido. */
+  puedePagar(factura: FacturaCliente): boolean {
+    return this.pagoHabilitado() && factura.estado === 'emitida' && !factura.anulada;
+  }
+
+  /**
+   * Pide la transacción y manda al usuario a Webpay.
+   *
+   * A partir del `irAWebpay` la página se reemplaza por la de Transbank, así
+   * que no hay nada que hacer después: el resultado vuelve por la URL de
+   * retorno, que atiende el backend.
+   */
+  pagar(factura: FacturaCliente): void {
+    this.pagando.set(factura.id);
+    this.avisoPago.set(null);
+    this.pagoService.iniciar(factura.id).subscribe({
+      next: (pago) => this.pagoService.irAWebpay(pago),
+      error: (e) => {
+        this.pagando.set(null);
+        this.notification.error(
+          e.error?.detail || 'No se pudo iniciar el pago. Intente más tarde.'
+        );
+      },
+    });
   }
 
   cargar(): void {

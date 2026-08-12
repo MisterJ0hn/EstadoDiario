@@ -92,6 +92,23 @@ class Cliente(BaseMaestra):
     )
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Lo dejó inactivo el job de mora y no una persona.
+    #
+    # **Por qué hace falta esta marca.** Suspender por mora y desactivar a mano
+    # son lo mismo en la base: `activo = False`. Mientras nadie deshiciera esa
+    # decisión automáticamente daba igual, pero al pagar en línea el sistema
+    # reactiva solo, y sin esta marca reactivaría también al cliente que el
+    # operador desactivó por cualquier otro motivo —una baja, un conflicto, un
+    # fraude— con solo pagar una factura.
+    #
+    # La pone `MoraService.suspender_en_mora` y la limpia el pago que reactiva.
+    # Los clientes desactivados antes de que esta columna existiera quedan en
+    # `false`, que es lo correcto: nadie sabe por qué se los desactivó, así que
+    # no se los reactiva solos.
+    suspendido_por_mora: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+
     # ── Qué clase de contratante es ──
     # Un ESTUDIO tiene varios abogados patrocinadores; un PATROCINADOR es un
     # abogado solo, y ahí la ficha del cliente y la de su único usuario son la

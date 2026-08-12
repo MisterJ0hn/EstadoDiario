@@ -415,6 +415,54 @@ estimación del mes en curso (antes de que existan las facturas) está en
 **Facturación → Estimar el mes**, y las tarifas de cada cliente en su ficha →
 **Tarifas**.
 
+### Pago en línea con Webpay Plus (opcional)
+
+El estudio puede pagar su factura con tarjeta desde **Mis Facturas**. El botón
+aparece solo en las facturas emitidas y solo si la plataforma tiene el pago
+encendido; el cobro lo procesa Transbank y los datos de la tarjeta no pasan por
+el sitio.
+
+**Viene apagado.** Se configura en **Administración → Configuración →
+Transbank**: ambiente (integración o producción), código de comercio y API key.
+La API key se guarda cifrada, igual que la contraseña de la casilla de correo, y
+no vuelve a mostrarse. En integración, sin credenciales propias, se usa el
+comercio de prueba de Transbank y no se cobra nada.
+
+**Nada va en el `.env`** salvo `PUBLIC_BASE_URL`, que ya existe: de ahí sale la
+URL a la que Transbank devuelve el navegador
+(`PUBLIC_BASE_URL/api/v1/pagos/webpay/retorno`). Tiene que ser la URL **pública**
+del sitio y en producción tiene que ser `https`.
+
+Cómo funciona, y por qué importa el orden:
+
+1. El estudio aprieta *Pagar* y el backend crea la transacción en Transbank.
+2. El navegador va al formulario de Webpay. **Todavía no se cobró nada.**
+3. Al volver, el backend *confirma* la transacción. Recién ahí se captura el
+   cargo, se marca la factura como pagada y se redibuja el PDF con la cinta
+   PAGADA.
+
+Una transacción creada y no confirmada **se reversa sola a los 10 minutos**, así
+que un usuario que cierra el navegador a mitad de camino no queda con un cargo.
+
+Cada intento —aprobado, rechazado, anulado o abandonado— queda registrado y se
+consulta en la ficha de la factura, en la consola. Ahí está la **orden de
+compra**, que es el dato que pide Transbank para buscar una transacción, y el
+código de autorización.
+
+Dos cosas que conviene saber:
+
+- **El monto se compara antes de dar nada por pagado.** Si lo confirmado por
+  Transbank no coincide con el de la factura, el pago queda en `error`, la
+  factura NO se marca y queda el aviso en el log.
+- **Pagar toda la deuda levanta la suspensión por mora**, y solo esa: un cliente
+  que el operador desactivó a mano no se reactiva pagando. Lo que las distingue
+  es la columna `cliente.suspendido_por_mora`, que escribe el job de mora.
+
+Para probar, con el ambiente en *integración*, están las tarjetas de prueba que
+publica Transbank en su documentación de Webpay Plus. El botón *Probar conexión*
+de la pantalla de configuración crea una transacción de $10 que no se confirma:
+sirve para validar las credenciales sin cobrar, incluso en producción.
+
 ### Rediseño del documento
 
 El PDF de una factura se escribe **una sola vez**, al emitirla, y no se regenera

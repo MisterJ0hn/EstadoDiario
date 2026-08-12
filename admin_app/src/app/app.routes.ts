@@ -159,6 +159,13 @@ export const routes: Routes = [
                 './features/configuracion/components/whatsapp-config/whatsapp-config.component'
               ).then((m) => m.WhatsappConfigComponent),
           },
+          {
+            path: 'transbank',
+            loadComponent: () =>
+              import(
+                './features/configuracion/components/transbank-config/transbank-config.component'
+              ).then((m) => m.TransbankConfigComponent),
+          },
           { path: '', redirectTo: 'sistema', pathMatch: 'full' },
         ],
       },

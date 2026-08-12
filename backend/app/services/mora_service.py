@@ -11,10 +11,16 @@ entrar, la ingesta por correo lo salta y no se envían sus recordatorios— y no
 puede empezar a ocurrir sola porque alguien desplegó una versión nueva. Se
 enciende desde Configuración.
 
-**No reactiva a nadie.** Pagar una factura no levanta la suspensión sola: puede
-haberse suspendido por otro motivo, y adivinar cuál sería sustituir una decisión
-comercial por una regla. Lo que sí hace es no volver a suspender al que ya está
-suspendido, para no llenar el log.
+**Este módulo no reactiva a nadie**, y sigue sin hacerlo. Lo que cambió con el
+pago en línea es que *otro* módulo sí puede: `PagoService` levanta la suspensión
+del estudio que paga toda su deuda con Webpay. Para que eso no alcance al
+cliente que un operador dio de baja a mano, acá se deja marcado quién fue:
+suspender por mora escribe `cliente.suspendido_por_mora`, y el pago solo
+reactiva a los que tienen esa marca. En la base las dos situaciones son el mismo
+`activo = False`; sin la marca serían indistinguibles.
+
+Lo que sí hace es no volver a suspender al que ya está suspendido, para no
+llenar el log.
 """
 
 import logging
@@ -119,6 +125,11 @@ class MoraService:
             )
             if not simular:
                 m.cliente.activo = False
+                # La marca es lo único que después distingue esta suspensión de
+                # una baja hecha a mano, y es lo que autoriza a `PagoService` a
+                # reactivar al que paga. Va junto al `activo = False`: separarlas
+                # dejaría suspendidos sin marca, que nunca se reactivarían solos.
+                m.cliente.suspendido_por_mora = True
                 self.clientes.save(m.cliente)
 
         if morosos and not simular:
