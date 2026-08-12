@@ -80,6 +80,12 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     ("configuracion_sistema", "tarifa_materia", "NUMERIC(14,2) DEFAULT 1"),
     ("configuracion_sistema", "tarifa_apelaciones", "NUMERIC(14,2) DEFAULT 2"),
     ("configuracion_sistema", "tarifa_suprema", "NUMERIC(14,2) DEFAULT 3"),
+    # Pago con Webpay. Distingue al cliente que suspendió el job de mora del
+    # que desactivó una persona, que en la base eran indistinguibles: es lo que
+    # impide que pagar una factura reactive a alguien dado de baja a mano. El
+    # DEFAULT deja en FALSE a todos los inactivos que ya existen — nadie sabe
+    # por qué se los desactivó, así que no se reactivan solos.
+    ("cliente", "suspendido_por_mora", "BOOLEAN DEFAULT FALSE"),
 ]
 
 COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [

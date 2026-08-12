@@ -6,6 +6,7 @@ from admin_api.app.endpoints import (
     clientes,
     configuracion_google,
     configuracion_smtp,
+    configuracion_transbank,
     configuracion_whatsapp,
     facturacion,
     logs,
@@ -26,3 +27,4 @@ api_router.include_router(logs.router)
 api_router.include_router(configuracion_google.router)
 api_router.include_router(configuracion_smtp.router)
 api_router.include_router(configuracion_whatsapp.router)
+api_router.include_router(configuracion_transbank.router)

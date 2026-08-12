@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
-import { EstadoFactura, Factura } from '@core/models/facturacion.model';
+import { EstadoFactura, EstadoPago, Factura, Pago } from '@core/models/facturacion.model';
 import { NotificationService } from '@core/services/notification.service';
 import { formatearRut } from '@core/utils/rut';
 import { FacturacionService } from '../services/facturacion.service';
@@ -274,6 +274,69 @@ import { nombreMes } from './periodo';
                 }
               </div>
             </div>
+
+            <!-- Intentos de pago con Webpay. Solo aparece si hubo alguno: en
+                 una instalación sin pago en línea sería una tarjeta vacía en
+                 todas las facturas. -->
+            @if (pagos().length > 0) {
+              <div class="card mt-6">
+                <div class="card-header">
+                  <h2 class="text-sm font-semibold text-neutral-800">Pagos con Webpay</h2>
+                </div>
+                <div class="card-body">
+                  <div class="table-wrapper">
+                    <table class="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Fecha</th>
+                          <th scope="col">Orden de compra</th>
+                          <th scope="col">Estado</th>
+                          <th scope="col">Autorización</th>
+                          <th scope="col" style="text-align:right!important">Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (p of pagos(); track p.id) {
+                          <tr>
+                            <td class="whitespace-nowrap">
+                              {{ (p.fecha_transaccion || p.fecha_creacion) | date: 'dd-MM-yyyy HH:mm' }}
+                            </td>
+                            <td class="font-mono text-xs">{{ p.buy_order }}</td>
+                            <td>
+                              <span [class]="clasePago(p.estado)">{{ etiquetaPago(p.estado) }}</span>
+                              @if (p.mensaje) {
+                                <span class="block text-xs text-neutral-500 mt-1">{{ p.mensaje }}</span>
+                              }
+                            </td>
+                            <td class="text-xs">
+                              @if (p.authorization_code) {
+                                {{ p.authorization_code }}
+                                @if (p.tarjeta_final4) {
+                                  <span class="block text-neutral-500">•••• {{ p.tarjeta_final4 }}</span>
+                                }
+                              } @else if (p.response_code !== null) {
+                                <span class="text-neutral-500">código {{ p.response_code }}</span>
+                              } @else {
+                                <span class="text-neutral-400">—</span>
+                              }
+                            </td>
+                            <td class="tabular-nums" style="text-align:right!important">
+                              {{ p.monto | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p class="text-xs text-neutral-500 mt-4">
+                    La orden de compra es lo que pide Transbank para buscar una
+                    transacción. Un intento que quedó en "iniciado" es alguien que
+                    llegó al formulario y no volvió: Transbank lo reversa solo.
+                  </p>
+                </div>
+              </div>
+            }
           </div>
         </div>
         }
@@ -287,6 +350,7 @@ export class FacturaDetalleComponent implements OnInit {
   private route = inject(ActivatedRoute);
 
   factura = signal<Factura | null>(null);
+  pagos = signal<Pago[]>([]);
   error = signal<string | null>(null);
   descargando = signal(false);
   guardando = signal(false);
@@ -313,6 +377,36 @@ export class FacturaDetalleComponent implements OnInit {
       next: (f) => this.factura.set(f),
       error: (e) => this.error.set(mensajeError(e)),
     });
+    // Aparte y sin bloquear: una instalación sin pago en línea no tiene
+    // ninguno, y que eso falle no puede impedir ver la factura.
+    this.service.pagos(this.id).subscribe({
+      next: (r) => this.pagos.set(r.pagos),
+      error: () => this.pagos.set([]),
+    });
+  }
+
+  etiquetaPago(estado: EstadoPago): string {
+    return (
+      {
+        iniciado: 'Iniciado',
+        aprobado: 'Aprobado',
+        rechazado: 'Rechazado',
+        anulado: 'Anulado',
+        error: 'Error',
+      }[estado] ?? estado
+    );
+  }
+
+  clasePago(estado: EstadoPago): string {
+    return (
+      {
+        iniciado: 'badge-neutral',
+        aprobado: 'badge-success',
+        rechazado: 'badge-danger',
+        anulado: 'badge-neutral',
+        error: 'badge-warning',
+      }[estado] ?? 'badge-neutral'
+    );
   }
 
   descargar(): void {

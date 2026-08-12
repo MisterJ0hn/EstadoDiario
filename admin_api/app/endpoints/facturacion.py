@@ -21,7 +21,9 @@ from app.core.database import get_db_maestra
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.models.maestra.usuario_admin import UsuarioAdmin
 from app.repositories.cliente_repository import ClienteRepository
+from app.schemas.pago import PagoListResponse, PagoResponse
 from app.services.factura_service import FacturaService, FiltroFacturas
+from app.services.pago_service import PagoService
 from app.services.tarifa_service import TarifaService
 
 from admin_api.app.deps import require_admin
@@ -156,6 +158,25 @@ def descargar_pdf(factura_id: int, db: Session = Depends(get_db_maestra)):
     )
 
 
+@router.get(
+    "/facturas/{factura_id}/pagos",
+    response_model=PagoListResponse,
+    summary="Intentos de pago con Webpay de una factura",
+)
+def pagos_de_factura(factura_id: int, db: Session = Depends(get_db_maestra)):
+    """**Todos** los intentos, no solo el que resultó.
+
+    Los rechazos y los abandonos son la mitad de lo que hay que mirar cuando un
+    estudio dice que pagó y la factura sigue emitida: acá está la orden de
+    compra que Transbank pide para buscar la transacción, y el código de
+    respuesta que dice por qué no pasó.
+    """
+    pagos = PagoService(db).intentos_de(factura_id)
+    return PagoListResponse(
+        total=len(pagos), pagos=[PagoResponse.model_validate(p) for p in pagos]
+    )
+
+
 @router.post(
     "/facturas/{factura_id}/anular",
     response_model=FacturaResponse,
@@ -193,8 +214,12 @@ def marcar_pagada(
     db: Session = Depends(get_db_maestra),
     admin: UsuarioAdmin = Depends(require_admin),
 ):
-    """Pone o saca la marca de pagada. No hay integración con ningún banco: lo
-    registra quien vio el pago."""
+    """Pone o saca la marca de pagada, a mano.
+
+    Es la vía para los pagos que no pasan por la plataforma —una transferencia,
+    un depósito— y la registra quien vio llegar la plata. Los pagos con Webpay
+    marcan la factura solos al confirmarse y quedan además en la tabla `pago`,
+    con su orden de compra y su código de autorización."""
     factura = FacturaService(db).marcar_pagada(factura_id, datos.pagada)
     logger.info(
         "Factura %s marcada como %s por %s",

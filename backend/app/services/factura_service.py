@@ -213,9 +213,13 @@ class FacturaService:
     def marcar_pagada(self, factura_id: int, pagada: bool) -> Factura:
         """Pone o saca la marca de pagada.
 
-        No hay integración con ningún banco: lo registra una persona que vio el
-        pago. Una factura anulada no se puede marcar pagada, que es lo que
-        evita cuadrar una contabilidad contra un documento que no existe.
+        La llaman dos caminos: el operador que vio llegar el pago, y
+        `PagoService` cuando Transbank confirma un pago con Webpay. Es a
+        propósito que sea la misma función — el redibujo del PDF con la cinta
+        PAGADA y la validación de la anulada tienen que valer para los dos.
+
+        Una factura anulada no se puede marcar pagada, que es lo que evita
+        cuadrar una contabilidad contra un documento que no existe.
         """
         factura = self.obtener(factura_id)
         if factura.anulada:
