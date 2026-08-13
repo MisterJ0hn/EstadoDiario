@@ -13,6 +13,9 @@ from app.core.database import BaseTenant
 ORIGEN_DATO_CAUSAS = "causas"
 ORIGEN_DATO_MOVIMIENTOS = "movimientos"
 ORIGEN_DATO_ESTADO_DIARIO = "estado_diario"
+# Las audiencias no dan de alta causas —no traen la cartera— pero sí cuentan
+# como señal de vida: una audiencia celebrada es actividad de esa causa.
+ORIGEN_DATO_AUDIENCIAS = "audiencias"
 
 
 class Causa(BaseTenant):
@@ -79,6 +82,19 @@ class Causa(BaseTenant):
     )
     # Cuándo la tocó el cruce por última vez. Nulo = tal cual la trajo el Excel.
     enriquecida_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # ── Última señal de vida ──
+    # La fecha más reciente en que esta causa apareció en ALGÚN reporte: estado
+    # diario, movimientos o una audiencia ya celebrada. Es el dato que convierte
+    # una cartera de 12.000 filas en algo administrable: sin él no hay forma de
+    # saber cuáles se están moviendo y cuáles llevan un año dormidas.
+    #
+    # Va denormalizada y no se calcula al consultar porque solo cambia cuando
+    # entra un archivo nuevo: recalcularla en cada listado sería recorrer tres
+    # tablas por página para un dato que no se movió.
+    ultima_actividad: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    # De qué reporte salió esa fecha, para poder explicarla en la pantalla.
+    origen_actividad: Mapped[Optional[str]] = mapped_column(String(20))
 
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="causas")
     jurisdiccion = relationship("Jurisdiccion")

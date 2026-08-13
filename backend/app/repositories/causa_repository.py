@@ -8,12 +8,14 @@ Sin filtro de visibilidad: dentro de un estudio todos ven todo.
 """
 
 import math
+from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.estados_causa import FINALIZADAS, VIGENTES, condicion_vigencia
+from app.models.audiencia import Audiencia
 from app.models.causa import Causa
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 
@@ -141,6 +143,44 @@ class CausaRepository:
             return origen_id
         return self.ultimo_origen_id() or -1
 
+
+    @staticmethod
+    def _proximas_audiencias():
+        """Subconsulta `(rol, tribunal) -> próxima audiencia`, desde hoy.
+
+        Se resuelve **al consultar** y no en una columna denormalizada porque no
+        depende de que entre un archivo: una audiencia deja de ser próxima
+        cuando pasa el día, sola. Guardada, el listado seguiría anunciando una
+        audiencia de la semana pasada hasta la siguiente importación.
+
+        Es un agregado pequeño —un estudio tiene decenas de audiencias, no miles—
+        que se une a la página ya filtrada, no una subconsulta por fila.
+        """
+        return (
+            select(
+                func.lower(func.btrim(Audiencia.rol)).label("rol"),
+                func.lower(func.btrim(Audiencia.tribunal)).label("tribunal"),
+                func.min(Audiencia.fecha_audiencia).label("fecha"),
+            )
+            .where(Audiencia.fecha_audiencia >= func.current_date())
+            .group_by(
+                func.lower(func.btrim(Audiencia.rol)),
+                func.lower(func.btrim(Audiencia.tribunal)),
+            )
+            .subquery()
+        )
+
+    @classmethod
+    def _con_audiencia(cls, query, prox):
+        """Une la próxima audiencia a la consulta, sin descartar causas."""
+        return query.outerjoin(
+            prox,
+            and_(
+                func.lower(func.btrim(Causa.rol)) == prox.c.rol,
+                func.lower(func.btrim(Causa.tribunal)) == prox.c.tribunal,
+            ),
+        )
+
     def find_filtered(
         self,
         materia: Optional[str] = None,
@@ -149,25 +189,56 @@ class CausaRepository:
         busqueda: Optional[str] = None,
         origen_id: Optional[int] = None,
         vigencia: Optional[str] = None,
+        sin_actividad_meses: Optional[int] = None,
+        con_audiencia_hasta: Optional[date] = None,
+        orden: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
         origen_id = self._acotar_a_la_cartera(origen_id)
-        base = self._aplicar_filtros(
-            self.db.query(Causa),
-            materia, estado_causa, tribunal, busqueda, origen_id, vigencia,
-        )
-        total = (
-            self._aplicar_filtros(
-                self.db.query(func.count(Causa.id)),
-                materia, estado_causa, tribunal, busqueda, origen_id, vigencia,
-            ).scalar()
-            or 0
-        )
+        prox = self._proximas_audiencias()
 
-        query = base.options(joinedload(Causa.estado_diario_origen)).order_by(
-            Causa.fecha_ingreso.desc().nullslast(), Causa.id.desc()
-        )
+        def armar(consulta):
+            consulta = self._con_audiencia(consulta, prox)
+            consulta = self._aplicar_filtros(
+                consulta, materia, estado_causa, tribunal, busqueda, origen_id, vigencia
+            )
+            if sin_actividad_meses:
+                # **Sin fecha NO cuenta como dormida.** Que una causa no aparezca
+                # en ningún reporte puede significar que no se movió, o que el
+                # estudio solo tiene cargados dos archivos de la semana pasada.
+                # Son cosas distintas y el sistema no puede distinguirlas: de
+                # 12.248 causas reales, 12.158 no tienen registro simplemente
+                # porque no hay historial cargado, y meterlas acá convertía el
+                # filtro en "muéstrame casi toda la cartera".
+                #
+                # Dormida es la que SÍ apareció alguna vez y hace rato que no.
+                corte = date.today() - timedelta(days=30 * sin_actividad_meses)
+                consulta = consulta.filter(
+                    Causa.ultima_actividad.isnot(None), Causa.ultima_actividad <= corte
+                )
+            if con_audiencia_hasta is not None:
+                consulta = consulta.filter(prox.c.fecha <= con_audiencia_hasta)
+            return consulta
+
+        base = armar(self.db.query(Causa, prox.c.fecha))
+        total = armar(self.db.query(func.count(Causa.id))).scalar() or 0
+
+        query = base.options(joinedload(Causa.estado_diario_origen))
+        if orden == "actividad":
+            # Las dormidas primero, que es para lo que sirve este orden. Las que
+            # no tienen registro van al FINAL: no se sabe nada de ellas, y
+            # ponerlas arriba llenaría la primera página de causas sobre las que
+            # no hay nada que decir.
+            query = query.order_by(
+                Causa.ultima_actividad.asc().nullslast(), Causa.id.desc()
+            )
+        elif orden == "audiencia":
+            query = query.order_by(prox.c.fecha.asc().nullslast(), Causa.id.desc())
+        else:
+            query = query.order_by(
+                Causa.fecha_ingreso.desc().nullslast(), Causa.id.desc()
+            )
 
         total_pages = 1
         pagina_actual = 1
@@ -176,7 +247,13 @@ class CausaRepository:
             pagina_actual = max(1, min(page or 1, total_pages))
             query = query.offset((pagina_actual - 1) * limit).limit(limit)
 
-        return query.all(), total, pagina_actual, total_pages
+        # Cada fila viene como (Causa, fecha). La fecha se cuelga del objeto para
+        # que el endpoint la lea sin tener que saber de esta tupla.
+        filas = []
+        for causa, proxima in query.all():
+            causa.proxima_audiencia = proxima
+            filas.append(causa)
+        return filas, total, pagina_actual, total_pages
 
     def contar_por_materia(
         self,

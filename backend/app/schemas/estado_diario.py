@@ -199,3 +199,19 @@ class CorteListResponse(BaseModel):
     cortes: list[CorteResponse]
     # Nombres de corte presentes, para el combo del filtro.
     cortes_disponibles: list[str] = []
+
+
+class FechaInicialResponse(BaseModel):
+    """Día que las pantallas de estado diario proponen al abrirse.
+
+    `motivo` explica de dónde salió, y las pantallas lo usan para rotular el
+    chip del filtro: no es lo mismo "ayer" que "el último día con datos", y sin
+    decirlo el usuario no entiende por qué está viendo una fecha de hace dos
+    semanas.
+    """
+
+    exito: bool = True
+    # Nula cuando el estudio no tiene ningún estado diario cargado.
+    fecha: date | None = None
+    # "ayer" | "ultimo" | None
+    motivo: str | None = None

@@ -25,6 +25,7 @@ from app.schemas.estado_diario import (
     WebhookResponse,
     EstadoDiarioOrigenListResponse,
     EstadoDiarioOrigenResponse,
+    FechaInicialResponse,
 )
 from app.repositories.estado_diario_corte_repository import EstadoDiarioCorteRepository
 from app.services.estado_diario_service import EstadoDiarioService
@@ -43,6 +44,30 @@ router = APIRouter(prefix="/estado-diario", tags=["Estado Diario"])
 # ── Origenes ──────────────────────────────────────────────
 
 @router.get(
+    "/fecha-inicial",
+    response_model=FechaInicialResponse,
+    summary="Qué día mostrar al abrir el estado diario",
+)
+def fecha_inicial(
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """El día por defecto de las pantallas de estado diario.
+
+    Lo resuelve el backend y no cada pantalla porque depende de qué hay cargado
+    en la base y de qué día es hoy EN CHILE: el navegador de quien consulta
+    puede estar en otro huso, y tres pantallas calculándolo por su cuenta se
+    contradirían entre sí.
+
+    `fecha` viene nula cuando el estudio todavía no cargó ningún estado diario;
+    en ese caso las pantallas no aplican filtro y muestran todo, que es el
+    comportamiento que tenían antes.
+    """
+    fecha, motivo = EstadoDiarioOrigenRepository(db).fecha_inicial_estado_diario()
+    return FechaInicialResponse(fecha=fecha, motivo=motivo)
+
+
+@router.get(
     "/origenes",
     response_model=EstadoDiarioOrigenListResponse,
     summary="Listar orígenes (archivos cargados)",
@@ -53,13 +78,17 @@ def listar_origenes(
     tipo: str | None = Query(
         None, description="estado_diario | movimientos | audiencias | causas"
     ),
+    fecha_desde: str | None = Query(None, description="Fecha del reporte (YYYY-MM-DD)"),
+    fecha_hasta: str | None = Query(None),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = EstadoDiarioOrigenRepository(db)
     # Los archivos son del estudio. Lo que se acota por
     # jurisdicción es su contenido, al abrirlos.
-    items, total, total_pages = repo.find_all_paginated(tipo, page, per_page)
+    items, total, total_pages = repo.find_all_paginated(
+        tipo, page, per_page, fecha_desde, fecha_hasta
+    )
     # Cuáles de esta página entraron por la casilla. Se resuelve en UNA consulta
     # sobre los ids de la página y no preguntando por archivo: son 20 filas por
     # pantalla y serían 20 viajes a la base para pintar una columna.

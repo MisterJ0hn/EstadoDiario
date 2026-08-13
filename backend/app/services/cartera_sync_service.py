@@ -56,17 +56,20 @@ en vez de acumularse.
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.causa import (
+    ORIGEN_DATO_AUDIENCIAS,
     ORIGEN_DATO_CAUSAS,
     ORIGEN_DATO_ESTADO_DIARIO,
     ORIGEN_DATO_MOVIMIENTOS,
     Causa,
 )
+from app.models.audiencia import Audiencia
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario import EstadoDiario
 from app.models.estado_diario_corte import EstadoDiarioCorte
@@ -114,6 +117,9 @@ class ResultadoSync:
         # tribunal). Se cuentan y se informan en vez de descartarlas en
         # silencio: un número alto acá suele delatar datos mal clasificados.
         self.omitidas_sin_llave = 0
+        # Causas a las que se les puso o corrigió la fecha de última actividad.
+        self.actividad_calculada = 0
+        self.sin_cartera = False
         # El cruce tuvo que armar la cartera porque el estudio no ha cargado el
         # reporte de Causas. Lo lee la respuesta de la carga para poder
         # advertirlo: esa cartera es parcial y se factura.
@@ -190,8 +196,84 @@ class CarteraSyncService:
 
         self._sincronizar_materia(origen_cartera, resultado)
         self._sincronizar_corte(origen_cartera, resultado)
+        self._calcular_ultima_actividad(origen_cartera, resultado)
         logger.info("Cruce de cartera: %s", resultado)
         return resultado
+
+    # ── Última señal de vida ──────────────────────────────
+
+    def _calcular_ultima_actividad(
+        self, origen_cartera: EstadoDiarioOrigen, resultado: ResultadoSync
+    ) -> None:
+        """Cuándo apareció por última vez cada causa en algún reporte.
+
+        Tres fuentes, y cada una fecha distinto:
+
+        - **Estado diario** y **movimientos**: la fecha del ARCHIVO, no la de
+          ingreso de la causa. Que una causa figure en el estado diario del 5 de
+          agosto significa que se movió ese día.
+        - **Audiencias**: la fecha de la audiencia, y solo si **ya pasó**. Una
+          audiencia futura no es actividad todavía; esa va por su propio lado
+          (ver la próxima audiencia en el listado de la cartera).
+
+        Se resuelve en tres consultas agregadas y no recorriendo causas: con
+        12.000 filas, preguntar por cada una serían 12.000 viajes a la base.
+        """
+        cartera = (
+            self.db.query(Causa)
+            .filter(Causa.estado_diario_origen_id == origen_cartera.id)
+            .all()
+        )
+        if not cartera:
+            return
+
+        # {(rol, tribunal): (fecha, de qué reporte)}, quedándose con la más nueva.
+        mejor: Dict[Tuple[str, str], Tuple[date, str]] = {}
+
+        def registrar(clave, fecha, procedencia):
+            if fecha is None or not clave[0] or not clave[1]:
+                return
+            actual = mejor.get(clave)
+            if actual is None or fecha > actual[0]:
+                mejor[clave] = (fecha, procedencia)
+
+        for modelo, procedencia in (
+            (Movimiento, ORIGEN_DATO_MOVIMIENTOS),
+            (EstadoDiario, ORIGEN_DATO_ESTADO_DIARIO),
+        ):
+            filas = (
+                self.db.query(
+                    modelo.rol, modelo.tribunal, func.max(EstadoDiarioOrigen.fecha)
+                )
+                .join(EstadoDiarioOrigen,
+                      modelo.estado_diario_origen_id == EstadoDiarioOrigen.id)
+                .group_by(modelo.rol, modelo.tribunal)
+                .all()
+            )
+            for rol, tribunal, fecha in filas:
+                registrar((_norm(rol), _norm(tribunal)), fecha, procedencia)
+
+        hoy = date.today()
+        filas = (
+            self.db.query(
+                Audiencia.rol, Audiencia.tribunal, func.max(Audiencia.fecha_audiencia)
+            )
+            .filter(Audiencia.fecha_audiencia <= hoy)
+            .group_by(Audiencia.rol, Audiencia.tribunal)
+            .all()
+        )
+        for rol, tribunal, fecha in filas:
+            registrar((_norm(rol), _norm(tribunal)), fecha, ORIGEN_DATO_AUDIENCIAS)
+
+        for causa in cartera:
+            dato = mejor.get((_norm(causa.rol), _norm(causa.tribunal)))
+            if dato is None:
+                continue
+            fecha, procedencia = dato
+            if causa.ultima_actividad != fecha:
+                causa.ultima_actividad = fecha
+                causa.origen_actividad = procedencia
+                resultado.actividad_calculada += 1
 
     def _origen_cartera(self) -> Optional[EstadoDiarioOrigen]:
         """La cartera sobre la que se escribe.

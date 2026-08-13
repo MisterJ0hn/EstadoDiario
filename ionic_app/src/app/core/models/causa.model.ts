@@ -24,6 +24,16 @@ export interface Causa {
   rut: string | null;
   fecha_archivo: string | null;
   nombre_archivo: string | null;
+  /**
+   * Última vez que la causa apareció en el estado diario, en movimientos o en
+   * una audiencia ya celebrada. Null = no consta en los reportes cargados, que
+   * NO es lo mismo que "no se movió".
+   */
+  ultima_actividad?: string | null;
+  /** De cuál de los tres reportes salió esa fecha. */
+  origen_actividad?: string | null;
+  /** Próxima audiencia agendada, desde hoy. */
+  proxima_audiencia?: string | null;
 }
 
 export interface CausaListResponse {
@@ -56,6 +66,12 @@ export interface CausaResumenResponse {
 export type VigenciaCausa = 'vigentes' | 'finalizadas';
 
 export interface CausaFiltros {
+  /** Solo las que no aparecen en ningún reporte hace más de N meses. */
+  sin_actividad_meses?: number;
+  /** Solo las que tienen audiencia dentro de los próximos N días. */
+  con_audiencia_dias?: number;
+  /** `actividad` | `audiencia`. Por defecto, fecha de ingreso. */
+  orden?: string;
   materia?: string;
   estado_causa?: string;
   tribunal?: string;

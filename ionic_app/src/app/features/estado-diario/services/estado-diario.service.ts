@@ -15,6 +15,7 @@ import {
   TipoOrigen,
   CorteListResponse,
   TipoCorte,
+  FechaInicialResponse,
 } from '@core/models/estado-diario.model';
 
 @Injectable({ providedIn: 'root' })
@@ -56,10 +57,31 @@ export class EstadoDiarioService {
     return this.http.get<CorteListResponse>(`${this.apiUrl}/cortes`, { params: httpParams });
   }
 
+  // ── Día por defecto ────────────────────
+  /**
+   * Qué día proponer al abrir las pantallas de estado diario: ayer, o el
+   * último con datos si ayer no tiene.
+   *
+   * Lo decide el backend a propósito. Depende de qué hay cargado en la base y
+   * de qué día es hoy EN CHILE, y el reloj del navegador no sabe ninguna de
+   * las dos cosas. Ver `shared/fecha-inicial.ts`.
+   */
+  getFechaInicial(): Observable<FechaInicialResponse> {
+    return this.http.get<FechaInicialResponse>(`${this.apiUrl}/fecha-inicial`);
+  }
+
   // ── Orígenes ───────────────────────────
-  getOrigenes(page = 1, perPage = 20, tipo?: TipoOrigen): Observable<OrigenListResponse> {
+  getOrigenes(
+    page = 1,
+    perPage = 20,
+    tipo?: TipoOrigen,
+    fechaDesde?: string,
+    fechaHasta?: string
+  ): Observable<OrigenListResponse> {
     let params = new HttpParams().set('page', page).set('per_page', perPage);
     if (tipo) params = params.set('tipo', tipo);
+    if (fechaDesde) params = params.set('fecha_desde', fechaDesde);
+    if (fechaHasta) params = params.set('fecha_hasta', fechaHasta);
     return this.http.get<OrigenListResponse>(`${this.apiUrl}/origenes`, { params });
   }
 

@@ -24,9 +24,8 @@ import argparse
 import logging
 import sys
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-from app.core.config import settings
+from app.core.config import zona_horaria
 from app.core.database import SesionMaestra, sesion_tenant
 from app.core.logging_config import setup_logging
 from app.models.maestra.cliente import Cliente
@@ -37,14 +36,6 @@ from app.repositories.usuario_repository import UsuarioRepository
 from app.services.correo_service import CorreoService
 
 logger = logging.getLogger(__name__)
-
-
-def _zona() -> ZoneInfo:
-    try:
-        return ZoneInfo(settings.TIMEZONE)
-    except Exception:
-        logger.warning("Zona horaria '%s' inválida; se usa UTC", settings.TIMEZONE)
-        return ZoneInfo("UTC")
 
 
 def corresponde_ejecutar(db_tenant, config, usuario_destino_id) -> tuple[bool, str]:
@@ -78,7 +69,7 @@ def corresponde_ejecutar(db_tenant, config, usuario_destino_id) -> tuple[bool, s
     #   3. `ya_importado(message_id, nombre_archivo)` descarta el adjunto
     #      repetido aunque el mensaje reaparezca como no leído;
     #   4. los importadores rechazan un archivo con el mismo (rut, fecha, tipo).
-    tz = _zona()
+    tz = zona_horaria()
     ahora_local = datetime.now(tz)
     desde_local = ahora_local.replace(
         hour=config.hora_ejecucion.hour,

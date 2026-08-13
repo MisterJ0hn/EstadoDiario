@@ -99,6 +99,10 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     ("causa", "enriquecida_en", "TIMESTAMPTZ"),
     ("causa_corte", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
     ("causa_corte", "enriquecida_en", "TIMESTAMPTZ"),
+    # Última vez que la causa apareció en algún reporte. Nula en las filas ya
+    # cargadas hasta que corra el cruce: no se puede deducir de la nada.
+    ("causa", "ultima_actividad", "DATE"),
+    ("causa", "origen_actividad", "VARCHAR(20)"),
     # Cartera armada por el cruce porque el estudio no ha cargado el reporte de
     # Causas. FALSE en todo lo que ya existe: esos archivos los subió alguien.
     ("estado_diario_origen", "deducida", "BOOLEAN DEFAULT FALSE"),
@@ -143,6 +147,8 @@ INDICES_NUEVOS_TENANT: list[tuple[str, ...]] = [
     # cliente. La tabla ya existe en producción, así que create_all() no crea
     # este índice aunque el modelo lo declare.
     ("ix_estado_diario_agenda_twilio_sid", "estado_diario_agenda", "twilio_sid"),
+    # Se ordena y se filtra por esta columna en el listado de la cartera.
+    ("ix_causa_ultima_actividad", "causa", "ultima_actividad"),
 ]
 
 # Los nombres son los que usa SQLAlchemy para un `index=True` (ix_<tabla>_<col>):

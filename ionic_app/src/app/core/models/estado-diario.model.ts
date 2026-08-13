@@ -178,3 +178,17 @@ export interface CorteListResponse {
   /** Nombres de corte presentes, para el combo del filtro. */
   cortes_disponibles: string[];
 }
+
+/**
+ * Día que el backend propone al abrir las pantallas de estado diario.
+ *
+ * `motivo` dice de dónde salió y sirve para rotular el chip del filtro: ver
+ * "28-07-2026" sin explicación, un 13 de agosto, parece un error de la app y
+ * no lo que es —que ese fue el último día con datos—.
+ */
+export interface FechaInicialResponse {
+  exito: boolean;
+  /** Nula si el estudio no tiene ningún estado diario cargado. */
+  fecha: string | null;
+  motivo: 'ayer' | 'ultimo' | null;
+}

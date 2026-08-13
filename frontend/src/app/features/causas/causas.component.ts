@@ -111,6 +111,40 @@ import { CausaService } from './services/causa.service';
         (quitar)="quitarFiltro($event)"
       >
         <div>
+          <label class="form-label" for="c-actividad">Sin novedades hace</label>
+          <select id="c-actividad" class="form-select" [(ngModel)]="filtroSinActividad">
+            <option value="">No filtrar</option>
+            <option value="1">Más de 1 mes</option>
+            <option value="3">Más de 3 meses</option>
+            <option value="6">Más de 6 meses</option>
+            <option value="12">Más de 1 año</option>
+          </select>
+          <p class="text-xs text-neutral-500 mt-1">
+            Solo cuenta lo que consta en los reportes cargados. Una causa sin registro
+            no se considera dormida: no se sabe.
+          </p>
+        </div>
+
+        <div>
+          <label class="form-label" for="c-audiencia">Con audiencia en</label>
+          <select id="c-audiencia" class="form-select" [(ngModel)]="filtroConAudiencia">
+            <option value="">No filtrar</option>
+            <option value="7">Los próximos 7 días</option>
+            <option value="15">Los próximos 15 días</option>
+            <option value="30">Los próximos 30 días</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="form-label" for="c-orden">Ordenar por</label>
+          <select id="c-orden" class="form-select" [(ngModel)]="filtroOrden">
+            <option value="">Fecha de ingreso</option>
+            <option value="actividad">Última novedad, más antigua primero</option>
+            <option value="audiencia">Próxima audiencia</option>
+          </select>
+        </div>
+
+        <div>
           <label class="form-label" for="c-vigencia">Vigencia</label>
           <select id="c-vigencia" class="form-select" [(ngModel)]="filtroVigencia">
             <option value="vigentes">Vigentes</option>
@@ -174,6 +208,12 @@ import { CausaService } from './services/causa.service';
                   <th>Caratulado</th>
                   <th>EstadoCausa</th>
                   <th>Institución</th>
+                  <!-- El cruce con los otros tres reportes. Van al final porque
+                       son lo que se consulta, no lo que identifica la causa. -->
+                  <th title="Última vez que la causa apareció en el estado diario, en movimientos o en una audiencia">
+                    Última novedad
+                  </th>
+                  <th title="Próxima audiencia agendada">Audiencia</th>
                 </tr>
               </thead>
               <tbody>
@@ -192,6 +232,28 @@ import { CausaService } from './services/causa.service';
                     <td>{{ c.estado_causa || '-' }}</td>
                     <td class="max-w-[180px] truncate" [title]="c.institucion || ''">
                       {{ c.institucion || '-' }}
+                    </td>
+                    <td class="whitespace-nowrap">
+                      @if (c.ultima_actividad) {
+                        <span [title]="detalleActividad(c)">{{ hace(c.ultima_actividad) }}</span>
+                      } @else {
+                        <!-- Sin registro NO es "sin movimiento": puede que el
+                             estudio solo tenga cargados los reportes de esta
+                             semana. Decir "nunca" sería afirmar algo que el
+                             sistema no sabe. -->
+                        <span class="text-neutral-400" title="No aparece en los reportes cargados">
+                          sin registro
+                        </span>
+                      }
+                    </td>
+                    <td class="whitespace-nowrap">
+                      @if (c.proxima_audiencia) {
+                        <span [class]="claseAudiencia(c.proxima_audiencia)">
+                          {{ fmtFecha(c.proxima_audiencia) }}
+                        </span>
+                      } @else {
+                        <span class="text-neutral-400">-</span>
+                      }
                     </td>
                   </tr>
                 } @empty {
@@ -273,6 +335,11 @@ export class CausasComponent implements OnInit {
   filtroBusqueda = '';
   filtroEstadoCausa = '';
   filtroTribunal = '';
+  /** Meses sin novedades. Texto porque sale de un <select>. */
+  filtroSinActividad = '';
+  /** Días hacia adelante para la próxima audiencia. */
+  filtroConAudiencia = '';
+  filtroOrden = '';
   /** Fijado por query param al llegar desde un archivo; no se edita en pantalla. */
   filtroOrigenId: number | undefined;
 
@@ -281,7 +348,7 @@ export class CausasComponent implements OnInit {
 
   /** TipoCausa + Rol/Rit + Ruc + Tribunal + FechaIngreso + Caratulado +
    *  EstadoCausa + Institución. */
-  readonly colspan = 8;
+  readonly colspan = 10;
 
   private readonly porPagina = 20;
 
@@ -372,6 +439,13 @@ export class CausasComponent implements OnInit {
       tribunal: this.filtroTribunal || undefined,
       origen_id: this.filtroOrigenId,
       vigencia: this.vigencia(),
+      sin_actividad_meses: this.filtroSinActividad
+        ? Number(this.filtroSinActividad)
+        : undefined,
+      con_audiencia_dias: this.filtroConAudiencia
+        ? Number(this.filtroConAudiencia)
+        : undefined,
+      orden: this.filtroOrden || undefined,
     };
   }
 
@@ -391,6 +465,9 @@ export class CausasComponent implements OnInit {
     this.filtroBusqueda = '';
     this.filtroEstadoCausa = '';
     this.filtroTribunal = '';
+    this.filtroSinActividad = '';
+    this.filtroConAudiencia = '';
+    this.filtroOrden = '';
     this.onFiltrar();
   }
 
@@ -404,6 +481,12 @@ export class CausasComponent implements OnInit {
     switch (clave) {
       case 'vigencia':
         this.filtroVigencia = 'vigentes';
+        break;
+      case 'sin_actividad':
+        this.filtroSinActividad = '';
+        break;
+      case 'con_audiencia':
+        this.filtroConAudiencia = '';
         break;
       case 'busqueda':
         this.filtroBusqueda = '';
@@ -430,6 +513,20 @@ export class CausasComponent implements OnInit {
     if (this.vigencia() === 'finalizadas') {
       chips.push({ clave: 'vigencia', etiqueta: 'Vigencia', valor: 'No vigentes' });
     }
+    if (this.filtroSinActividad) {
+      chips.push({
+        clave: 'sin_actividad',
+        etiqueta: 'Sin novedades',
+        valor: `más de ${this.filtroSinActividad} mes(es)`,
+      });
+    }
+    if (this.filtroConAudiencia) {
+      chips.push({
+        clave: 'con_audiencia',
+        etiqueta: 'Audiencia',
+        valor: `próximos ${this.filtroConAudiencia} días`,
+      });
+    }
     if (this.filtroBusqueda) {
       chips.push({ clave: 'busqueda', etiqueta: 'Búsqueda', valor: this.filtroBusqueda });
     }
@@ -452,4 +549,41 @@ export class CausasComponent implements OnInit {
     });
     this.onFiltrar();
   }
+
+  /** `2026-08-02` → `hace 9 días`. Lo que se pregunta no es la fecha sino
+   *  cuánto lleva quieta la causa. */
+  hace(iso: string | null): string {
+    if (!iso) return '-';
+    const [a, m, d] = iso.split('-').map(Number);
+    const dias = Math.floor((Date.now() - new Date(a, m - 1, d).getTime()) / 86400000);
+    if (dias <= 0) return 'hoy';
+    if (dias === 1) return 'ayer';
+    if (dias < 30) return `hace ${dias} días`;
+    const meses = Math.floor(dias / 30);
+    if (meses < 12) return `hace ${meses} mes${meses > 1 ? 'es' : ''}`;
+    const anios = Math.floor(meses / 12);
+    return `hace ${anios} año${anios > 1 ? 's' : ''}`;
+  }
+
+  /** De qué reporte salió la fecha, para el tooltip. */
+  detalleActividad(c: Causa): string {
+    const de: Record<string, string> = {
+      estado_diario: 'apareció en el estado diario',
+      movimientos: 'apareció en movimientos',
+      audiencias: 'tuvo una audiencia',
+    };
+    const origen = c.origen_actividad ? de[c.origen_actividad] : null;
+    const fecha = this.fmtFecha(c.ultima_actividad ?? null);
+    return origen ? `${fecha}: ${origen}` : fecha;
+  }
+
+  /** Resalta la audiencia inminente: es lo más caro de dejar pasar. */
+  claseAudiencia(iso: string): string {
+    const [a, m, d] = iso.split('-').map(Number);
+    const dias = Math.floor((new Date(a, m - 1, d).getTime() - Date.now()) / 86400000);
+    if (dias <= 7) return 'badge-danger';
+    if (dias <= 30) return 'badge-warning';
+    return 'badge-neutral';
+  }
+
 }
