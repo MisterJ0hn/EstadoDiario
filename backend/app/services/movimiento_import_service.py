@@ -341,15 +341,16 @@ class MovimientoImportService:
         self.db.flush()
         cruce = sincronizar_cartera(self.db)
 
+        # `len(filas)` incluiría las de corte, que van a otra tabla: el número
+        # que se informa tiene que ser el de filas realmente insertadas acá.
+        movimientos = sum(por_materia.values())
+
         auditoria.registrar(
             self.db, auditoria.MODULO_MOVIMIENTOS, auditoria.ACCION_IMPORTAR,
             usuario_id=usuario_id,
             detalle=f"{origen.nombre_archivo or file_path}: {movimientos} movimientos, {cortes} de corte",
         )
         self.db.commit()
-        # `len(filas)` incluiría las de corte, que van a otra tabla: el número
-        # que se informa tiene que ser el de filas realmente insertadas acá.
-        movimientos = sum(por_materia.values())
         logger.info(
             "Importados %d movimientos y %d causas de corte para origen %d (%s)",
             movimientos, cortes, origen.id, por_materia,
