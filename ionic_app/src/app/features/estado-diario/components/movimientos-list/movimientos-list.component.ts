@@ -5,21 +5,19 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
-import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
+import {
+  Movimiento,
+  Jurisdiccion,
+  FechaInicialResponse,
+} from '@core/models/estado-diario.model';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 import {
   ChipFiltro,
   FiltrosPanelComponent,
 } from '@shared/components/filtros-panel/filtros-panel.component';
+import { etiquetaFecha, fmtFechaChip } from '@shared/fecha-estado-diario';
 
 type Tab = 'no-leidos' | 'leidos' | 'pendientes';
-
-/** ISO (yyyy-MM-dd) a formato chileno. Se parte el string en vez de usar Date:
- *  una fecha ISO pura se interpreta como UTC y en Chile corre un día. */
-function fmtFechaChip(iso: string): string {
-  const [anio, mes, dia] = iso.split('-');
-  return dia && mes && anio ? `${dia}-${mes}-${anio}` : iso;
-}
 
 @Component({
   selector: 'app-movimientos-list',
@@ -273,6 +271,12 @@ export class MovimientosListComponent implements OnInit {
   filterFechaDesde = '';
   filterFechaHasta = '';
   filterRut = '';
+  /**
+   * De dónde salió la fecha que está puesta: "ayer", "ultimo" o null si la
+   * eligió el usuario. Solo cambia el rótulo del chip — sin él, un día de hace
+   * dos semanas parece un error de la aplicación y no el último con datos.
+   */
+  motivoFecha: FechaInicialResponse['motivo'] = null;
 
   /** Filtros ya aplicados, los que se ven como badges. */
   readonly chipsFiltros = signal<ChipFiltro[]>([]);
@@ -318,8 +322,37 @@ export class MovimientosListComponent implements OnInit {
       next: (res) => this.jurisdicciones.set(res.jurisdicciones),
     });
 
-    this.loadData();
-    this.loadCounts();
+    // El día por defecto se pide ANTES de la primera consulta y no en paralelo:
+    // cargar todo el histórico para reemplazarlo medio segundo después haría
+    // dos consultas pesadas y un parpadeo de contenido en pantalla.
+    this.service.getFechaInicial().subscribe({
+      next: (res) => {
+        this.aplicarFechaInicial(res);
+        this.loadData();
+        this.loadCounts();
+      },
+      // Sin fecha sugerida se muestra todo, que es como funcionaba antes: es
+      // una comodidad, no un requisito para que la pantalla sirva.
+      error: () => {
+        this.loadData();
+        this.loadCounts();
+      },
+    });
+  }
+
+  /**
+   * Deja puesto el día que sugiere el backend, como filtro de UN día.
+   *
+   * Es solo el valor inicial: queda como chip y el usuario lo puede quitar para
+   * ver todo el histórico. Por eso se escribe en los mismos campos que usaría a
+   * mano y no en un filtro aparte que no pudiera sacar.
+   */
+  private aplicarFechaInicial(res: FechaInicialResponse): void {
+    if (!res?.fecha) return;
+    this.filterFechaDesde = res.fecha;
+    this.filterFechaHasta = res.fecha;
+    this.motivoFecha = res.motivo;
+    this.sincronizarChips();
   }
 
   private normalizeTab(value: string | null): Tab | null {
@@ -433,6 +466,7 @@ export class MovimientosListComponent implements OnInit {
     this.filterFechaDesde = '';
     this.filterFechaHasta = '';
     this.filterRut = '';
+    this.motivoFecha = null;
     this.onFilter();
   }
 
@@ -442,11 +476,19 @@ export class MovimientosListComponent implements OnInit {
       case 'jurisdiccion':
         this.filterJurisdiccion = null;
         break;
+      case 'fecha_dia':
+        // El chip de un día son los dos extremos puestos en la misma fecha.
+        this.filterFechaDesde = '';
+        this.filterFechaHasta = '';
+        this.motivoFecha = null;
+        break;
       case 'fecha_desde':
         this.filterFechaDesde = '';
+        this.motivoFecha = null;
         break;
       case 'fecha_hasta':
         this.filterFechaHasta = '';
+        this.motivoFecha = null;
         break;
       case 'rut':
         this.filterRut = '';
@@ -472,11 +514,22 @@ export class MovimientosListComponent implements OnInit {
         valor: j?.nombre ?? String(this.filterJurisdiccion),
       });
     }
-    if (this.filterFechaDesde) {
-      chips.push({ clave: 'fecha_desde', etiqueta: 'Desde', valor: fmtFechaChip(this.filterFechaDesde) });
-    }
-    if (this.filterFechaHasta) {
-      chips.push({ clave: 'fecha_hasta', etiqueta: 'Hasta', valor: fmtFechaChip(this.filterFechaHasta) });
+    // Un solo día se muestra como un chip y no como "Desde X" + "Hasta X":
+    // es el caso del valor por defecto, y dos badges con la misma fecha se
+    // leen como si fueran un rango.
+    if (this.filterFechaDesde && this.filterFechaDesde === this.filterFechaHasta) {
+      chips.push({
+        clave: 'fecha_dia',
+        etiqueta: etiquetaFecha(this.motivoFecha),
+        valor: fmtFechaChip(this.filterFechaDesde),
+      });
+    } else {
+      if (this.filterFechaDesde) {
+        chips.push({ clave: 'fecha_desde', etiqueta: 'Desde', valor: fmtFechaChip(this.filterFechaDesde) });
+      }
+      if (this.filterFechaHasta) {
+        chips.push({ clave: 'fecha_hasta', etiqueta: 'Hasta', valor: fmtFechaChip(this.filterFechaHasta) });
+      }
     }
     if (this.filterRut) {
       chips.push({ clave: 'rut', etiqueta: 'RUT', valor: this.filterRut });

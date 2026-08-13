@@ -1,7 +1,12 @@
+import logging
 import os
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from pydantic_settings import BaseSettings
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 # Directorio de archivos subidos (upload web e ingesta por correo)
 UPLOAD_DIR = os.path.join(
@@ -215,3 +220,26 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def zona_horaria() -> ZoneInfo:
+    """La zona de `TIMEZONE`, o UTC si está mal escrita.
+
+    Vive acá y no en quien la usa porque son varios: el job de ingesta, para
+    decidir si ya pasó la hora programada, y la fecha por defecto del estado
+    diario. Todos tienen que estar de acuerdo en qué día es hoy — en Chile,
+    la diferencia con UTC cambia el día durante toda la tarde.
+
+    No revienta con una zona inválida: dejar de importar correos porque alguien
+    escribió mal el .env sería peor que hacerlo con la hora corrida.
+    """
+    try:
+        return ZoneInfo(settings.TIMEZONE)
+    except Exception:
+        logger.warning("Zona horaria '%s' inválida; se usa UTC", settings.TIMEZONE)
+        return ZoneInfo("UTC")
+
+
+def hoy_local() -> date:
+    """Qué día es hoy para el usuario, no para el servidor."""
+    return datetime.now(zona_horaria()).date()

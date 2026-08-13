@@ -1,9 +1,11 @@
+from datetime import date, timedelta
 from typing import Optional
 import math
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import hoy_local
 from app.models.audiencia import Audiencia
 from app.models.causa import Causa
 from app.models.causa_corte import CausaCorte
@@ -35,6 +37,8 @@ class EstadoDiarioOrigenRepository:
         tipo: Optional[str] = None,
         page: int = 1,
         per_page: int = 20,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
     ):
         total_query = self.db.query(func.count(EstadoDiarioOrigen.id))
         items_query = self.db.query(EstadoDiarioOrigen)
@@ -42,6 +46,17 @@ class EstadoDiarioOrigenRepository:
         if tipo is not None:
             total_query = total_query.filter(EstadoDiarioOrigen.tipo == tipo)
             items_query = items_query.filter(EstadoDiarioOrigen.tipo == tipo)
+
+        # La fecha del REPORTE, no la de carga: es la que el usuario reconoce
+        # como "el estado diario del lunes", y la misma por la que se filtran
+        # los movimientos. Filtrar por `fecha_carga` mostraría el archivo del
+        # viernes que se importó recién el lunes bajo el día equivocado.
+        if fecha_desde:
+            total_query = total_query.filter(EstadoDiarioOrigen.fecha >= fecha_desde)
+            items_query = items_query.filter(EstadoDiarioOrigen.fecha >= fecha_desde)
+        if fecha_hasta:
+            total_query = total_query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
+            items_query = items_query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
 
         total = total_query.scalar()
         total_pages = max(1, math.ceil(total / per_page))
@@ -54,6 +69,38 @@ class EstadoDiarioOrigenRepository:
         )
 
         return items, total, total_pages
+
+    def fecha_inicial_estado_diario(self) -> tuple[Optional[date], Optional[str]]:
+        """Qué día mostrar al abrir el estado diario, y por qué ese.
+
+        Devuelve `(fecha, motivo)` con motivo en {"ayer", "ultimo"}, o
+        `(None, None)` si el estudio todavía no ha cargado ningún estado diario.
+
+        El día por defecto es AYER: el estado diario de una fecha recoge lo que
+        pasó ese día y se revisa a la mañana siguiente, así que al entrar lo que
+        se quiere ver es el del día anterior. Si ese día no tiene archivo —fin
+        de semana, feriado, o simplemente todavía no llegó— se cae al más
+        reciente que sí tenga, porque una pantalla vacía no dice si no hubo
+        movimientos o si falló la importación.
+
+        Ojo con "ayer": es ayer EN CHILE, no en UTC. El servidor puede estar en
+        otro huso y durante toda la tarde chilena la fecha UTC ya es la del día
+        siguiente; sin esto, la pantalla saltaría de día a media jornada.
+
+        Solo mira los orígenes de tipo estado diario. Los de movimientos,
+        audiencias y causas tienen su propia cadencia y no deberían mover el
+        día que se le ofrece a esta pantalla.
+        """
+        ayer = hoy_local() - timedelta(days=1)
+        base = self.db.query(EstadoDiarioOrigen.fecha).filter(
+            EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_ESTADO_DIARIO
+        )
+
+        if base.filter(EstadoDiarioOrigen.fecha == ayer).first():
+            return ayer, "ayer"
+
+        ultima = base.order_by(EstadoDiarioOrigen.fecha.desc()).first()
+        return (ultima[0], "ultimo") if ultima else (None, None)
 
     def ids_ingresados_por_correo(self, origen_ids: list[int]) -> set[int]:
         """De esos archivos, cuáles llegaron por la casilla de ingesta.

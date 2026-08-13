@@ -3,7 +3,12 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
-import { EstadoDiarioOrigen, TipoOrigen } from '@core/models/estado-diario.model';
+import {
+  EstadoDiarioOrigen,
+  TipoOrigen,
+  FechaInicialResponse,
+} from '@core/models/estado-diario.model';
+import { fmtFechaChip } from '@shared/fecha-estado-diario';
 import { CorreoLogComponent } from '../../../configuracion/components/correo-log/correo-log.component';
 
 /** Las pestañas: los cuatro tipos de archivo, más la casilla de correo. */
@@ -72,6 +77,21 @@ type Pestana = TipoOrigen | 'correo';
           }
         </nav>
       </div>
+
+      <!-- Aviso del día por defecto. Es la única pantalla del módulo sin panel
+           de filtros, así que el filtro se explica y se quita desde acá mismo:
+           un listado acotado sin decirlo parece que faltaran archivos. -->
+      @if (filtroFecha() && activeTab() === 'estado_diario') {
+        <div class="alert-info flex items-center justify-between gap-4 flex-wrap">
+          <span>
+            {{ motivoFecha() === 'ultimo' ? 'Último día con datos:' : 'Mostrando el día' }}
+            <strong>{{ fechaLegible() }}</strong>
+          </span>
+          <button type="button" class="btn-secondary btn-sm shrink-0" (click)="verTodos()">
+            Ver todos los archivos
+          </button>
+        </div>
+      }
 
       @if (activeTab() === 'correo') {
         <!-- La casilla trae su propia paginación, su filtro por resultado y el
@@ -198,6 +218,22 @@ export class OrigenesListComponent implements OnInit {
 
   activeTab = signal<Pestana>('estado_diario');
 
+  /**
+   * Día por defecto, y de dónde salió.
+   *
+   * Solo se aplica en la pestaña de estado diario. Las otras tres tienen su
+   * propia cadencia —causas se carga una vez y reemplaza a la anterior— y
+   * acotarlas con una fecha sacada del estado diario las dejaría vacías por un
+   * motivo que no tiene nada que ver con ellas.
+   */
+  filtroFecha = signal<string | null>(null);
+  motivoFecha = signal<FechaInicialResponse['motivo']>(null);
+
+  fechaLegible = computed(() => {
+    const f = this.filtroFecha();
+    return f ? fmtFechaChip(f) : '';
+  });
+
   private readonly SUBTITULOS: Record<Pestana, string> = {
     estado_diario: 'Archivos de estado diario cargados',
     movimientos: 'Archivos de movimientos cargados',
@@ -228,11 +264,31 @@ export class OrigenesListComponent implements OnInit {
     this.activeTab.set(this.normalizeTab(queryTab) ?? 'estado_diario');
     // La pestaña de correo trae sus propios datos: pedirle archivos al backend
     // sería una consulta que nadie va a mirar.
-    if (this.activeTab() !== 'correo') {
-      this.loadPage(1);
-    } else {
+    if (this.activeTab() === 'correo') {
       this.loading.set(false);
+      return;
     }
+
+    // El día por defecto se resuelve antes de la primera consulta para no
+    // traer el listado completo y reemplazarlo enseguida.
+    this.service.getFechaInicial().subscribe({
+      next: (res) => {
+        if (res?.fecha) {
+          this.filtroFecha.set(res.fecha);
+          this.motivoFecha.set(res.motivo);
+        }
+        this.loadPage(1);
+      },
+      // Sin fecha sugerida se listan todos, como antes.
+      error: () => this.loadPage(1),
+    });
+  }
+
+  /** Saca el día por defecto y vuelve a listar todo el histórico. */
+  verTodos(): void {
+    this.filtroFecha.set(null);
+    this.motivoFecha.set(null);
+    this.loadPage(1);
   }
 
   private normalizeTab(value: string | null): Pestana | null {
@@ -277,8 +333,11 @@ export class OrigenesListComponent implements OnInit {
     // no existe en el backend y devolvería la lista vacía sin decir por qué.
     if (tipo === 'correo') return;
 
+    // El día solo acota el estado diario; ver el comentario de `filtroFecha`.
+    const dia = tipo === 'estado_diario' ? this.filtroFecha() ?? undefined : undefined;
+
     this.loading.set(true);
-    this.service.getOrigenes(page, 20, tipo).subscribe({
+    this.service.getOrigenes(page, 20, tipo, dia, dia).subscribe({
       next: (res) => {
         this.origenes.set(res.origenes);
         this.currentPage.set(res.page);

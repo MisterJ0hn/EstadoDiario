@@ -2,11 +2,12 @@ import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-import { Corte, TipoCorte } from '@core/models/estado-diario.model';
+import { Corte, TipoCorte, FechaInicialResponse } from '@core/models/estado-diario.model';
 import {
   ChipFiltro,
   FiltrosPanelComponent,
 } from '@shared/components/filtros-panel/filtros-panel.component';
+import { etiquetaFecha, fmtFechaChip } from '@shared/fecha-estado-diario';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 
 /**
@@ -75,6 +76,14 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
             </select>
           </div>
         }
+        <div>
+          <label class="form-label" for="c-desde">Fecha desde</label>
+          <input id="c-desde" type="date" class="form-input" [(ngModel)]="filtroFechaDesde" />
+        </div>
+        <div>
+          <label class="form-label" for="c-hasta">Fecha hasta</label>
+          <input id="c-hasta" type="date" class="form-input" [(ngModel)]="filtroFechaHasta" />
+        </div>
       </app-filtros-panel>
 
       <div class="card">
@@ -175,6 +184,10 @@ export class CortesListComponent implements OnInit {
   filtroBusqueda = '';
   filtroTipo: TipoCorte | '' = '';
   filtroCorte = '';
+  filtroFechaDesde = '';
+  filtroFechaHasta = '';
+  /** De dónde salió la fecha puesta: solo cambia el rótulo del chip. */
+  motivoFecha: FechaInicialResponse['motivo'] = null;
 
   /** Filtros ya aplicados, los que se ven como badges. */
   readonly chipsFiltros = signal<ChipFiltro[]>([]);
@@ -183,7 +196,22 @@ export class CortesListComponent implements OnInit {
   private readonly porPagina = 50;
 
   ngOnInit(): void {
-    this.cargar();
+    // Mismo día por defecto que las otras pantallas de estado diario, y por el
+    // mismo motivo: lo que se revisa es el día anterior. Se pide antes de la
+    // primera consulta para no traer todo el histórico y reemplazarlo enseguida.
+    this.service.getFechaInicial().subscribe({
+      next: (res) => {
+        if (res?.fecha) {
+          this.filtroFechaDesde = res.fecha;
+          this.filtroFechaHasta = res.fecha;
+          this.motivoFecha = res.motivo;
+          this.sincronizarChips();
+        }
+        this.cargar();
+      },
+      // Sin fecha sugerida se muestra todo, como antes: es una comodidad.
+      error: () => this.cargar(),
+    });
   }
 
   cargar(): void {
@@ -195,6 +223,8 @@ export class CortesListComponent implements OnInit {
         tipo: this.filtroTipo || undefined,
         busqueda: this.filtroBusqueda.trim() || undefined,
         corte: this.filtroCorte || undefined,
+        fecha_desde: this.filtroFechaDesde || undefined,
+        fecha_hasta: this.filtroFechaHasta || undefined,
         page: this.pagina(),
         limit: this.porPagina,
       })
@@ -226,6 +256,9 @@ export class CortesListComponent implements OnInit {
     this.filtroBusqueda = '';
     this.filtroTipo = '';
     this.filtroCorte = '';
+    this.filtroFechaDesde = '';
+    this.filtroFechaHasta = '';
+    this.motivoFecha = null;
     this.onFiltrar();
   }
 
@@ -247,6 +280,20 @@ export class CortesListComponent implements OnInit {
       case 'corte':
         this.filtroCorte = '';
         break;
+      case 'fecha_dia':
+        // El chip de un día son los dos extremos en la misma fecha.
+        this.filtroFechaDesde = '';
+        this.filtroFechaHasta = '';
+        this.motivoFecha = null;
+        break;
+      case 'fecha_desde':
+        this.filtroFechaDesde = '';
+        this.motivoFecha = null;
+        break;
+      case 'fecha_hasta':
+        this.filtroFechaHasta = '';
+        this.motivoFecha = null;
+        break;
     }
     this.onFiltrar();
   }
@@ -265,6 +312,22 @@ export class CortesListComponent implements OnInit {
     }
     if (this.filtroCorte) {
       chips.push({ clave: 'corte', etiqueta: 'Corte', valor: this.filtroCorte });
+    }
+    // Un solo día va como un chip, no como "Desde X" + "Hasta X": es el caso
+    // del valor por defecto y dos badges iguales se leen como un rango.
+    if (this.filtroFechaDesde && this.filtroFechaDesde === this.filtroFechaHasta) {
+      chips.push({
+        clave: 'fecha_dia',
+        etiqueta: etiquetaFecha(this.motivoFecha),
+        valor: fmtFechaChip(this.filtroFechaDesde),
+      });
+    } else {
+      if (this.filtroFechaDesde) {
+        chips.push({ clave: 'fecha_desde', etiqueta: 'Desde', valor: fmtFechaChip(this.filtroFechaDesde) });
+      }
+      if (this.filtroFechaHasta) {
+        chips.push({ clave: 'fecha_hasta', etiqueta: 'Hasta', valor: fmtFechaChip(this.filtroFechaHasta) });
+      }
     }
     this.chipsFiltros.set(chips);
   }
