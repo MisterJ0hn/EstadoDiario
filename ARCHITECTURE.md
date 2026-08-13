@@ -642,11 +642,34 @@ consola de Twilio debe quedar configurado con la **URL pública** del sitio
 - Es público (sin Bearer): quien llama es Twilio. Lo autentica la cabecera
   `X-Twilio-Signature`, validada con el Auth Token; se puede desactivar en
   Configuración → WhatsApp si la firma no calza.
+- **No lleva `get_db_tenant`.** Esa dependencia arrastra `HTTPBearer()`, que
+  responde 403 antes de entrar al handler cuando falta `Authorization` — y
+  Twilio nunca la manda. Puesta ahí deja el webhook mudo y sin rastro, porque
+  la bitácora se escribe dentro del handler que no llegó a correr.
 - Ubica el recordatorio por `OriginalRepliedMessageSid` = `estado_diario_agenda.twilio_sid`.
 - Botón "Resuelto": marca el movimiento leído y finaliza el recordatorio.
 - Cualquier otro botón: posterga `ButtonPayload` minutos creando un
   recordatorio nuevo (copia del original) y finalizando el anterior.
-- Cada llamada, aceptada o rechazada, queda en `api_llamado_estado_diario`.
+
+**Cómo sabe a qué base ir.** Sin JWT no hay guid, y con un solo número de
+WhatsApp para todos los estudios el callback tampoco trae nada que identifique
+al cliente (`To` es el número del SaaS, `From` el teléfono del abogado). Por eso
+al enviar cada mensaje se anota `(twilio_sid → cliente)` en la tabla
+`whatsapp_envio` de la base principal, y el webhook resuelve el tenant con esa
+consulta. Si el SID no está anotado —mensajes enviados antes de que existiera la
+tabla— recorre las bases de los clientes activos buscándolo, y anota lo que
+encuentra: cada mensaje viejo paga ese recorrido una sola vez. Lo orquesta
+`app/services/twilio_webhook_service.py`; la lógica sobre la base del estudio
+sigue en `EstadoDiarioService.webhook_twilio`.
+
+El orden importa: **primero la firma, después el cliente.** Validar la firma
+solo necesita la configuración global, así que un callback falso se rechaza sin
+abrir una conexión contra la base de ningún estudio.
+
+- Las llamadas atribuidas a un cliente quedan en su `api_llamado_estado_diario`.
+  Las que no se pueden atribuir (firma inválida, SID desconocido) quedan **solo
+  en el log de la aplicación**: esa tabla vive en la base de un cliente, y ahí
+  todavía no se sabe cuál.
 
 ## Facturación
 

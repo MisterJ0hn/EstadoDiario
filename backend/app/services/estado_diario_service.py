@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundException, BadRequestException, ForbiddenException
+from app.core.exceptions import NotFoundException, BadRequestException
 from app.models.estado_diario import EstadoDiario
 from app.models.estado_diario_agenda import EstadoDiarioAgenda
 from app.models.api_llamado_estado_diario import ApiLlamadoEstadoDiario
@@ -15,7 +15,6 @@ from app.repositories.usuario_repository import UsuarioRepository
 from app.repositories.api_log_repository import ApiLogRepository
 from app.services import auditoria_service as auditoria
 from app.services.google_calendar_service import GoogleCalendarService
-from app.services.whatsapp_service import WhatsappService
 
 logger = logging.getLogger(__name__)
 
@@ -402,19 +401,14 @@ class EstadoDiarioService:
         ]
         return {"exito": True, "total": len(data), "agendas": data}
 
-    def webhook_twilio(
-        self,
-        datos: dict,
-        firma: Optional[str] = None,
-        urls: Optional[list[str]] = None,
-    ):
+    def webhook_twilio(self, datos: dict):
         """Callback de Twilio con la respuesta de botón de un recordatorio.
 
-        Público (sin Bearer): quien llama es Twilio, no nuestro frontend. Lo
-        que autentica el request es la firma X-Twilio-Signature, calculada con
-        el Auth Token; sin ella cualquiera que conozca la URL podría marcar
-        movimientos como resueltos. Todo el request queda guardado en
-        api_llamado_estado_diario, exitoso o no.
+        Recibe una sesión sobre la base del cliente que YA está resuelto: la
+        autenticación del callback (firma X-Twilio-Signature) y averiguar de
+        qué cliente es pasan antes, en `twilio_webhook_service.procesar_callback`,
+        porque ninguna de las dos cosas se puede hacer desde la base de un
+        cliente. Acá empieza lo que sí es de este estudio.
 
         El mensaje original se identifica por OriginalRepliedMessageSid, que
         calza con EstadoDiarioAgenda.twilio_sid guardado al enviarlo. El botón
@@ -427,14 +421,6 @@ class EstadoDiarioService:
         (por ejemplo, la base caída) propaga el error y devuelve 500.
         """
         log = self._create_log("request-tw", json.dumps(datos, ensure_ascii=False, default=str))
-
-        # Antes del try: un rechazo por firma no es un error a reintentar, se
-        # registra una sola vez y corta con 403.
-        motivo = WhatsappService(self.db).validar_firma_twilio(urls or [], datos, firma)
-        if motivo:
-            logger.warning("Webhook Twilio rechazado: %s", motivo)
-            self._save_log(log, False, error=motivo)
-            raise ForbiddenException("Firma de Twilio inválida")
 
         try:
             button_text = str(datos.get("ButtonText") or "").strip()

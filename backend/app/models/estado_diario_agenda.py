@@ -45,7 +45,10 @@ class EstadoDiarioAgenda(BaseTenant):
     enviado: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     fecha_envio: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     mensaje_error: Mapped[Optional[str]] = mapped_column(Text)
-    twilio_sid: Mapped[Optional[str]] = mapped_column(String(64))
+    # Indexada porque el webhook de Twilio busca por acá, y cuando el SID no
+    # está anotado en `whatsapp_envio` la consulta se repite en la base de cada
+    # cliente hasta dar con él (ver `twilio_webhook_service`).
+    twilio_sid: Mapped[Optional[str]] = mapped_column(String(64), index=True)
 
     # ── Google Calendar ──
     google_event_id: Mapped[Optional[str]] = mapped_column(String(255))

@@ -45,7 +45,9 @@ def main() -> int:
                 continue
             try:
                 with sesion_tenant(cliente.guid) as db_tenant:
-                    resultado = WhatsappService(db_tenant, db_maestra).enviar_pendientes()
+                    resultado = WhatsappService(
+                        db_tenant, db_maestra, cliente.cliente_id
+                    ).enviar_pendientes()
                 logger.info("WhatsApp del cliente %s: %s", cliente.guid, resultado.get("mensaje"))
                 if not resultado.get("exito"):
                     con_error += 1

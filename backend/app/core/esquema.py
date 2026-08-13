@@ -137,7 +137,13 @@ INDICES_NUEVOS_MAESTRA: list[tuple[str, ...]] = [
     ("ix_factura_periodo", "factura", "periodo"),
     ("ix_factura_estado", "factura", "estado"),
 ]
-INDICES_NUEVOS_TENANT: list[tuple[str, ...]] = []
+INDICES_NUEVOS_TENANT: list[tuple[str, ...]] = [
+    # El webhook público de Twilio busca el recordatorio por este SID, y cuando
+    # no está anotado en `whatsapp_envio` repite la consulta en la base de cada
+    # cliente. La tabla ya existe en producción, así que create_all() no crea
+    # este índice aunque el modelo lo declare.
+    ("ix_estado_diario_agenda_twilio_sid", "estado_diario_agenda", "twilio_sid"),
+]
 
 # Los nombres son los que usa SQLAlchemy para un `index=True` (ix_<tabla>_<col>):
 # si no coincidieran, create_all() intentaría crearlos de nuevo en una base

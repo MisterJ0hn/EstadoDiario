@@ -21,4 +21,5 @@ from app.models.maestra import (  # noqa: F401
     password_historial_admin,
     tarifa_cliente,
     usuario_admin,
+    whatsapp_envio,
 )

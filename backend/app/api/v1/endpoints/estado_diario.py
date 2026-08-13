@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
+from app.core.database import get_db_maestra
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.schemas.estado_diario import (
@@ -30,6 +31,7 @@ from app.services.estado_diario_service import EstadoDiarioService
 from app.services.import_service import ImportService
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
 from app.services import auditoria_service as auditoria
+from app.services import twilio_webhook_service
 
 logger = logging.getLogger(__name__)
 
@@ -526,6 +528,21 @@ def _urls_candidatas(request: Request) -> list[str]:
     return list(dict.fromkeys(candidatas))  # sin repetidos, conservando el orden
 
 
+# OJO CON LAS DEPENDENCIAS DE ESTE ENDPOINT: va contra la base PRINCIPAL y no
+# lleva `get_db_tenant` ni `get_usuario_actual`. No es un descuido.
+#
+# Quien llama es Twilio, que no manda `Authorization`. `get_db_tenant` arrastra
+# `get_tenant_actual` → `HTTPBearer()`, que con `auto_error=True` corta con 403
+# "Not authenticated" ANTES de entrar al cuerpo de la función. Puesta acá, esa
+# dependencia deja el webhook mudo: los botones del WhatsApp dejan de hacer
+# efecto y no queda ni un registro que lo explique, porque la bitácora se
+# escribe dentro del handler que nunca corre. Ya pasó una vez.
+#
+# El tenant no puede salir de un token que no existe: lo resuelve
+# `twilio_webhook_service` por el SID del mensaje. Mismo caso que el retorno de
+# Webpay en `pagos.py`, que tampoco puede exigir sesión.
+
+
 @router.post(
     "/request-tw",
     response_model=WebhookResponse,
@@ -533,7 +550,7 @@ def _urls_candidatas(request: Request) -> list[str]:
 )
 async def webhook_twilio(
     request: Request,
-    db: Session = Depends(get_db_tenant),
+    db_maestra: Session = Depends(get_db_maestra),
 ):
     """Endpoint público para recibir callbacks de Twilio.
 
@@ -543,8 +560,8 @@ async def webhook_twilio(
     Con la firma activa solo pasan los POST form-urlencoded reales de Twilio.
     """
     datos = await _leer_datos_webhook(request)
-    service = EstadoDiarioService(db)
-    return service.webhook_twilio(
+    return twilio_webhook_service.procesar_callback(
+        db_maestra,
         datos,
         firma=request.headers.get("X-Twilio-Signature"),
         urls=_urls_candidatas(request),

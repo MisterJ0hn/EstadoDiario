@@ -164,6 +164,13 @@ def test_la_base_principal_no_lleva_datos_operativos():
         # operativo de ningún cliente: los de ellos van en su propia base, en
         # la tabla homónima de BaseTenant.
         "usuario_password_historial",
+        # (twilio_sid -> cliente) de cada WhatsApp enviado. Es la excepción que
+        # confirma la regla: SÍ apunta a algo operativo, pero lo que guarda es
+        # justamente EN QUÉ BASE está ese algo. El webhook de Twilio es público
+        # —no trae JWT— y sin esta tabla no tendría de dónde sacar el tenant;
+        # guardarla en la base del cliente sería tener que saber la respuesta
+        # para poder buscarla. Ver app/services/twilio_webhook_service.py.
+        "whatsapp_envio",
     ]
 
 
@@ -225,3 +232,112 @@ def test_usuario_es_una_tabla_distinta_en_cada_base():
     assert "rol" not in maestra.columns
     assert "usuario_hash" in tenant.columns
     assert "rol" not in tenant.columns
+
+
+# ── Qué endpoints exigen sesión y cuáles no ──────────────────────────────
+#
+# Esto se prueba sobre el árbol de dependencias de cada ruta y no haciendo
+# requests: lo que se está fijando es cómo quedó DECLARADO el endpoint, que es
+# donde estuvo el error. Un test que hiciera el request necesitaría base de
+# datos y probaría además cosas que no son el punto.
+
+PUBLICO_ESTADO_DIARIO = "/api/v1/estado-diario/request-tw"
+
+
+def _ruta(sufijo: str):
+    """La única ruta cuyo path termina en `sufijo`."""
+    from app.main import app
+
+    rutas = [r for r in app.routes if getattr(r, "path", "") .endswith(sufijo)]
+    assert len(rutas) == 1, f"Se esperaba una sola ruta terminada en {sufijo}, hay {len(rutas)}"
+    return rutas[0]
+
+
+def _dependencias(dep):
+    """El árbol de dependencias de una ruta, aplanado.
+
+    Recursivo porque lo que importa está anidado: `get_db_tenant` no declara
+    seguridad, la hereda de `get_tenant_actual`, que a su vez depende de
+    `HTTPBearer`. Mirar solo el primer nivel no vería nada.
+    """
+    yield dep
+    for sub in dep.dependencies:
+        yield from _dependencias(sub)
+
+
+def _esquemas_de_seguridad(ruta) -> list[str]:
+    dependant = getattr(ruta, "dependant", None)
+    if dependant is None:  # Mount, WebSocket y demás: no son endpoints HTTP
+        return []
+    return [
+        type(s.security_scheme).__name__
+        for d in _dependencias(dependant)
+        for s in d.security_requirements
+    ]
+
+
+def _llamables(ruta) -> set[str]:
+    return {
+        d.call.__name__ for d in _dependencias(ruta.dependant) if d.call is not None
+    }
+
+
+def test_el_webhook_de_twilio_no_exige_sesion():
+    """`/request-tw` es público: quien llama es Twilio y no manda Authorization.
+
+    Agregarle `get_db_tenant` o `get_usuario_actual` arrastra `HTTPBearer`, que
+    con `auto_error=True` corta con 403 ANTES de entrar al handler. El efecto es
+    especialmente malo porque es silencioso: los botones del WhatsApp dejan de
+    hacer nada y no queda registro de por qué, ya que la bitácora se escribe
+    dentro del handler que nunca llegó a correr. Ya pasó una vez.
+    """
+    assert _esquemas_de_seguridad(_ruta(PUBLICO_ESTADO_DIARIO)) == []
+
+
+def test_el_webhook_de_twilio_va_contra_la_base_principal():
+    """El tenant no puede salir de un token que no existe.
+
+    Lo resuelve `twilio_webhook_service` por el SID del mensaje, contra la tabla
+    `whatsapp_envio` de la base principal; por eso la dependencia correcta acá
+    es `get_db_maestra` y no `get_db_tenant`.
+    """
+    llamables = _llamables(_ruta(PUBLICO_ESTADO_DIARIO))
+    assert "get_db_maestra" in llamables
+    assert "get_db_tenant" not in llamables
+    assert "get_usuario_actual" not in llamables
+
+
+def test_el_resto_de_estado_diario_si_exige_sesion():
+    """El complemento del test anterior, para que no se afloje de más.
+
+    Sin esto, "sacarle la autenticación al webhook" podría pasar a ser
+    "sacársela a todo el módulo" sin que nadie se entere.
+    """
+    from app.main import app
+
+    for ruta in app.routes:
+        path = getattr(ruta, "path", "")
+        if not path.startswith("/api/v1/estado-diario") or path == PUBLICO_ESTADO_DIARIO:
+            continue
+        assert "HTTPBearer" in _esquemas_de_seguridad(ruta), (
+            f"{path} quedó sin exigir sesión"
+        )
+
+
+def test_el_indice_de_envios_de_whatsapp_vive_en_la_base_principal():
+    """`whatsapp_envio` responde "¿en qué base está este mensaje?".
+
+    Guardarla en la base de un cliente sería tener que saber la respuesta para
+    poder buscarla, así que es la única tabla que apunta a algo operativo y aun
+    así pertenece a la base principal.
+    """
+    assert "whatsapp_envio" in BaseMaestra.metadata.tables
+    assert "whatsapp_envio" not in BaseTenant.metadata.tables
+
+    columnas = BaseMaestra.metadata.tables["whatsapp_envio"].columns
+    assert "twilio_sid" in columnas
+    assert "cliente_id" in columnas
+    # No único a propósito: las filas del envío se confirman en un solo commit,
+    # así que un SID repetido tumbaría el índice del lote entero y no solo el
+    # suyo. Se resuelve leyendo el más reciente. Ver el modelo.
+    assert not columnas["twilio_sid"].unique
