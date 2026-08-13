@@ -33,9 +33,16 @@ def ultimo_origen_causas_id(db: Session) -> Optional[int]:
     así que sumar las filas de todos los archivos multiplica la cartera por la
     cantidad de veces que se cargó el reporte.
 
-    Se ordena por `fecha` —la del reporte, no la de carga— porque es la que
-    dice a qué día corresponde la foto; `id` desempata cuando el mismo día se
-    cargó más de una vez.
+    **Una cartera cargada le gana a una deducida, sea cual sea la fecha.** La
+    deducida es el reemplazo que arma el cruce mientras el estudio no sube el
+    reporte de Causas (ver `CarteraSyncService._crear_cartera_deducida`), y es
+    parcial: si ganara por ser más nueva, un estudio con su reporte de Causas
+    del mes pasado pasaría a mostrar —y a facturar— las pocas causas que se
+    movieron esta semana. Por eso `deducida` ordena primero.
+
+    Después se ordena por `fecha` —la del reporte, no la de carga— porque es la
+    que dice a qué día corresponde la foto; `id` desempata cuando el mismo día
+    se cargó más de una vez.
 
     Vive suelta y no en la clase porque la usan los dos repositorios de la
     cartera —el de materia y el de corte— y las dos hojas salen del MISMO
@@ -45,7 +52,11 @@ def ultimo_origen_causas_id(db: Session) -> Optional[int]:
     fila = (
         db.query(EstadoDiarioOrigen.id)
         .filter(EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS)
-        .order_by(EstadoDiarioOrigen.fecha.desc(), EstadoDiarioOrigen.id.desc())
+        .order_by(
+            EstadoDiarioOrigen.deducida.asc(),
+            EstadoDiarioOrigen.fecha.desc(),
+            EstadoDiarioOrigen.id.desc(),
+        )
         .first()
     )
     return fila[0] if fila else None

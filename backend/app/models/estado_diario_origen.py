@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Optional, List
 
-from sqlalchemy import String, Date, DateTime, ForeignKey
+from sqlalchemy import Boolean, String, Date, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import BaseTenant
@@ -40,6 +40,21 @@ class EstadoDiarioOrigen(BaseTenant):
     url: Mapped[Optional[str]] = mapped_column(String(255))
     fecha_carga: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    # Este "archivo" no lo subió nadie: lo armó el cruce con lo que traían el
+    # estado diario y los movimientos, porque el estudio todavía no ha cargado
+    # el reporte de Causas (ver `CarteraSyncService.sincronizar`).
+    #
+    # **Por qué hace falta distinguirlo.** Una cartera deducida es parcial por
+    # construcción —el estado diario de un día trae decenas de causas y el
+    # reporte de Causas, miles— y sin embargo es la cartera vigente mientras
+    # sea el último origen de tipo `causas`: se muestra en Mis Causas y se
+    # factura. Dos cosas dependen de poder reconocerla: la pantalla, para no
+    # presentarla como si fuera la cartera completa, y la carga del reporte
+    # real, que la reemplaza en vez de chocar con ella.
+    deducida: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
     )
 
     # Relationships

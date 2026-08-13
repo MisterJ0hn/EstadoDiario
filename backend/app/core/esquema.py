@@ -71,6 +71,21 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     ("factura", "origen_detalle", "VARCHAR(500)"),
     ("factura", "origen_causas_id", "INTEGER"),
     ("factura", "fecha_archivo_causas", "DATE"),
+    # Suspensión automática por mora. Arranca en 0 —apagada— también en las
+    # instalaciones que ya existen: nadie la pidió, así que no puede empezar a
+    # suspender clientes por el solo hecho de actualizar.
+    ("configuracion_sistema", "dias_mora_suspension", "INTEGER DEFAULT 0"),
+    # Tarifas de lista. Los DEFAULT son los valores que estaban en el código,
+    # así que una instalación que actualiza sigue cobrando exactamente igual.
+    ("configuracion_sistema", "tarifa_materia", "NUMERIC(14,2) DEFAULT 1"),
+    ("configuracion_sistema", "tarifa_apelaciones", "NUMERIC(14,2) DEFAULT 2"),
+    ("configuracion_sistema", "tarifa_suprema", "NUMERIC(14,2) DEFAULT 3"),
+    # Pago con Webpay. Distingue al cliente que suspendió el job de mora del
+    # que desactivó una persona, que en la base eran indistinguibles: es lo que
+    # impide que pagar una factura reactive a alguien dado de baja a mano. El
+    # DEFAULT deja en FALSE a todos los inactivos que ya existen — nadie sabe
+    # por qué se los desactivó, así que no se reactivan solos.
+    ("cliente", "suspendido_por_mora", "BOOLEAN DEFAULT FALSE"),
 ]
 
 COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
@@ -88,6 +103,9 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # cargadas hasta que corra el cruce: no se puede deducir de la nada.
     ("causa", "ultima_actividad", "DATE"),
     ("causa", "origen_actividad", "VARCHAR(20)"),
+    # Cartera armada por el cruce porque el estudio no ha cargado el reporte de
+    # Causas. FALSE en todo lo que ya existe: esos archivos los subió alguien.
+    ("estado_diario_origen", "deducida", "BOOLEAN DEFAULT FALSE"),
 ]
 
 # Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`

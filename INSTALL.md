@@ -282,15 +282,47 @@ encarga. No hay que recompilar las aplicaciones Angular: la site key la
 entregan `GET /api/v1/auth/recaptcha` de cada API.
 
 En producción **hay que estrenarlo en modo monitor** antes de bloquear a
-nadie, y la app Android queda fuera. El procedimiento completo y por qué está
-en `DEPLOY.md`, sección "Encender reCAPTCHA".
+nadie. El procedimiento completo y por qué está en `DEPLOY.md`, sección
+"Encender reCAPTCHA".
 
 Para desarrollo conviene un par de llaves aparte con `localhost` registrado:
 meter `localhost` en la llave de producción degrada los puntajes reales.
 
+### La app Android necesita su propio par
+
+El APK corre en un WebView cuyo origen es `https://localhost`. Ese dominio no
+está registrado en la llave del sitio —y registrarlo ahí degradaría los
+puntajes reales de la web— así que sin llaves propias la app **no puede acuñar
+tokens y su login queda rechazado**.
+
+Se resuelve con un segundo par v3, con `localhost` en su lista de dominios:
+
+```env
+RECAPTCHA_SITE_KEY_APP=<site key del par de la app>
+RECAPTCHA_SECRET_KEY_APP=<su secret>
+```
+
+El backend elige el par mirando el `Origin` de cada petición, y con el mismo
+criterio en las dos mitades: la que sirve la site key por
+`GET /api/v1/auth/recaptcha` y la que verifica el token. **No hay que tocar
+nada en las apps**: ese encabezado lo pone el navegador.
+
+Con el par vacío —o a medias— todo usa la llave de la web, que es como se
+comportaba antes de que esto existiera.
+
+**Ojo con el tipo de clave.** En la consola de Google hay que crear una de tipo
+**sitio web (v3)**, que entrega *site key + secret*. Una clave de tipo
+**Android** entrega solo un identificador y no sirve acá: se verifica contra la
+API de *assessments* de reCAPTCHA Enterprise y exige el SDK nativo de Android,
+que esta app —un WebView— no usa.
+
 ## Purga de la Bitácora
 
-`log_actividades` registra una fila por acción y crece rápido. La política de
+`log_actividades` registra una fila por acción y crece rápido. Resolver un
+movimiento y dejarlo pendiente también quedan registrados (`marcar_leido` y
+`marcar_pendiente`), y son las acciones más frecuentes del día a día: en un
+estudio con movimiento alto la bitácora crece varios miles de filas al mes, así
+que la purga no es opcional. La política de
 permanencia se fija en **Administración de la plataforma → Sistema** (con
 override por cliente en su ficha) y la aplica un job nocturno, base por base:
 
@@ -338,6 +370,40 @@ Dos cosas que conviene saber al mirar el resultado:
 Una causa agregada por el cruce **se factura igual que las demás**. Queda marcada
 con `origen_dato` para poder explicar de dónde salió.
 
+## Suspensión automática por mora
+
+Un cliente con facturas impagas se suspende solo pasados N días desde la emisión
+de la más antigua. El plazo se fija en **Administración → Configuración**, no en
+el código: es una decisión comercial.
+
+**Viene apagada** (`0 días`). Suspender es lo más agresivo que hace el sistema
+—los abogados del estudio no pueden entrar, la ingesta por correo lo salta y no
+salen sus recordatorios— así que no puede empezar a ocurrir porque alguien
+desplegó una versión nueva. La pantalla de configuración avisa a cuántos
+clientes afectaría el plazo guardado antes de que nadie lo aplique.
+
+```bash
+# Ver a quién suspendería, sin tocar nada
+docker exec ed_backend python -m app.jobs.suspender_morosos --simular
+# Aplicarlo
+docker exec ed_backend python -m app.jobs.suspender_morosos
+
+# En el crontab del host, una vez al día
+30 5 * * * docker exec ed_backend python -m app.jobs.suspender_morosos >> /var/log/estado_diario_mora.log 2>&1
+```
+
+Dos cosas que conviene saber:
+
+- **Se cuenta desde la emisión**, porque la factura no lleva fecha de
+  vencimiento: es el único dato que consta.
+- **Nadie se reactiva solo.** Pagar no levanta la suspensión: un cliente puede
+  estar suspendido por otro motivo, y revertirlo automáticamente sería deshacer
+  una decisión que no se tomó ahí. Reactivar sigue siendo manual, desde Clientes.
+
+El botón de suspender a mano quedó oculto en la consola. El código y su modal
+siguen en su sitio: para volver a habilitarlo se cambia una condición en
+`clientes-list.component.ts`.
+
 ## Facturación Mensual
 
 Se cobra por cantidad de causas de la cartera vigente: una línea por materia
@@ -376,6 +442,77 @@ con filtros por período, RUT, cliente activo/inactivo, nombre y número. La
 estimación del mes en curso (antes de que existan las facturas) está en
 **Facturación → Estimar el mes**, y las tarifas de cada cliente en su ficha →
 **Tarifas**.
+
+### Pago en línea con Webpay Plus (opcional)
+
+El estudio puede pagar su factura con tarjeta desde **Mis Facturas**. El botón
+aparece solo en las facturas emitidas y solo si la plataforma tiene el pago
+encendido; el cobro lo procesa Transbank y los datos de la tarjeta no pasan por
+el sitio.
+
+**Viene apagado.** Se configura en **Administración → Configuración →
+Transbank**: ambiente (integración o producción), código de comercio y API key.
+La API key se guarda cifrada, igual que la contraseña de la casilla de correo, y
+no vuelve a mostrarse. En integración, sin credenciales propias, se usa el
+comercio de prueba de Transbank y no se cobra nada.
+
+**Nada va en el `.env`** salvo `PUBLIC_BASE_URL`, que ya existe: de ahí sale la
+URL a la que Transbank devuelve el navegador
+(`PUBLIC_BASE_URL/api/v1/pagos/webpay/retorno`). Tiene que ser la URL **pública**
+del sitio y en producción tiene que ser `https`.
+
+Cómo funciona, y por qué importa el orden:
+
+1. El estudio aprieta *Pagar* y el backend crea la transacción en Transbank.
+2. El navegador va al formulario de Webpay. **Todavía no se cobró nada.**
+3. Al volver, el backend *confirma* la transacción. Recién ahí se captura el
+   cargo, se marca la factura como pagada y se redibuja el PDF con la cinta
+   PAGADA.
+
+Una transacción creada y no confirmada **se reversa sola a los 10 minutos**, así
+que un usuario que cierra el navegador a mitad de camino no queda con un cargo.
+
+Cada intento —aprobado, rechazado, anulado o abandonado— queda registrado y se
+consulta en la ficha de la factura, en la consola. Ahí está la **orden de
+compra**, que es el dato que pide Transbank para buscar una transacción, y el
+código de autorización.
+
+Dos cosas que conviene saber:
+
+- **El monto se compara antes de dar nada por pagado.** Si lo confirmado por
+  Transbank no coincide con el de la factura, el pago queda en `error`, la
+  factura NO se marca y queda el aviso en el log.
+- **Pagar toda la deuda levanta la suspensión por mora**, y solo esa: un cliente
+  que el operador desactivó a mano no se reactiva pagando. Lo que las distingue
+  es la columna `cliente.suspendido_por_mora`, que escribe el job de mora.
+
+Para probar, con el ambiente en *integración*, están las tarjetas de prueba que
+publica Transbank en su documentación de Webpay Plus. El botón *Probar conexión*
+de la pantalla de configuración crea una transacción de $10 que no se confirma:
+sirve para validar las credenciales sin cobrar, incluso en producción.
+
+### Rediseño del documento
+
+El PDF de una factura se escribe **una sola vez**, al emitirla, y no se regenera
+al descargarlo: eso es lo que garantiza que la copia que el cliente tiene en su
+correo y la que baja hoy sean el mismo archivo. Hay dos excepciones.
+
+La primera es automática: el documento lleva una cinta con el estado —NO PAGADA,
+PAGADA, ANULADA— y esa cinta es el único dato que cambia después de emitido, así
+que marcar pagada o anular vuelve a dibujar el PDF guardado. No se recalcula
+nada: número, líneas y total salen de la factura tal como quedó.
+
+La segunda es a mano, cuando cambia el diseño y hay facturas viejas con el
+anterior:
+
+```bash
+docker exec ed_backend python -m app.jobs.redibujar_facturas --simular
+docker exec ed_backend python -m app.jobs.redibujar_facturas
+```
+
+Acepta `--desde AAAA-MM`, `--hasta AAAA-MM` y `--numero` (repetible). **No va al
+crontab**: reescribe el PDF de documentos ya entregados, así que conviene correr
+primero `--simular`, que no escribe nada.
 
 ### Migración desde la versión anterior
 

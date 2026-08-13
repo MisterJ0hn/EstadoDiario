@@ -239,10 +239,15 @@ Angular, porque la site key la sirve el backend en `GET /api/v1/auth/recaptcha`.
 
 **Lo que hay que saber antes de encender:**
 
-- **La app Android deja de poder iniciar sesión.** Su WebView corre desde el
-  origen `https://localhost`, que no está registrado en la consola, así que no
-  puede acuñar tokens. Si el conteo de `sin_token` de la etapa 1 muestra
-  tráfico de APK, hay que resolver eso primero.
+- **La app Android necesita su propio par de llaves.** Su WebView corre desde
+  el origen `https://localhost`, que no está registrado en la llave del sitio,
+  así que con ella no puede acuñar tokens y su login queda rechazado. Se
+  configura `RECAPTCHA_SITE_KEY_APP` / `RECAPTCHA_SECRET_KEY_APP` con un par v3
+  que sí tenga `localhost` entre sus dominios; el backend elige uno u otro por
+  el `Origin` de cada petición (ver INSTALL.md). Si el conteo de `sin_token` de
+  la etapa 1 muestra tráfico de APK, es esto. **Tiene que ser una clave de tipo
+  sitio web**: la de tipo Android entrega solo un ID, se verifica contra la API
+  de *assessments* de Enterprise y exige el SDK nativo, que este WebView no usa.
 - **Si Google no responde, se deja pasar.** Es deliberado: lo contrario cambia
   una caída de Google por una caída total del producto, en la que ni el
   administrador puede entrar a arreglarla. Se ve en el log como

@@ -206,8 +206,9 @@ backend/
 │   │       ├── password_historial_admin.py  # su historial de contraseñas
 │   │       ├── configuracion_sistema.py
 │   │       ├── factura.py          #   la factura mensual + su detalle + PDF
+│   │       ├── pago.py             #   cada intento de pago con Webpay
 │   │       ├── tarifa_cliente.py   #   el precio acordado con cada cliente
-│   │       └── configuracion_*.py  #   correo, smtp, google, whatsapp
+│   │       └── configuracion_*.py  #   correo, smtp, google, whatsapp, transbank
 │   ├── schemas/                    # Pydantic DTOs
 │   ├── repositories/               # Acceso a datos
 │   ├── services/
@@ -230,6 +231,7 @@ backend/
 │       ├── purgar_logs.py
 │       ├── generar_facturacion.py  # El día 1: factura el mes que terminó
 │       ├── sincronizar_cartera.py  # Cruza los 3 reportes contra Mis Causas
+│       ├── suspender_morosos.py   # Suspende por mora (apagado por defecto)
 │       ├── migrar_facturas_mensuales.py # Un solo uso: cierres → facturas
 │       └── migrar_a_multitenant.py # Un solo uso: ver "Migración"
 ├── Dockerfile
@@ -490,6 +492,9 @@ frontend/src/app/
                             las no anuladas)
    factura_detalle        → una fila por concepto (cada materia, y las dos
                             cortes) con cantidad y valor unitario COPIADO
+   pago                   → cada intento de pago con Webpay de una factura,
+                            incluidos los rechazados y los abandonados
+                            (token UNIQUE; buy_order propio de cada intento)
    tarifa_cliente         → el precio por concepto de cada cliente
                             (cliente_id, concepto) UNIQUE; sin fila se cobra
                             el valor por defecto de la plataforma
@@ -584,9 +589,11 @@ principal; algunas operaciones abren además la base del cliente indicado.
 | GET      | /api/v1/admin/facturacion/facturas/{id}/pdf       | Descargar el PDF guardado            |
 | POST     | /api/v1/admin/facturacion/facturas/{id}/anular    | Anular sin liberar el número         |
 | POST     | /api/v1/admin/facturacion/facturas/{id}/pagada    | Marcar / desmarcar como pagada       |
+| GET      | /api/v1/admin/facturacion/facturas/{id}/pagos     | Intentos de pago con Webpay          |
 | GET      | /api/v1/admin/facturacion/estimacion              | Cuánto saldría si se facturara ahora |
 | POST     | /api/v1/admin/facturacion/generar                 | Generar el período a mano            |
 | GET/PUT  | /api/v1/admin/facturacion/clientes/{id}/tarifas   | Tarifas del cliente                  |
+| GET/PUT  | /api/v1/configuracion-transbank                   | Credenciales de Webpay (API key cifrada) |
 
 ### Dentro del estudio
 
@@ -597,6 +604,11 @@ principal; algunas operaciones abren además la base del cliente indicado.
 | PUT     | /api/v1/usuarios/{id}/permisos        | admin del estudio      |
 | GET     | /api/v1/configuracion-correo          | admin del estudio (solo lectura) |
 | GET     | /api/v1/configuracion-correo/log      | admin del estudio      |
+| GET     | /api/v1/facturas                      | cualquiera del estudio (solo lectura) |
+| GET     | /api/v1/facturas/{id}/pdf             | cualquiera del estudio |
+| GET     | /api/v1/pagos/disponible              | si Webpay está encendido |
+| POST    | /api/v1/pagos/webpay/{factura_id}     | inicia el pago de una factura propia |
+| POST    | /api/v1/pagos/webpay/retorno          | **público**: lo llama el navegador que vuelve de Webpay |
 
 No existen `POST /usuarios` ni `PUT /configuracion-correo`: crear cuentas y
 configurar la casilla son de la plataforma.
@@ -796,6 +808,7 @@ base lista se saltan.
 30 3 * * *    docker exec ed_backend python -m app.jobs.purgar_logs
 0  4 1 * *    docker exec ed_backend python -m app.jobs.generar_facturacion
 15 2 * * *    docker exec ed_backend python -m app.jobs.sincronizar_cartera
+30 5 * * *    docker exec ed_backend python -m app.jobs.suspender_morosos
 ```
 
 La revisión de correo corre en **cada pasada** del cron y no una vez al día: el

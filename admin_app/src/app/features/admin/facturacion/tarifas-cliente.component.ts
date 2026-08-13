@@ -87,7 +87,7 @@ import { mensajeError } from './facturas-list.component';
                 <thead>
                   <tr>
                     <th scope="col">Concepto</th>
-                    <th scope="col" class="text-right">Valor por causa</th>
+                    <th scope="col" style="text-align:right!important">Valor por causa</th>
                     <th scope="col">Origen</th>
                     <th scope="col"><span class="sr-only">Acciones</span></th>
                   </tr>
@@ -96,7 +96,7 @@ import { mensajeError } from './facturas-list.component';
                   @for (b of base(); track b.concepto) {
                     <tr>
                       <td class="font-medium">{{ b.etiqueta }}</td>
-                      <td class="tabular-nums text-right font-semibold">
+                      <td class="tabular-nums font-semibold" style="text-align:right!important">
                         {{ b.valor | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                       </td>
                       <td>
@@ -147,7 +147,7 @@ import { mensajeError } from './facturas-list.component';
                   <thead>
                     <tr>
                       <th scope="col">Materia</th>
-                      <th scope="col" class="text-right">Valor por causa</th>
+                      <th scope="col" style="text-align:right!important">Valor por causa</th>
                       <th scope="col">Estado</th>
                       <th scope="col"><span class="sr-only">Acciones</span></th>
                     </tr>
@@ -156,7 +156,7 @@ import { mensajeError } from './facturas-list.component';
                     @for (t of excepciones(); track t.id) {
                       <tr [class.opacity-60]="!t.activo">
                         <td class="font-medium">{{ nombreMateria(t.concepto) }}</td>
-                        <td class="tabular-nums text-right font-semibold">
+                        <td class="tabular-nums font-semibold" style="text-align:right!important">
                           {{ t.valor_unitario | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                         </td>
                         <td>

@@ -204,6 +204,7 @@ class FacturaService:
         existe aunque se haya anulado."""
         factura = self.obtener(factura_id)
         factura.marcar_anulada(motivo)
+        self._redibujar_pdf(factura)
         self.db.commit()
         self.db.refresh(factura)
         logger.info("Factura %s anulada: %s", factura.numero_formateado, motivo)
@@ -212,9 +213,13 @@ class FacturaService:
     def marcar_pagada(self, factura_id: int, pagada: bool) -> Factura:
         """Pone o saca la marca de pagada.
 
-        No hay integración con ningún banco: lo registra una persona que vio el
-        pago. Una factura anulada no se puede marcar pagada, que es lo que
-        evita cuadrar una contabilidad contra un documento que no existe.
+        La llaman dos caminos: el operador que vio llegar el pago, y
+        `PagoService` cuando Transbank confirma un pago con Webpay. Es a
+        propósito que sea la misma función — el redibujo del PDF con la cinta
+        PAGADA y la validación de la anulada tienen que valer para los dos.
+
+        Una factura anulada no se puede marcar pagada, que es lo que evita
+        cuadrar una contabilidad contra un documento que no existe.
         """
         factura = self.obtener(factura_id)
         if factura.anulada:
@@ -222,9 +227,45 @@ class FacturaService:
                 "Una factura anulada no se puede marcar como pagada."
             )
         factura.estado = Factura.ESTADO_PAGADA if pagada else Factura.ESTADO_EMITIDA
+        self._redibujar_pdf(factura)
         self.db.commit()
         self.db.refresh(factura)
         logger.info(
             "Factura %s marcada como %s", factura.numero_formateado, factura.estado
         )
         return factura
+
+    def _redibujar_pdf(self, factura: Factura) -> None:
+        """Vuelve a dibujar el PDF guardado cuando cambia el estado.
+
+        **Es la única excepción a "el PDF no se regenera".** El documento lleva
+        una cinta con el estado —NO PAGADA, PAGADA, ANULADA— y esa cinta es el
+        único dato que cambia después de emitido: dejar la copia guardada
+        diciendo NO PAGADA sobre una orden ya pagada sería un documento que
+        miente cada vez que alguien lo descarga.
+
+        Lo que se cobra no se recalcula: el número, las líneas, las cantidades y
+        el total salen de la factura tal como quedó guardada, así que el
+        documento nuevo difiere del anterior solo en la cinta.
+
+        Si no había PDF —una factura vieja de antes de que se guardaran— no se
+        inventa uno acá: eso se resuelve regenerando el período, que es donde
+        están los datos para hacerlo bien.
+        """
+        if not factura.pdf:
+            return
+
+        # Import local: `facturacion_service` importa este módulo para calcular,
+        # y a nivel de módulo las dos importaciones se cruzarían.
+        from app.services import factura_pdf
+        from app.services.facturacion_service import datos_pdf
+
+        try:
+            factura.pdf = factura_pdf.generar(datos_pdf(factura))
+        except Exception:  # noqa: BLE001
+            # Un dibujo que falla no puede impedir que se registre un pago: el
+            # estado es el dato importante y el PDF se puede rehacer después.
+            logger.exception(
+                "No se pudo redibujar el PDF de la factura %s; queda el anterior",
+                factura.numero_formateado,
+            )

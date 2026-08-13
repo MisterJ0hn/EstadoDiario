@@ -83,6 +83,12 @@ export interface AudienciaUploadResponse {
   audiencias_actualizadas?: number;
   audiencias_sin_fecha?: number;
   por_materia?: Record<string, number>;
+  /**
+   * Nunca llega en audiencias —ese reporte no alimenta la cartera— pero la
+   * pantalla de carga es una sola para los tres tipos y lee este campo del
+   * resultado, sea cual sea el archivo.
+   */
+  aviso_cartera?: string | null;
 }
 
 export interface SincronizarGoogleResponse {

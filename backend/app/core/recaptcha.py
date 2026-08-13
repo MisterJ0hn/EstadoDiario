@@ -104,11 +104,55 @@ def activo() -> bool:
     return bool(settings.RECAPTCHA_SECRET_KEY and settings.RECAPTCHA_SITE_KEY)
 
 
-def configuracion_publica() -> dict:
-    """Lo que el frontend necesita saber. El secret no sale de acá jamás."""
+def es_origen_app(origen: Optional[str]) -> bool:
+    """Si la petición viene del WebView del APK.
+
+    Se mira la cabecera `Origin`, que la pone el navegador —el WebView es
+    uno— y no el código de la app: no hay un "soy la app" que el cliente
+    declare. Aun así **esto no es un control de seguridad**: cualquiera puede
+    mandar esa cabecera con `curl`. Lo único que decide es CON QUÉ LLAVE se
+    verifica; quien dice si el token vale sigue siendo Google, contra la lista
+    de dominios de esa llave.
+
+    Esa es justamente la razón de tener dos pares: la llave del APK acepta
+    `localhost` y por eso es la más débil de las dos, así que el tráfico de la
+    web —que es el grueso— se sigue verificando con la llave estricta.
+    """
+    if not origen:
+        return False
+    return origen.strip().rstrip("/").lower() in settings.recaptcha_origenes_app
+
+
+def _par_llaves(origen: Optional[str] = None) -> tuple[str, str]:
+    """(site_key, secret) que corresponden a quien pregunta.
+
+    El par del APK solo se usa si está COMPLETO. Con medio par configurado se
+    cae al de la web, que es lo mismo que hacía el sistema antes de que este
+    segundo par existiera: preferible a rechazar el 100% de los ingresos desde
+    la app por una variable a medio pegar en el `.env`.
+    """
+    if (
+        es_origen_app(origen)
+        and settings.RECAPTCHA_SITE_KEY_APP
+        and settings.RECAPTCHA_SECRET_KEY_APP
+    ):
+        return settings.RECAPTCHA_SITE_KEY_APP, settings.RECAPTCHA_SECRET_KEY_APP
+    return settings.RECAPTCHA_SITE_KEY, settings.RECAPTCHA_SECRET_KEY
+
+
+def configuracion_publica(origen: Optional[str] = None) -> dict:
+    """Lo que el frontend necesita saber. El secret no sale de acá jamás.
+
+    Devuelve la site key del par que le corresponde a quien pregunta, y por eso
+    recibe el origen: si al APK se le sirviera la llave de la web, acuñaría un
+    token que después se verifica contra el otro secret y fallaría el 100% de
+    las veces. Las dos mitades —la que se sirve acá y la que verifica en
+    `verificar`— tienen que decidir con el MISMO criterio.
+    """
     if not activo():
         return {"activo": False, "site_key": None}
-    return {"activo": True, "site_key": settings.RECAPTCHA_SITE_KEY}
+    site_key, _ = _par_llaves(origen)
+    return {"activo": True, "site_key": site_key}
 
 
 def advertir_configuracion_incompleta() -> None:
@@ -136,7 +180,9 @@ def _no_concluyente(motivo: str) -> Veredicto:
     )
 
 
-def _consultar_a_google(token: str, ip: Optional[str]) -> Optional[dict]:
+def _consultar_a_google(
+    token: str, ip: Optional[str], secret: Optional[str] = None
+) -> Optional[dict]:
     """Llama a siteverify. Devuelve el JSON, o None si no se pudo hablar.
 
     El `timeout` no es opcional: un `requests.post` sin él deja el worker
@@ -148,7 +194,10 @@ def _consultar_a_google(token: str, ip: Optional[str]) -> Optional[dict]:
         respuesta = requests.post(
             settings.RECAPTCHA_VERIFY_URL,
             data={
-                "secret": settings.RECAPTCHA_SECRET_KEY,
+                # El del par que eligió `_par_llaves`. Verificar con el secret
+                # de otra llave devuelve `invalid-input-response` y se ve igual
+                # que un token falsificado.
+                "secret": secret or settings.RECAPTCHA_SECRET_KEY,
                 "response": token,
                 # Opcional para Google y solo informativo: un valor equivocado
                 # no rompe la verificación.
@@ -209,17 +258,28 @@ def _accion_calza(recibida: Optional[str], esperada: str) -> bool:
     return False
 
 
-def verificar(token: Optional[str], accion_esperada: str, ip: Optional[str] = None) -> Veredicto:
-    """Consulta a Google y aplica las reglas. No lanza: devuelve el veredicto."""
+def verificar(
+    token: Optional[str],
+    accion_esperada: str,
+    ip: Optional[str] = None,
+    origen: Optional[str] = None,
+) -> Veredicto:
+    """Consulta a Google y aplica las reglas. No lanza: devuelve el veredicto.
+
+    `origen` es la cabecera `Origin` y solo sirve para elegir con qué par de
+    llaves verificar (ver `_par_llaves`). El veredicto no depende de él.
+    """
     if not activo():
         return Veredicto(aprobado=True, concluyente=False, motivo="desactivado")
 
     if not token:
         # Estando activo, un formulario sin token es un cliente que no ejecutó
-        # el captcha: un bot, un bloqueador de contenido, o la app Android.
+        # el captcha: un bot o un bloqueador de contenido. La app Android
+        # también caía acá hasta que tuvo su propio par de llaves.
         return Veredicto(aprobado=False, concluyente=True, motivo="sin_token")
 
-    datos = _consultar_a_google(token, ip)
+    _, secret = _par_llaves(origen)
+    datos = _consultar_a_google(token, ip, secret)
     if datos is None:
         return _no_concluyente("sin_respuesta")
 
@@ -255,13 +315,18 @@ def verificar(token: Optional[str], accion_esperada: str, ip: Optional[str] = No
     return Veredicto(aprobado=True, concluyente=True, motivo="ok", **comun)
 
 
-def exigir(token: Optional[str], accion_esperada: str, ip: Optional[str] = None) -> None:
+def exigir(
+    token: Optional[str],
+    accion_esperada: str,
+    ip: Optional[str] = None,
+    origen: Optional[str] = None,
+) -> None:
     """Verifica y corta con 400 si corresponde.
 
     400 y no 401: no es una credencial que no calza, y un 401 en el login se
     leería como "contraseña incorrecta", que sería información falsa.
     """
-    veredicto = verificar(token, accion_esperada, ip)
+    veredicto = verificar(token, accion_esperada, ip, origen)
 
     if not veredicto.concluyente and veredicto.motivo != "desactivado":
         logger.warning(
@@ -332,6 +397,13 @@ def verificado(accion: str) -> Callable:
         request: Request,
         x_recaptcha_token: Optional[str] = Header(default=None, alias="X-Recaptcha-Token"),
     ) -> None:
-        exigir(x_recaptcha_token, accion, ip=_ip_cliente(request))
+        exigir(
+            x_recaptcha_token,
+            accion,
+            ip=_ip_cliente(request),
+            # De acá sale con qué par de llaves verificar: el WebView del APK
+            # se identifica con `Origin: https://localhost`.
+            origen=request.headers.get("Origin"),
+        )
 
     return _dependencia

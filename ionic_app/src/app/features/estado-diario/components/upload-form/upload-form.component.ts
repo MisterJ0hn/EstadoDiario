@@ -1,19 +1,36 @@
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Observable } from 'rxjs';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { MovimientoService } from '@features/movimientos/services/movimiento.service';
 import { AudienciaService } from '@features/audiencias/services/audiencia.service';
 import { AuthService } from '@core/services/auth.service';
 import { NotificationService } from '@core/services/notification.service';
-import { TipoOrigenCargable } from '@core/models/estado-diario.model';
+import { ApiResponse, TipoOrigenCargable } from '@core/models/estado-diario.model';
 import { coincideConAlguno, formatearRut } from '@core/utils/rut';
+
+/**
+ * Lo que esta pantalla necesita de una carga, sea cual sea el archivo.
+ *
+ * Los tres servicios devuelven tipos distintos, y suscribirse a la unión de sus
+ * observables no compila: TypeScript no puede unificar las firmas de
+ * `subscribe`. Se declara acá el contrato común —lo único que la pantalla
+ * lee— en vez de castear en el punto de uso.
+ */
+interface RespuestaCarga extends ApiResponse {
+  movimientos_importados?: number;
+  audiencias_nuevas?: number;
+  audiencias_actualizadas?: number;
+  /** Solo lo traen las cargas que alimentan la cartera. */
+  aviso_cartera?: string | null;
+}
 
 @Component({
   selector: 'app-upload-form',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="max-w-2xl mx-auto space-y-6">
       <div>
@@ -86,6 +103,21 @@ import { coincideConAlguno, formatearRut } from '@core/utils/rut';
 
           @if (errorMsg()) {
             <div class="alert-danger">{{ errorMsg() }}</div>
+          }
+
+          <!-- El cruce armó la cartera solo porque falta el reporte de Causas.
+               Va acá y no en un toast, y por eso la pantalla NO navega: es un
+               aviso que hay que leer, y desaparecería antes de eso. -->
+          @if (avisoCartera()) {
+            <div class="alert-warning">
+              <div class="flex-1">
+                <p class="font-medium">Mis Causas se armó con lo que había</p>
+                <p class="text-sm mt-1">{{ avisoCartera() }}</p>
+              </div>
+              <a routerLink="/causas/cargar" class="btn-warning btn-sm shrink-0">
+                Cargar Causas
+              </a>
+            </div>
           }
 
           <div class="flex justify-end gap-3 pt-2">
@@ -172,6 +204,8 @@ export class UploadFormComponent {
   parsedInfo = signal<{ rut: string; fecha: string } | null>(null);
   uploading = signal(false);
   errorMsg = signal('');
+  /** Lo que el cruce tenga que advertir tras una carga correcta. */
+  avisoCartera = signal('');
 
   private readonly EJEMPLOS: Record<TipoOrigenCargable, string> = {
     estado_diario: 'estadoDiario_16952077__28072026.xls',
@@ -359,7 +393,7 @@ export class UploadFormComponent {
     const rut = this.rut || undefined;
     const fecha = this.fecha || undefined;
 
-    const carga =
+    const carga: Observable<RespuestaCarga> =
       this.tipo === 'movimientos'
         ? this.movimientoService.uploadFile(archivo, rut, fecha)
         : this.tipo === 'audiencias'
@@ -371,6 +405,12 @@ export class UploadFormComponent {
         this.uploading.set(false);
         if (res.exito) {
           this.notification.success(this.mensajeCarga(res));
+          if (res.aviso_cartera) {
+            // Se queda en la pantalla: el aviso explica por qué Mis Causas
+            // quedó como quedó, y navegar lo haría desaparecer sin leerlo.
+            this.avisoCartera.set(res.aviso_cartera);
+            return;
+          }
           // Vuelve a Archivos, en la pestaña del tipo que se acaba de cargar.
           this.router.navigate(['/estado-diario'], { queryParams: { tab: this.tipo } });
         } else {

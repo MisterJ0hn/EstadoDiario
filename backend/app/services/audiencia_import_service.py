@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 
 from app.models.audiencia import Audiencia
 from app.models.estado_diario_origen import EstadoDiarioOrigen
+from app.services import auditoria_service as auditoria
 from app.repositories.audiencia_repository import AudienciaRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
 from app.services.deteccion_archivo import verificar_contenido
@@ -359,6 +360,12 @@ class AudienciaImportService:
         self.db.flush()  # asigna origen.id sin cerrar la transacción
 
         nuevas, actualizadas = self._persistir(filas, origen, usuario_id)
+        auditoria.registrar(
+            self.db, auditoria.MODULO_AUDIENCIAS, auditoria.ACCION_IMPORTAR,
+            usuario_id=usuario_id,
+            detalle=f"{origen.nombre_archivo or file_path}: {nuevas} nuevas, "
+                    f"{actualizadas} actualizadas",
+        )
         self.db.commit()
 
         por_materia: dict[str, int] = {}

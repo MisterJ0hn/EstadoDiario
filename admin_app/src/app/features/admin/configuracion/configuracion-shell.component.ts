@@ -40,6 +40,7 @@ export class ConfiguracionShellComponent {
     { ruta: 'smtp', etiqueta: 'Correo de salida' },
     { ruta: 'google-calendar', etiqueta: 'Google Calendar' },
     { ruta: 'whatsapp', etiqueta: 'WhatsApp' },
+    { ruta: 'transbank', etiqueta: 'Transbank' },
     { ruta: 'sistema', etiqueta: 'Sistema' },
   ];
 }

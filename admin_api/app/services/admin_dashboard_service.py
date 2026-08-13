@@ -15,7 +15,7 @@ estados diarios?", y el que nunca recibió nada va primero.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -23,11 +23,13 @@ from sqlalchemy.orm import Session
 from app.core.database import sesion_tenant
 from app.models.maestra.cliente import Cliente
 from app.repositories.cliente_repository import ClienteRepository
+from app.models.maestra.cliente_estado_historial import ClienteEstadoHistorial
 from admin_api.app.schemas.cliente import (
     AdminDashboard,
     ClienteActividad,
     ClienteConProblema,
     DashboardKpis,
+    PuntoEvolucionClientes,
 )
 from admin_api.app.services.cliente_service import ClienteService
 
@@ -37,6 +39,10 @@ logger = logging.getLogger(__name__)
 # semana: los reportes del PJUD llegan a diario hábil, así que siete días sin
 # nada es una caída, no una racha mala.
 UMBRAL_SIN_IMPORTAR = 7
+
+# Cuántos meses dibuja la serie de evolución, contando el corriente. Doce es un
+# año: es el tramo en el que una tendencia de altas y bajas significa algo.
+MESES_EVOLUCION = 12
 
 # Una sola consulta por cliente, todo agregado en la base. Los valores van como
 # subconsultas escalares y no con FILTER (...) porque producción corre
@@ -60,6 +66,52 @@ _SQL_RESUMEN_TENANT = text(
 )
 
 
+def _meses_a_graficar(ahora: datetime, meses: int) -> list[tuple[str, datetime]]:
+    """(etiqueta, instante de corte) de los últimos `meses`, del más viejo al más nuevo.
+
+    La etiqueta es el mes que se reporta (`AAAA-MM`) y el corte es el instante
+    en el que se mira el estado: el **comienzo del mes siguiente**, o sea justo
+    al cerrar ese mes. Los dos van juntos en la misma tupla porque no coinciden
+    —el corte de julio cae en agosto— y separarlos es exactamente el error que
+    desplaza toda la serie un mes.
+
+    El corte del mes corriente es **ahora** y no su fin: preguntar por el futuro
+    daría el mismo número, pero dejaría el último punto del gráfico en un
+    instante distinto al de los KPIs, que son de este momento.
+
+    La aritmética va sobre un contador de meses absoluto (`anio * 12 + mes`)
+    para no tener que tratar diciembre como caso especial en cada paso.
+    """
+    actual = ahora.year * 12 + (ahora.month - 1)
+    puntos: list[tuple[str, datetime]] = []
+
+    for indice in range(actual - (meses - 1), actual):
+        anio, mes = divmod(indice, 12)
+        siguiente = divmod(indice + 1, 12)
+        puntos.append(
+            (
+                f"{anio:04d}-{mes + 1:02d}",
+                datetime(siguiente[0], siguiente[1] + 1, 1, tzinfo=timezone.utc),
+            )
+        )
+
+    puntos.append((f"{ahora.year:04d}-{ahora.month:02d}", ahora))
+    return puntos
+
+
+def _estado_al(transiciones: list[tuple[datetime, str]], corte: datetime) -> str | None:
+    """El estado del cliente en `corte`, o None si todavía no existía.
+
+    Las transiciones vienen ordenadas por fecha, así que se busca la última
+    anterior al corte. Se recorre al revés porque el caso normal —el estado de
+    hoy— está al final.
+    """
+    for fecha, estado in reversed(transiciones):
+        if fecha <= corte:
+            return estado
+    return None
+
+
 def orden_por_abandono(item: ClienteActividad) -> tuple[int, int]:
     """Clave de orden de la tabla del dashboard.
 
@@ -76,6 +128,7 @@ def orden_por_abandono(item: ClienteActividad) -> tuple[int, int]:
 
 class AdminDashboardService:
     def __init__(self, db_maestra: Session):
+        self.db = db_maestra
         self.clientes = ClienteRepository(db_maestra)
         self.servicio = ClienteService(db_maestra)
 
@@ -103,6 +156,8 @@ class AdminDashboardService:
 
         items.sort(key=orden_por_abandono)
 
+        evolucion, historial_desde = self.evolucion_clientes(ahora)
+
         return AdminDashboard(
             dias=dias,
             desde=corte.date(),
@@ -112,14 +167,78 @@ class AdminDashboardService:
             aprovisionamientos_en_curso=en_curso,
             aprovisionamientos_con_error=con_error,
             clientes=items,
+            evolucion_clientes=evolucion,
+            historial_desde=historial_desde,
         )
+
+    # ── Serie mensual ─────────────────────────────────────
+
+    def evolucion_clientes(
+        self, ahora: datetime
+    ) -> tuple[list[PuntoEvolucionClientes], date | None]:
+        """Cuántos clientes había activos y suspendidos al cerrar cada mes.
+
+        Sale de `cliente_estado_historial`, que guarda cada transición. Para
+        cada mes se toma, por cliente, **la última transición anterior al cierre
+        de ese mes**: ese era su estado en ese momento. Un cliente sin ninguna
+        transición previa todavía no existía y no se cuenta — no es lo mismo que
+        estar suspendido.
+
+        Se resuelve en Python y no en SQL a propósito: son doce cortes sobre
+        unas pocas filas por cliente, y la versión en SQL —una ventana
+        `ROW_NUMBER` por mes— no corre en el PostgreSQL 9.2 de producción con la
+        misma sintaxis. Traer el historial completo de una vez y cortarlo doce
+        veces es una consulta contra ninguna.
+
+        Devuelve además desde cuándo hay historial: antes de esa fecha lo único
+        que consta son las altas, y la pantalla tiene que poder decirlo.
+        """
+        filas = (
+            self.db.query(ClienteEstadoHistorial)
+            .order_by(ClienteEstadoHistorial.fecha, ClienteEstadoHistorial.id)
+            .all()
+        )
+
+        # {cliente_id: [(fecha, estado), ...]} ya ordenado por fecha.
+        por_cliente: dict[int, list[tuple[datetime, str]]] = {}
+        for fila in filas:
+            fecha = fila.fecha
+            if fecha.tzinfo is None:
+                # La columna es timestamptz, pero un driver que la devuelva sin
+                # zona haría reventar la comparación de más abajo.
+                fecha = fecha.replace(tzinfo=timezone.utc)
+            por_cliente.setdefault(fila.cliente_id, []).append((fecha, fila.estado))
+
+        serie: list[PuntoEvolucionClientes] = []
+        for etiqueta, corte in _meses_a_graficar(ahora, MESES_EVOLUCION):
+            activos = suspendidos = 0
+            for transiciones in por_cliente.values():
+                estado = _estado_al(transiciones, corte)
+                if estado is None:
+                    continue  # todavía no existía
+                if estado == ClienteEstadoHistorial.ESTADO_ACTIVO:
+                    activos += 1
+                else:
+                    suspendidos += 1
+            serie.append(
+                PuntoEvolucionClientes(
+                    mes=etiqueta, activos=activos, suspendidos=suspendidos
+                )
+            )
+
+        # La primera transición que NO es un alta: es cuando el historial empezó
+        # a registrar suspensiones de verdad.
+        primeros_cambios = [
+            f.fecha for f in filas if f.motivo != ClienteEstadoHistorial.MOTIVO_ALTA
+        ]
+        return serie, min(primeros_cambios).date() if primeros_cambios else None
 
     def _kpis(self, items: list[ClienteActividad]) -> DashboardKpis:
         activos = sum(1 for i in items if i.activo)
         return DashboardKpis(
             clientes_activos=activos,
             clientes_suspendidos=len(items) - activos,
-            usuarios_habilitados=sum(i.total_usuarios for i in items),
+            usuarios_activos=sum(i.total_usuarios for i in items),
             clientes_sin_importar=sum(
                 1
                 for i in items

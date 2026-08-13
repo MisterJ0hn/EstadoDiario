@@ -15,6 +15,7 @@ from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.services import auditoria_service as auditoria
 from app.services.cartera_sync_service import sincronizar_cartera
 from app.models.jurisdiccion import Jurisdiccion
 from app.services.deteccion_archivo import verificar_contenido
@@ -229,8 +230,13 @@ class ImportService:
         # El cruce va ANTES del commit y en la misma transacción: si fallara,
         # no queda un archivo importado y una cartera a medio actualizar.
         self.db.flush()
-        sincronizar_cartera(self.db)
+        cruce = sincronizar_cartera(self.db)
 
+        auditoria.registrar(
+            self.db, auditoria.MODULO_ESTADO_DIARIO, auditoria.ACCION_IMPORTAR,
+            usuario_id=usuario_id,
+            detalle=f"{origen.nombre_archivo or file_path}: {count} movimientos, {cortes} de corte",
+        )
         self.db.commit()
         logger.info(
             "Importados %d movimientos y %d causas de corte para origen %d",
@@ -240,6 +246,11 @@ class ImportService:
             "origen_id": origen.id,
             "movimientos_importados": count,
             "cortes_importados": cortes,
+            # Lo que el cruce tenga que advertir, o None. Antes se quedaba en el
+            # log: el usuario cargaba su archivo, veía "importado con éxito" y
+            # Mis Causas seguía vacío sin que nada se lo explicara.
+            "aviso_cartera": cruce.como_aviso(),
+            "causas_agregadas": cruce.causas_creadas + cruce.cortes_creadas,
         }
 
     def _jurisdiccion_de_corte(self, tipo: str) -> Optional[int]:

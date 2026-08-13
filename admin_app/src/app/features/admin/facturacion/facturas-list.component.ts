@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -16,7 +16,8 @@ import {
   FiltrosPanelComponent,
 } from '@shared/components/filtros-panel/filtros-panel.component';
 import { FacturacionService } from '../services/facturacion.service';
-import { nombreMes } from './periodo';
+import { finDeMes, mesDe, nombreMes } from './periodo';
+import { SelectorMesComponent } from './selector-mes.component';
 
 /**
  * Listado de facturas: la pantalla principal del módulo.
@@ -47,14 +48,20 @@ import { nombreMes } from './periodo';
 @Component({
   selector: 'app-facturas-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, FiltrosPanelComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterLink,
+    FiltrosPanelComponent,
+    SelectorMesComponent,
+  ],
   template: `
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 class="text-2xl font-bold text-neutral-800">Facturación</h1>
           <p class="text-neutral-500 mt-1">
-            Facturas mensuales emitidas a los clientes por su cartera de causas
+            Facturas mensuales
           </p>
         </div>
         <div class="flex items-center gap-2">
@@ -71,6 +78,7 @@ import { nombreMes } from './periodo';
       <!-- Barra de badges + botón que abre el panel. Los campos van proyectados
            acá dentro: el panel solo pone la interacción y el aspecto. -->
       <app-filtros-panel
+        #panelFiltros
         [chips]="chips()"
         titulo="Filtrar facturas"
         (aplicar)="aplicar()"
@@ -86,15 +94,19 @@ import { nombreMes } from './periodo';
           </p>
         </div>
 
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="form-label" for="f-desde">Período desde</label>
-            <input id="f-desde" type="date" class="form-input" [(ngModel)]="borrador.desde" />
-          </div>
-          <div>
-            <label class="form-label" for="f-hasta">Período hasta</label>
-            <input id="f-hasta" type="date" class="form-input" [(ngModel)]="borrador.hasta" />
-          </div>
+        <div>
+          <span class="form-label">Período</span>
+          <!-- Un mes, no un rango: la facturación es mensual y nadie pide "del
+               12 de marzo al 4 de mayo". Primero el año con las flechas y
+               después el mes; elegirlo busca de inmediato y cierra el panel. -->
+          <app-selector-mes
+            [valor]="borrador.periodo"
+            (cambio)="elegirPeriodo($event)"
+          />
+          <p class="text-xs text-neutral-500 mt-1">
+            Elija el año y luego el mes. Por defecto, el mes anterior, que es el
+            último facturado.
+          </p>
         </div>
 
         <div>
@@ -170,7 +182,7 @@ import { nombreMes } from './periodo';
       <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <div class="card">
           <div class="card-body">
-            <p class="text-sm text-neutral-500">Total cobrable</p>
+            <p class="text-sm text-neutral-500">Total</p>
             <p class="text-3xl font-bold text-primary-700 tabular-nums mt-1">
               {{ totalMonto() | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
             </p>
@@ -179,7 +191,7 @@ import { nombreMes } from './periodo';
         </div>
         <div class="card">
           <div class="card-body">
-            <p class="text-sm text-neutral-500">Facturas</p>
+            <p class="text-sm text-neutral-500">Documentos</p>
             <p class="text-2xl font-semibold text-neutral-800 tabular-nums mt-1">
               {{ facturas().length }}
             </p>
@@ -190,7 +202,7 @@ import { nombreMes } from './periodo';
         </div>
         <div class="card">
           <div class="card-body">
-            <p class="text-sm text-neutral-500">Causas facturadas</p>
+            <p class="text-sm text-neutral-500">Causas activas</p>
             <p class="text-2xl font-semibold text-neutral-800 tabular-nums mt-1">
               {{ totalCausas() }}
             </p>
@@ -213,7 +225,18 @@ import { nombreMes } from './periodo';
             <div class="py-16 text-center">
               <p class="text-neutral-600 font-medium">No hay facturas que mostrar</p>
               <p class="text-neutral-500 text-sm mt-1">
-                @if (chips().length) {
+                @if (periodoAplicado(); as mes) {
+                  <!-- El caso más común al abrir: la factura de un mes se
+                       genera el día 1 del mes SIGUIENTE, así que el mes en
+                       curso está vacío casi siempre. Decirlo evita que parezca
+                       que el módulo se rompió. -->
+                  No hay facturas de {{ nombreMes(mes) }}. La facturación de un mes se
+                  genera el día 1 del mes siguiente.
+                  <button type="button" class="text-primary-700 hover:underline"
+                          (click)="verMesAnterior()">
+                    Ver {{ nombreMes(mesAnterior()) }}
+                  </button>.
+                } @else if (chips().length) {
                   Ningún resultado con estos filtros.
                   <button type="button" class="text-primary-700 hover:underline" (click)="limpiar()">
                     Quitarlos todos
@@ -234,8 +257,8 @@ import { nombreMes } from './periodo';
                     <th scope="col">RUT</th>
                     <th scope="col">Período</th>
                     <th scope="col">Generada</th>
-                    <th scope="col" class="text-right">Causas</th>
-                    <th scope="col" class="text-right">Total</th>
+                    <th scope="col" style="text-align:right!important">Causas</th>
+                    <th scope="col" style="text-align:right!important">Total</th>
                     <th scope="col">Estado</th>
                     <th scope="col"><span class="sr-only">Acciones</span></th>
                   </tr>
@@ -271,8 +294,8 @@ import { nombreMes } from './periodo';
                       <td class="whitespace-nowrap text-neutral-600">
                         {{ f.fecha_emision | date: 'dd-MM-yyyy' }}
                       </td>
-                      <td class="tabular-nums text-right">{{ f.total_causas }}</td>
-                      <td class="tabular-nums text-right font-semibold">
+                      <td class="tabular-nums" style="text-align:right!important">{{ f.total_causas }}</td>
+                      <td class="tabular-nums font-semibold" style="text-align:right!important">
                         {{ f.total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                       </td>
                       <td>
@@ -339,6 +362,9 @@ export class FacturasListComponent implements OnInit {
 
   nombreMes = nombreMes;
 
+  /** Para poder cerrarlo al elegir un mes, que aplica sin pasar por "Aplicar". */
+  private panel = viewChild<FiltrosPanelComponent>('panelFiltros');
+
   /**
    * Los badges de lo aplicado.
    *
@@ -357,10 +383,11 @@ export class FacturasListComponent implements OnInit {
         valor: this.clienteNombre() ?? `#${this.clienteId()}`,
       });
     }
+    if (f.periodo) {
+      lista.push({ clave: 'periodo', etiqueta: 'Período', valor: nombreMes(f.periodo) });
+    }
     if (f.q) lista.push({ clave: 'q', etiqueta: 'Búsqueda', valor: f.q });
     if (f.rut) lista.push({ clave: 'rut', etiqueta: 'RUT', valor: formatearRut(f.rut) });
-    if (f.desde) lista.push({ clave: 'desde', etiqueta: 'Desde', valor: fechaLegible(f.desde) });
-    if (f.hasta) lista.push({ clave: 'hasta', etiqueta: 'Hasta', valor: fechaLegible(f.hasta) });
     if (f.activo) {
       lista.push({
         clave: 'activo',
@@ -372,6 +399,16 @@ export class FacturasListComponent implements OnInit {
       lista.push({ clave: 'estado', etiqueta: 'Estado', valor: this.etiquetaEstado(f.estado) });
     }
     return lista;
+  });
+
+  /** El mes aplicado, si el listado está acotado a uno. */
+  periodoAplicado = computed(() => this.aplicado().periodo || null);
+  mesAnterior = computed(() => {
+    const actual = this.periodoAplicado();
+    if (!actual) return mesDe(-1);
+    const [a, m] = actual.split('-').map(Number);
+    const d = new Date(a, m - 2, 1);
+    return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-01`;
   });
 
   anuladas = computed(() => this.facturas().filter((f) => f.anulada).length);
@@ -422,6 +459,20 @@ export class FacturasListComponent implements OnInit {
     this.cargar();
   }
 
+  /**
+   * Un mes del calendario: se aplica al toque y el panel se cierra.
+   *
+   * El resto de los campos espera al botón "Aplicar" porque son texto a medio
+   * escribir; el clic sobre un mes concreto, en cambio, ya es la decisión
+   * entera. Dejarlo esperando una confirmación sería pedir dos gestos para una
+   * sola intención, y con el panel abierto el resultado ni siquiera se ve.
+   */
+  elegirPeriodo(periodo: string): void {
+    this.borrador = { ...this.borrador, periodo };
+    this.panel()?.cerrar();
+    this.aplicar();
+  }
+
   limpiar(): void {
     this.borrador = vacio();
     this.aplicado.set(vacio());
@@ -434,13 +485,22 @@ export class FacturasListComponent implements OnInit {
     this.cargar();
   }
 
+  /** Retrocede un mes desde el vacío del listado. */
+  verMesAnterior(): void {
+    this.borrador = { ...this.borrador, periodo: this.mesAnterior() };
+    this.aplicar();
+  }
+
   /** La ✕ de un badge: quita ese filtro y vuelve a consultar de inmediato. */
   quitarChip(clave: string): void {
     if (clave === 'cliente') {
       this.quitarCliente();
       return;
     }
-    this.borrador = { ...this.borrador, [clave]: '' };
+    this.borrador = {
+      ...this.borrador,
+      [clave]: clave === 'periodo' ? mesDe(-1) : '',
+    };
     this.aplicar();
   }
 
@@ -464,8 +524,11 @@ export class FacturasListComponent implements OnInit {
       limite: this.clienteId() !== null ? this.ULTIMAS_POR_CLIENTE : null,
       q: f.q || null,
       rut: f.rut || null,
-      desde: f.desde || null,
-      hasta: f.hasta || null,
+      // El mes elegido se traduce a su primer y último día, que es lo que
+      // entiende el backend. Sin mes, se acota igual a los últimos 12 para que
+      // el listado no arrastre años de historial.
+      desde: f.periodo || mesDe(-11),
+      hasta: f.periodo ? finDeMes(f.periodo) : finDeMes(mesDe(0)),
       cliente_activo: f.activo === '' ? null : f.activo === 'true',
       estado: (f.estado || null) as EstadoFactura | null,
     };
@@ -545,20 +608,22 @@ export class FacturasListComponent implements OnInit {
 interface Borrador {
   q: string;
   rut: string;
-  desde: string;
-  hasta: string;
+  /** Primer día del mes elegido, en ISO. Vacío = los últimos 12 meses. */
+  periodo: string;
   activo: string;
   estado: string;
 }
 
+/**
+ * El período arranca en el **mes anterior**, no en el que corre.
+ *
+ * La factura de un mes se emite el día 1 del mes siguiente, así que el mes en
+ * curso está vacío casi todo el tiempo y abrir la pantalla en él mostraba un
+ * listado sin nada. El mes anterior es el que acaba de facturarse: es lo que se
+ * viene a mirar.
+ */
 function vacio(): Borrador {
-  return { q: '', rut: '', desde: '', hasta: '', activo: '', estado: '' };
-}
-
-/** `2026-07-01` → `01-07-2026`. Sin pasar por Date, que desplaza el día. */
-function fechaLegible(iso: string): string {
-  const [anio, mes, dia] = iso.split('-');
-  return dia ? `${dia}-${mes}-${anio}` : iso;
+  return { q: '', rut: '', periodo: mesDe(-1), activo: '', estado: '' };
 }
 
 /** Dispara la descarga del blob. Se revoca la URL: sin eso el navegador

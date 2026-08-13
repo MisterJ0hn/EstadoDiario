@@ -4,9 +4,31 @@
  * una única llamada y pinta todos los gráficos juntos.
  */
 
+/**
+ * Las tarjetas de arriba.
+ *
+ * **Ninguna de las que se muestran hoy mira el período.** Son el estado del
+ * estudio ahora; el filtro de días gobierna solo los gráficos. Los campos que
+ * sí son del período siguen acá porque los usan los gráficos y el estado vacío
+ * de la pantalla, pero ya no tienen tarjeta propia.
+ */
 export interface DashboardKpis {
   /** Ni resueltos ni pendientes: el "inbox". No se acota al período. */
   sin_revisar: number;
+  /**
+   * Causas DISTINTAS (rol + tribunal) de la cartera actual. La misma causa
+   * viene repetida en el Excel del PJUD, así que contar filas la infla.
+   * Vigente le gana a finalizada: las dos cifras son disjuntas y suman el
+   * total de la cartera.
+   */
+  causas_activas: number;
+  causas_finalizadas: number;
+  /**
+   * Por ahora, TODAS las audiencias cargadas: el PJUD no informa asistencia y
+   * la tabla no tiene el campo. Cuando exista, cambia el filtro del backend y
+   * esta tarjeta ya está puesta.
+   */
+  audiencias_no_asistidas: number;
   pendientes: number;
   resueltos_periodo: number;
   recibidos_periodo: number;

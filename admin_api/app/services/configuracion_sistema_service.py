@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import sesion_tenant
 from app.models.maestra.cliente import Cliente
 from app.repositories.cliente_repository import ClienteRepository
+from app.services.mora_service import MoraService
 from app.repositories.configuracion_sistema_repository import ConfiguracionSistemaRepository
 from app.repositories.log_actividades_repository import LogActividadesRepository
 from admin_api.app.schemas.cliente import (
@@ -36,6 +37,11 @@ class ConfiguracionSistemaService:
         registros, a_purgar = self._conteos(config.dias_retencion_log)
         return ConfiguracionSistemaResponse(
             retencion_log_dias=config.dias_retencion_log,
+            dias_mora_suspension=config.dias_mora_suspension or 0,
+            clientes_en_mora=len(MoraService(self.db).en_mora()),
+            tarifa_materia=config.tarifa_materia,
+            tarifa_apelaciones=config.tarifa_apelaciones,
+            tarifa_suprema=config.tarifa_suprema,
             ultima_purga=config.ultima_purga,
             registros_log=registros,
             registros_a_purgar=a_purgar,
@@ -52,11 +58,18 @@ class ConfiguracionSistemaService:
         """
         config = self.repo.get_or_create()
         config.dias_retencion_log = datos.retencion_log_dias
+        config.dias_mora_suspension = datos.dias_mora_suspension
+        # Rigen desde la próxima facturación: cada factura ya emitida copió el
+        # valor unitario que usó, así que subir el precio no reescribe el pasado.
+        config.tarifa_materia = datos.tarifa_materia
+        config.tarifa_apelaciones = datos.tarifa_apelaciones
+        config.tarifa_suprema = datos.tarifa_suprema
         config.modificado_por = admin_id
         self.repo.save(config)
         logger.info(
-            "Configuración del sistema actualizada (retención de log: %d días)",
-            config.dias_retencion_log,
+            "Configuración del sistema actualizada (retención de log: %d días, "
+            "mora: %d días)",
+            config.dias_retencion_log, config.dias_mora_suspension,
         )
         return self.obtener()
 

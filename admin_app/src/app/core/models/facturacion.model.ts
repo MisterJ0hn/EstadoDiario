@@ -190,3 +190,37 @@ export interface TarifaUpsertRequest {
   valor_unitario: number;
   activo?: boolean;
 }
+
+// ── Pagos con Webpay ──────────────────────────────────────
+
+/**
+ * Un intento de pago. `iniciado` es el que quedó abierto: el estudio llegó al
+ * formulario de Webpay y no volvió. Transbank lo reversa solo a los 10 minutos.
+ */
+export type EstadoPago = 'iniciado' | 'aprobado' | 'rechazado' | 'anulado' | 'error';
+
+export interface Pago {
+  id: number;
+  factura_id: number;
+  /** La orden que ve Transbank. Es lo que hay que darles para reclamar. */
+  buy_order: string;
+  monto: number;
+  estado: EstadoPago;
+  /** 0 es aprobada; el resto son motivos de rechazo de la tarjeta. */
+  response_code: number | null;
+  authorization_code: string | null;
+  tarjeta_final4: string | null;
+  /** VD débito, VN crédito sin cuotas, VC/SI/S2/NC con cuotas. */
+  tipo_pago: string | null;
+  cuotas: number | null;
+  fecha_transaccion: string | null;
+  mensaje: string | null;
+  fecha_creacion: string;
+  fecha_cierre: string | null;
+}
+
+export interface PagoListResponse {
+  exito: boolean;
+  total: number;
+  pagos: Pago[];
+}

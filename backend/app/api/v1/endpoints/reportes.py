@@ -9,7 +9,7 @@ administra `admin_api`. Este módulo solo la usa para despachar.
 import json
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import Request, APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,7 @@ from app.schemas.reporte import (
     ReportePlantillaResponse,
 )
 from app.services.estado_diario_service import EstadoDiarioService
+from app.services import auditoria_service as auditoria
 from app.services.reporte_service import ReporteService
 from app.services.smtp_service import XLSX_MIME, SmtpService
 
@@ -89,6 +90,7 @@ def listar(
 )
 def crear(
     datos: ReportePlantillaRequest,
+    request: Request,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -101,7 +103,14 @@ def crear(
         campos=json.dumps(campos),
         filtros=json.dumps(datos.filtros or {}),
     )
-    return ReportePlantillaResponse.from_model(ReporteRepository(db).save(plantilla))
+    guardada = ReporteRepository(db).save(plantilla)
+    auditoria.registrar(
+        db, auditoria.MODULO_REPORTES, auditoria.ACCION_CREAR,
+        usuario_id=current_user.id, ip=auditoria.ip_de(request),
+        detalle=f"informe «{guardada.nombre}» sobre {guardada.fuente}",
+    )
+    db.commit()
+    return ReportePlantillaResponse.from_model(guardada)
 
 
 @router.get(
@@ -151,6 +160,7 @@ def actualizar(
 @router.delete("/{plantilla_id}", summary="Eliminar un informe guardado")
 def eliminar(
     plantilla_id: int,
+    request: Request,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -158,7 +168,15 @@ def eliminar(
     plantilla = repo.find_by_id(plantilla_id, _dueno_plantillas(current_user))
     if plantilla is None:
         raise NotFoundException("Informe no encontrado")
+    # El nombre se toma antes de borrar: después no queda nada que nombrar.
+    nombre = plantilla.nombre
     repo.delete(plantilla)
+    auditoria.registrar(
+        db, auditoria.MODULO_REPORTES, auditoria.ACCION_ELIMINAR,
+        usuario_id=current_user.id, ip=auditoria.ip_de(request),
+        detalle=f"informe «{nombre}»",
+    )
+    db.commit()
     return {"exito": True}
 
 
@@ -171,6 +189,7 @@ def eliminar(
 )
 def enviar(
     plantilla_id: int,
+    request: Request,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
     tenant: TenantContexto = Depends(get_tenant_actual),
@@ -181,11 +200,18 @@ def enviar(
     usuario de la sesión. Aceptarlo del cliente convertiría el sistema en un
     relay para mandar datos de causas a cualquier dirección.
     """
-    return GenerarReporteResponse(
-        **ReporteService(db).generar_y_enviar(
-            plantilla_id, current_user, tenant.cliente_id
-        )
+    resultado = ReporteService(db).generar_y_enviar(
+        plantilla_id, current_user, tenant.cliente_id
     )
+    # Después del envío: si fallara, no hay nada que registrar. Es la pregunta
+    # más frecuente de soporte sobre informes ("¿se mandó o no?").
+    auditoria.registrar(
+        db, auditoria.MODULO_REPORTES, auditoria.ACCION_ENVIAR,
+        usuario_id=current_user.id, ip=auditoria.ip_de(request),
+        detalle=f"informe {plantilla_id} enviado a {current_user.correo}",
+    )
+    db.commit()
+    return GenerarReporteResponse(**resultado)
 
 
 @router.get(

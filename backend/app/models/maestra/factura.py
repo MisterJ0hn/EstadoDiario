@@ -66,7 +66,10 @@ class Factura(BaseMaestra):
 
     # Estados. `emitida` es el estado en que nace: el día 1 la factura ya está
     # calculada y es cobrable, no hay un borrador que alguien deba aprobar.
-    # `pagada` la marca una persona; no hay integración con ningún banco.
+    # `pagada` la ponen dos caminos: el operador que vio llegar una
+    # transferencia, y la confirmación de un pago con Webpay (ver
+    # `app/services/pago_service.py`). El estado es el mismo; lo que distingue
+    # a los dos es que el segundo deja una fila en `pago` con su autorización.
     ESTADO_EMITIDA = "emitida"
     ESTADO_PAGADA = "pagada"
     ESTADO_ANULADA = "anulada"

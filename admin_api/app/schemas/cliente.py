@@ -10,6 +10,7 @@ separan.
 """
 
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -259,11 +260,29 @@ class ClienteConProblema(BaseModel):
 
 
 class DashboardKpis(BaseModel):
+    """El estado de la plataforma HOY, no el del período elegido.
+
+    Ninguno de estos cuatro depende del filtro de período: cuántos clientes hay
+    y en qué estado están es una foto del momento, y acotarla a "los últimos 30
+    días" no significaría nada. El período solo acota la tabla de actividad por
+    cliente.
+    """
+
     clientes_activos: int
     clientes_suspendidos: int
-    usuarios_habilitados: int
+    usuarios_activos: int
     # Activos que no reciben archivos hace más de `umbral_sin_importar` días.
     clientes_sin_importar: int
+
+
+class PuntoEvolucionClientes(BaseModel):
+    """Cuántos clientes había en cada estado al cerrar un mes."""
+
+    # `AAAA-MM`. Texto y no date: es una etiqueta de mes, no un día, y mandarlo
+    # como fecha invita a que el navegador lo corra un día por zona horaria.
+    mes: str
+    activos: int
+    suspendidos: int
 
 
 class AdminDashboard(BaseModel):
@@ -275,6 +294,13 @@ class AdminDashboard(BaseModel):
     aprovisionamientos_en_curso: int
     aprovisionamientos_con_error: list[ClienteConProblema]
     clientes: list[ClienteActividad]
+    # Los últimos 12 meses cerrados más el corriente, del más viejo al más
+    # nuevo. Tampoco depende del filtro de período.
+    evolucion_clientes: list[PuntoEvolucionClientes] = []
+    # Desde cuándo hay historial de suspensiones de verdad. Antes de esta fecha
+    # el gráfico solo sabe de altas, así que la pantalla lo advierte en vez de
+    # dejar creer que nadie estuvo suspendido.
+    historial_desde: date | None = None
 
 
 # ── Casilla de ingesta del cliente ────────────────────────
@@ -329,6 +355,16 @@ class ProbarInboxRequest(BaseModel):
 class ConfiguracionSistemaResponse(BaseModel):
     # Días que se conserva el log de actividades antes de purgarse.
     retencion_log_dias: int
+    # Días de mora tras los cuales el cliente se suspende solo. 0 = apagado.
+    dias_mora_suspension: int = 0
+    # Cuántos clientes activos caerían con el valor actual. Se manda calculado
+    # para que la pantalla pueda advertirlo ANTES de guardar.
+    clientes_en_mora: int = 0
+    # Tarifas de lista: lo que se cobra a quien no tiene valores propios. No
+    # reemplazan a las del cliente, que siguen pisándolas.
+    tarifa_materia: Decimal = Decimal("1")
+    tarifa_apelaciones: Decimal = Decimal("2")
+    tarifa_suprema: Decimal = Decimal("3")
     ultima_purga: datetime | None
     # Registros que hay hoy en el log (sumando todos los clientes) y cuántos
     # borraría la política actual si se purgara ahora: sirven para dimensionar
@@ -339,6 +375,14 @@ class ConfiguracionSistemaResponse(BaseModel):
 
 class ConfiguracionSistemaUpdate(BaseModel):
     retencion_log_dias: int = Field(..., ge=1, le=3650)
+    # 0 apaga la suspensión automática. El tope de 365 es deliberado: un plazo
+    # mayor a un año no es una política de cobranza, es no tener ninguna.
+    dias_mora_suspension: int = Field(0, ge=0, le=365)
+    # Cero es válido: un concepto que no se cobra es una decisión comercial
+    # legítima, no un error de tipeo.
+    tarifa_materia: Decimal = Field(Decimal("1"), ge=0)
+    tarifa_apelaciones: Decimal = Field(Decimal("2"), ge=0)
+    tarifa_suprema: Decimal = Field(Decimal("3"), ge=0)
 
 
 class OperacionResponse(BaseModel):

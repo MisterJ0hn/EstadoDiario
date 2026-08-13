@@ -575,4 +575,6 @@ def datos_pdf(factura: Factura) -> factura_pdf.DatosFactura:
         ],
         total=float(factura.total or 0),
         emitida_por=factura.emitida_por,
+        # Decide la cinta de la esquina: NO PAGADA / PAGADA / ANULADA.
+        estado=factura.estado,
     )

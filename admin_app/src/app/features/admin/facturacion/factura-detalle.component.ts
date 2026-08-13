@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
-import { EstadoFactura, Factura } from '@core/models/facturacion.model';
+import { EstadoFactura, EstadoPago, Factura, Pago } from '@core/models/facturacion.model';
 import { NotificationService } from '@core/services/notification.service';
 import { formatearRut } from '@core/utils/rut';
 import { FacturacionService } from '../services/facturacion.service';
@@ -192,11 +192,9 @@ import { nombreMes } from './periodo';
                        que dejó de cargar el Excel se ve igual que uno al día,
                        con la cartera de hace tres meses. -->
                   <div class="flex gap-2">
-                    <dt class="text-neutral-500 w-28 shrink-0">Cartera del</dt>
+                    <dt class="text-neutral-500 w-28 shrink-0">Periodo</dt>
                     <dd>
-                      {{ f.fecha_archivo_causas
-                          ? (f.fecha_archivo_causas | date: 'dd-MM-yyyy')
-                          : 'sin archivo cargado' }}
+                      {{ nombreMes(f.periodo) }}
                     </dd>
                   </div>
                 </dl>
@@ -228,9 +226,9 @@ import { nombreMes } from './periodo';
                       <thead>
                         <tr>
                           <th scope="col">Concepto</th>
-                          <th scope="col" class="text-right">Cantidad</th>
-                          <th scope="col" class="text-right">Valor U.</th>
-                          <th scope="col" class="text-right">Valor total</th>
+                          <th scope="col" style="text-align:right!important">Cantidad</th>
+                          <th scope="col" style="text-align:right!important">Valor U.</th>
+                          <th scope="col" style="text-align:right!important">Valor total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -242,11 +240,11 @@ import { nombreMes } from './periodo';
                                 <span class="text-neutral-500 text-xs ml-1">(corte)</span>
                               }
                             </td>
-                            <td class="tabular-nums text-right">{{ d.cantidad }}</td>
-                            <td class="tabular-nums text-right">
+                            <td class="tabular-nums" style="text-align:right!important">{{ d.cantidad }}</td>
+                            <td class="tabular-nums" style="text-align:right!important">
                               {{ d.valor_unitario | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                             </td>
-                            <td class="tabular-nums text-right font-semibold">
+                            <td class="tabular-nums font-semibold" style="text-align:right!important">
                               {{ d.valor_total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                             </td>
                           </tr>
@@ -255,11 +253,11 @@ import { nombreMes } from './periodo';
                       <tfoot>
                         <tr class="border-t-2 border-neutral-200">
                           <td class="font-semibold text-neutral-800 py-3">Total</td>
-                          <td class="tabular-nums text-right font-semibold py-3">
+                          <td class="tabular-nums font-semibold py-3" style="text-align:right!important">
                             {{ f.total_causas }}
                           </td>
                           <td></td>
-                          <td class="tabular-nums text-right py-3">
+                          <td class="tabular-nums py-3" style="text-align:right!important">
                             <span class="text-xl font-bold text-primary-700">
                               {{ f.total | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
                             </span>
@@ -276,6 +274,69 @@ import { nombreMes } from './periodo';
                 }
               </div>
             </div>
+
+            <!-- Intentos de pago con Webpay. Solo aparece si hubo alguno: en
+                 una instalación sin pago en línea sería una tarjeta vacía en
+                 todas las facturas. -->
+            @if (pagos().length > 0) {
+              <div class="card mt-6">
+                <div class="card-header">
+                  <h2 class="text-sm font-semibold text-neutral-800">Pagos con Webpay</h2>
+                </div>
+                <div class="card-body">
+                  <div class="table-wrapper">
+                    <table class="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Fecha</th>
+                          <th scope="col">Orden de compra</th>
+                          <th scope="col">Estado</th>
+                          <th scope="col">Autorización</th>
+                          <th scope="col" style="text-align:right!important">Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (p of pagos(); track p.id) {
+                          <tr>
+                            <td class="whitespace-nowrap">
+                              {{ (p.fecha_transaccion || p.fecha_creacion) | date: 'dd-MM-yyyy HH:mm' }}
+                            </td>
+                            <td class="font-mono text-xs">{{ p.buy_order }}</td>
+                            <td>
+                              <span [class]="clasePago(p.estado)">{{ etiquetaPago(p.estado) }}</span>
+                              @if (p.mensaje) {
+                                <span class="block text-xs text-neutral-500 mt-1">{{ p.mensaje }}</span>
+                              }
+                            </td>
+                            <td class="text-xs">
+                              @if (p.authorization_code) {
+                                {{ p.authorization_code }}
+                                @if (p.tarjeta_final4) {
+                                  <span class="block text-neutral-500">•••• {{ p.tarjeta_final4 }}</span>
+                                }
+                              } @else if (p.response_code !== null) {
+                                <span class="text-neutral-500">código {{ p.response_code }}</span>
+                              } @else {
+                                <span class="text-neutral-400">—</span>
+                              }
+                            </td>
+                            <td class="tabular-nums" style="text-align:right!important">
+                              {{ p.monto | currency: 'CLP' : 'symbol-narrow' : '1.0-0' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p class="text-xs text-neutral-500 mt-4">
+                    La orden de compra es lo que pide Transbank para buscar una
+                    transacción. Un intento que quedó en "iniciado" es alguien que
+                    llegó al formulario y no volvió: Transbank lo reversa solo.
+                  </p>
+                </div>
+              </div>
+            }
           </div>
         </div>
         }
@@ -289,6 +350,7 @@ export class FacturaDetalleComponent implements OnInit {
   private route = inject(ActivatedRoute);
 
   factura = signal<Factura | null>(null);
+  pagos = signal<Pago[]>([]);
   error = signal<string | null>(null);
   descargando = signal(false);
   guardando = signal(false);
@@ -315,6 +377,36 @@ export class FacturaDetalleComponent implements OnInit {
       next: (f) => this.factura.set(f),
       error: (e) => this.error.set(mensajeError(e)),
     });
+    // Aparte y sin bloquear: una instalación sin pago en línea no tiene
+    // ninguno, y que eso falle no puede impedir ver la factura.
+    this.service.pagos(this.id).subscribe({
+      next: (r) => this.pagos.set(r.pagos),
+      error: () => this.pagos.set([]),
+    });
+  }
+
+  etiquetaPago(estado: EstadoPago): string {
+    return (
+      {
+        iniciado: 'Iniciado',
+        aprobado: 'Aprobado',
+        rechazado: 'Rechazado',
+        anulado: 'Anulado',
+        error: 'Error',
+      }[estado] ?? estado
+    );
+  }
+
+  clasePago(estado: EstadoPago): string {
+    return (
+      {
+        iniciado: 'badge-neutral',
+        aprobado: 'badge-success',
+        rechazado: 'badge-danger',
+        anulado: 'badge-neutral',
+        error: 'badge-warning',
+      }[estado] ?? 'badge-neutral'
+    );
   }
 
   descargar(): void {

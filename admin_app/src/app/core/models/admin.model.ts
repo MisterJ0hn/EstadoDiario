@@ -159,15 +159,27 @@ export interface ClienteConProblema {
   detalle: string | null;
 }
 
+/** Cuántos clientes había en cada estado al cerrar un mes. */
+export interface PuntoEvolucionClientes {
+  /** `AAAA-MM`. Es una etiqueta de mes, no una fecha. */
+  mes: string;
+  activos: number;
+  suspendidos: number;
+}
+
 export interface AdminDashboard {
   dias: number;
   /** `YYYY-MM-DD` */
   desde: string;
   hasta: string;
+  /**
+   * El estado de la plataforma HOY. **No dependen del filtro de período**: son
+   * una foto del momento, y el período solo acota la tabla de actividad.
+   */
   kpis: {
     clientes_activos: number;
     clientes_suspendidos: number;
-    usuarios_habilitados: number;
+    usuarios_activos: number;
     /** Activos que no reciben archivos hace más de `umbral_sin_importar` días. */
     clientes_sin_importar: number;
   };
@@ -175,6 +187,14 @@ export interface AdminDashboard {
   aprovisionamientos_en_curso: number;
   aprovisionamientos_con_error: ClienteConProblema[];
   clientes: ClienteActividad[];
+  /** Últimos 12 meses, del más viejo al más nuevo. Tampoco depende del período. */
+  evolucion_clientes: PuntoEvolucionClientes[];
+  /**
+   * Desde cuándo hay historial de suspensiones de verdad. Antes de esa fecha
+   * solo constan las altas, y la pantalla lo advierte en vez de dejar creer
+   * que nadie estuvo suspendido.
+   */
+  historial_desde: string | null;
 }
 
 // ── Casilla de ingesta del cliente ───────────────────────────────────────
@@ -222,6 +242,14 @@ export interface ClienteInboxUpdate {
 export interface ConfiguracionSistema {
   /** Días que se conserva el log de actividades antes de purgarse. */
   retencion_log_dias: number;
+  /** Días de mora tras los cuales el cliente se suspende solo. 0 = apagada. */
+  dias_mora_suspension?: number;
+  /** Cuántos clientes activos caerían hoy con ese plazo. */
+  clientes_en_mora?: number;
+  /** Tarifas de lista: lo que se cobra sin valores propios del cliente. */
+  tarifa_materia?: number;
+  tarifa_apelaciones?: number;
+  tarifa_suprema?: number;
   ultima_purga: string | null;
   /** Registros que hay hoy en el log, para dimensionar el cambio. */
   registros_log: number;
@@ -231,6 +259,14 @@ export interface ConfiguracionSistema {
 
 export interface ConfiguracionSistemaUpdate {
   retencion_log_dias: number;
+  /** Días de mora tras los cuales el cliente se suspende solo. 0 = apagada. */
+  dias_mora_suspension?: number;
+  /** Cuántos clientes activos caerían hoy con ese plazo. */
+  clientes_en_mora?: number;
+  /** Tarifas de lista: lo que se cobra sin valores propios del cliente. */
+  tarifa_materia?: number;
+  tarifa_apelaciones?: number;
+  tarifa_suprema?: number;
 }
 
 /** Respuesta genérica de las operaciones de la consola. */

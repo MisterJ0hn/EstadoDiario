@@ -131,10 +131,20 @@ def test_la_base_principal_no_lleva_datos_operativos():
     # principal y todos los clientes la compartirían.
     assert sorted(BaseMaestra.metadata.tables) == [
         "cliente",
+        # Cada vez que un cliente pasó de activo a suspendido o al revés. Es
+        # dato COMERCIAL de la plataforma —de ahí sale la serie mensual del
+        # dashboard de la consola— y no operativo del estudio: el estudio no
+        # tiene nada que hacer con la fecha en que se lo suspendió.
+        "cliente_estado_historial",
         "configuracion_correo",
         "configuracion_google",
         "configuracion_sistema",
         "configuracion_smtp",
+        # Credenciales de Webpay. Una sola fila global y sin `cliente_id`, al
+        # revés que las tres de arriba: la cuenta de Transbank donde cae la
+        # plata es la de la plataforma, no la del estudio. Una por cliente
+        # significaría que un estudio se cobra a sí mismo.
+        "configuracion_transbank",
         "configuracion_whatsapp",
         # Facturación de la plataforma: es dato COMERCIAL, no operativo del
         # estudio. Quien lo mira es el administrador que factura, que nunca abre
@@ -142,6 +152,10 @@ def test_la_base_principal_no_lleva_datos_operativos():
         # para todos, así que no podría vivir repartido por tenant.
         "factura",
         "factura_detalle",
+        # Los intentos de pago de esas facturas. Van donde está la factura que
+        # pagan: un pago en la base del estudio no se podría cruzar con el
+        # documento que cancela, que es lo único para lo que sirve.
+        "pago",
         # El precio acordado con cada cliente. Va acá por lo mismo: es del
         # contrato, no de la operación.
         "tarifa_cliente",

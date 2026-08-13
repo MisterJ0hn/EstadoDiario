@@ -64,6 +64,31 @@ _MARCAS_CONTENIDO = (
     (EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, ("tipo recurso", "rol unico", "rol interno", "tipo causa")),
 )
 
+# Columnas que **deciden** el tipo, sin importar cuántas marcas de otro reporte
+# haya en el archivo.
+#
+# Existe por Causas, que es el caso que las marcas de arriba no pueden resolver:
+# Causas y Movimientos traen las mismas siete hojas, con `rol/era/corte` y con
+# `rit/tribunal`, y las dos columnas que marcan movimientos —"estado causa" e
+# "institucion"— están en los dos. Contando marcas, un archivo de Causas suma
+# doce para movimientos y el suyo nunca gana. Lo único que los separa es la hoja
+# de corte:
+#
+#     Causas       ... caratulado, estado procesal, institucion
+#     Movimientos  ... caratulado, estado causa,    institucion
+#
+# Verificado sobre los archivos reales de dos estudios distintos. El costo de no
+# tener esto era caro y silencioso: el Excel de Causas se aceptaba como
+# movimientos —el parser acepta esas columnas—, la cartera nunca se cargaba y
+# "Mis Causas" quedaba vacío sin un solo error.
+#
+# Una marca decisiva tiene que ser una columna que NINGÚN otro reporte traiga:
+# "estado procesal" no está en movimientos, ni en el estado diario, ni en
+# audiencias. Antes de agregar otra acá, comprobarlo contra archivos reales.
+_MARCAS_DECISIVAS = (
+    (EstadoDiarioOrigen.TIPO_CAUSAS, ("estado procesal",)),
+)
+
 # Cómo se llama cada tipo en los mensajes que ve el usuario.
 ETIQUETAS = {
     EstadoDiarioOrigen.TIPO_ESTADO_DIARIO: "estado diario",
@@ -148,8 +173,18 @@ def detectar_tipo_por_contenido(file_path: str) -> Optional[str]:
     if not file_path:
         return None
 
+    hojas = list(encabezados_por_hoja(file_path))
+
+    # Una marca decisiva zanja el tipo antes de contar nada: si se sumara como
+    # una marca más, en un archivo de Causas las doce de movimientos ganarían
+    # igual. Ver `_MARCAS_DECISIVAS`.
+    for tipo, marcas in _MARCAS_DECISIVAS:
+        for encabezados in hojas:
+            if any(marca in cabecera for cabecera in encabezados for marca in marcas):
+                return tipo
+
     puntajes: dict[str, int] = {}
-    for encabezados in encabezados_por_hoja(file_path):
+    for encabezados in hojas:
         for tipo, marcas in _MARCAS_CONTENIDO:
             aciertos = sum(
                 1 for cabecera in encabezados for marca in marcas if marca in cabecera

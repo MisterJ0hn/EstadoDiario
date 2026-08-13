@@ -44,6 +44,14 @@ services:
       - RECAPTCHA_SOLO_REGISTRAR=${RECAPTCHA_SOLO_REGISTRAR:-false}
       - RECAPTCHA_FALLA_ABIERTA=${RECAPTCHA_FALLA_ABIERTA:-true}
       - RECAPTCHA_HOSTNAMES=${RECAPTCHA_HOSTNAMES:-}
+      # Segundo par, solo para la app Android: su WebView vive en
+      # `https://localhost` y ese dominio no se puede registrar en la llave de
+      # la web sin degradar sus puntajes. Van SOLO acá y no en admin_api: la
+      # consola no corre en un WebView. Vacíos, el APK usa la llave de la web,
+      # que es como funcionaba antes.
+      - RECAPTCHA_SITE_KEY_APP=${RECAPTCHA_SITE_KEY_APP:-}
+      - RECAPTCHA_SECRET_KEY_APP=${RECAPTCHA_SECRET_KEY_APP:-}
+      - RECAPTCHA_ORIGENES_APP=${RECAPTCHA_ORIGENES_APP:-https://localhost}
     ports:
       - "${BACKEND_PORT:-8091}:8000"
     volumes:

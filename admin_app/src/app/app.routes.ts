@@ -71,6 +71,16 @@ export const routes: Routes = [
         ],
       },
       {
+        // Bitácora de actividad de un cliente. Va suelta y no bajo /clientes
+        // porque se entra a mirar actividad, no a administrar un estudio; se
+        // llega con el cliente puesto (`?cliente=12`) desde su ficha.
+        path: 'bitacora',
+        loadComponent: () =>
+          import('./features/admin/bitacora/bitacora.component').then(
+            (m) => m.BitacoraComponent
+          ),
+      },
+      {
         // El enlace del perfil estaba en la barra lateral desde siempre, pero
         // sin esta ruta caía en el comodín `**` y volvía al dashboard: parecía
         // que no hacía nada.
@@ -148,6 +158,13 @@ export const routes: Routes = [
               import(
                 './features/configuracion/components/whatsapp-config/whatsapp-config.component'
               ).then((m) => m.WhatsappConfigComponent),
+          },
+          {
+            path: 'transbank',
+            loadComponent: () =>
+              import(
+                './features/configuracion/components/transbank-config/transbank-config.component'
+              ).then((m) => m.TransbankConfigComponent),
           },
           { path: '', redirectTo: 'sistema', pathMatch: 'full' },
         ],

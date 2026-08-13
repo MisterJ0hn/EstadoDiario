@@ -410,6 +410,81 @@ class MetricasRepository:
         )
         return [(self._a_fecha(f), m, int(n or 0)) for f, m, n in filas]
 
+    def contar_audiencias_no_asistidas(self) -> int:
+        """Por ahora, **todas** las audiencias cargadas.
+
+        El PJUD no informa si el abogado asistió y la tabla no tiene el campo,
+        así que este número todavía no significa lo que dice su etiqueta: es el
+        total de audiencias del estudio, sin ventana de fechas.
+
+        Está así a pedido explícito, mientras el estudio decide cómo se va a
+        marcar la inasistencia. Cuando exista ese dato, lo único que cambia es
+        el filtro de esta consulta — la tarjeta, el schema y el frontend ya
+        están puestos. No se inventa una heurística mientras tanto ("pasó la
+        fecha y nadie la tocó" contaría como inasistencia toda audiencia vieja).
+        """
+        return (
+            self._q_audiencias().with_entities(func.count(Audiencia.id)).scalar()
+        ) or 0
+
+    # ── Cartera de causas ────────────────────────────────────────────────
+    def contar_causas_cartera(self, vigencia: str) -> int:
+        """Causas DISTINTAS de la cartera actual, vigentes o finalizadas.
+
+        **Distintas por `rol + tribunal`**, que es como se identifica una causa
+        en todo el sistema (ver el cruce de reportes en INSTALL.md). El Excel
+        del PJUD trae una fila por cada aparición, así que la misma causa puede
+        venir repetida —por ejemplo en más de una materia— y contar filas
+        infla la cartera. Contra la cartera de un estudio real la diferencia no
+        es cosmética.
+
+        **Solo el último archivo de causas**, que ES la cartera de hoy: cada
+        carga reinserta la cartera completa con su propio origen, así que sumar
+        todos los archivos multiplica el número por la cantidad de veces que se
+        cargó el reporte.
+
+        **Vigente le gana a finalizada.** Las filas repetidas de una misma
+        causa no siempre traen el mismo estado: en la cartera de prueba hay
+        cientos que aparecen a la vez como vigentes y como concluidas. Si cada
+        tarjeta filtrara por su lado, esas causas se contarían en las DOS y los
+        dos números juntos sumarían más que la cartera. Acá se agrupa primero
+        por causa y se decide una sola vez: si alguna de sus filas sigue
+        vigente, la causa está vigente. Así las dos tarjetas son disjuntas y
+        suman exactamente el total de causas distintas.
+
+        Se resuelve con `GROUP BY` + `BOOL_OR` y no con `COUNT(DISTINCT
+        (a, b))`: esa forma sobre una tupla no está en el PostgreSQL 9.2 de
+        producción, y concatenar las columnas se rompe con los nulos
+        (`rol || tribunal` es NULL si cualquiera lo es).
+        """
+        # Import local: `causa_repository` importa de acá para otras cosas y a
+        # nivel de módulo las dos importaciones se cruzarían.
+        from app.core.estados_causa import VIGENTES, condicion_vigencia
+        from app.models.causa import Causa
+        from app.repositories.causa_repository import ultimo_origen_causas_id
+
+        origen_id = ultimo_origen_causas_id(self.db)
+        if origen_id is None:
+            # Ningún archivo de causas cargado: la cartera está vacía, no es
+            # que la consulta falle.
+            return 0
+
+        alguna_vigente = func.bool_or(
+            condicion_vigencia(Causa.estado_causa, VIGENTES)
+        )
+        agrupadas = (
+            self.db.query(Causa.rol, Causa.tribunal)
+            .filter(Causa.estado_diario_origen_id == origen_id)
+            .group_by(Causa.rol, Causa.tribunal)
+            .having(
+                alguna_vigente.is_(True)
+                if vigencia == VIGENTES
+                else alguna_vigente.is_(False)
+            )
+            .subquery()
+        )
+        return self.db.query(func.count()).select_from(agrupadas).scalar() or 0
+
     def ultima_fecha_audiencia(self) -> Optional[date]:
         """Hasta qué día alcanzan las audiencias cargadas.
 

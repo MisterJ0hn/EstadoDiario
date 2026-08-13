@@ -30,6 +30,7 @@ from app.core.estados_causa import sql_vigente
 from app.core.exceptions import BadRequestException, ConflictException, NotFoundException
 from app.core.hash_busqueda import normalizar_rut
 from app.models.maestra.cliente import Cliente
+from app.models.maestra.cliente_estado_historial import ClienteEstadoHistorial
 from app.repositories.cliente_repository import ClienteRepository
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.configuracion_sistema_repository import ConfiguracionSistemaRepository
@@ -71,7 +72,7 @@ class ClienteService:
 
     # ── Alta ──────────────────────────────────────────────
 
-    def crear(self, datos: ClienteCreate) -> ClienteResponse:
+    def crear(self, datos: ClienteCreate, actor: str | None = None) -> ClienteResponse:
         """Crea el cliente, aprovisiona su base y siembra sus usuarios.
 
         Es UNA operación de cara al usuario aunque por dentro sean tres pasos
@@ -104,6 +105,11 @@ class ClienteService:
         cliente.rut = datos.rut
         cliente.correo = datos.correo
         self.repo.save(cliente)
+
+        # El alta es el primer punto de la serie del dashboard. Se registra acá
+        # y no se deduce de `fecha_creacion` al graficar para que exista un solo
+        # camino: toda transición de estado está en la misma tabla.
+        self._registrar_estado(cliente, ClienteEstadoHistorial.MOTIVO_ALTA, actor)
 
         self._aprovisionar(cliente)
 
@@ -274,8 +280,11 @@ class ClienteService:
     def obtener(self, cliente_id: int) -> ClienteResponse:
         return self.a_response(self.obtener_entidad(cliente_id))
 
-    def actualizar(self, cliente_id: int, datos: ClienteUpdate) -> ClienteResponse:
+    def actualizar(
+        self, cliente_id: int, datos: ClienteUpdate, actor: str | None = None
+    ) -> ClienteResponse:
         cliente = self.obtener_entidad(cliente_id)
+        estaba_activo = bool(cliente.activo)
         cliente.nombre = datos.nombre.strip()
         cliente.correo = datos.correo
 
@@ -310,8 +319,14 @@ class ClienteService:
 
         # Suspender desde la ficha tiene que hacer lo mismo que el botón de
         # suspender, o quedarían conexiones abiertas contra un cliente apagado.
-        if cliente.activo and not datos.activo:
-            self.suspender(cliente_id)
+        # `suspender` deja además su línea en el historial, así que acá solo se
+        # registra el caso contrario: no puede quedar registrado dos veces.
+        if estaba_activo and not datos.activo:
+            self.suspender(cliente_id, actor=actor)
+        elif not estaba_activo and datos.activo:
+            self._registrar_estado(
+                cliente, ClienteEstadoHistorial.MOTIVO_MANUAL, actor, activo=True
+            )
         cliente.activo = datos.activo
 
         self.repo.save(cliente)
@@ -320,7 +335,7 @@ class ClienteService:
 
     # ── Suspensión ────────────────────────────────────────
 
-    def suspender(self, cliente_id: int) -> ClienteResponse:
+    def suspender(self, cliente_id: int, actor: str | None = None) -> ClienteResponse:
         """Suspende un cliente. **No borra nada.**
 
         Apaga la bandera y cierra el pool contra su base. Con ella apagada, el
@@ -332,6 +347,13 @@ class ClienteService:
         """
         cliente = self.obtener_entidad(cliente_id)
         cliente.activo = False
+        # Esta suspensión la decidió una persona, así que **no** lleva la marca
+        # de mora: sin ella, pagar una factura con Webpay no lo reactiva. Se
+        # limpia en vez de dejarla como estaba porque un cliente que el job
+        # suspendió y el operador volvió a suspender a mano ya es un caso del
+        # operador. Ver `PagoService._reactivar_si_corresponde`.
+        cliente.suspendido_por_mora = False
+        self._registrar_estado(cliente, ClienteEstadoHistorial.MOTIVO_MANUAL, actor)
         self.repo.save(cliente)
         # Solo cierra el pool: sin esto quedarían conexiones abiertas contra un
         # cliente que ya no debería atender a nadie.
@@ -339,14 +361,45 @@ class ClienteService:
         logger.info("Cliente %s suspendido", cliente.guid)
         return self.a_response(cliente)
 
-    def reactivar(self, cliente_id: int) -> ClienteResponse:
+    def reactivar(self, cliente_id: int, actor: str | None = None) -> ClienteResponse:
         """Vuelve a encender la bandera. No hay que reaprovisionar nada: el
         cliente sigue con su información como la dejó."""
         cliente = self.obtener_entidad(cliente_id)
         cliente.activo = True
+        # Queda sin deuda pendiente a efectos de la marca: si el job vuelve a
+        # suspenderlo, la escribirá de nuevo. Dejarla puesta en un cliente
+        # activo no rompe nada hoy, pero es un dato que miente.
+        cliente.suspendido_por_mora = False
+        self._registrar_estado(cliente, ClienteEstadoHistorial.MOTIVO_MANUAL, actor)
         self.repo.save(cliente)
         logger.info("Cliente %s reactivado", cliente.guid)
         return self.a_response(cliente)
+
+    def _registrar_estado(
+        self,
+        cliente: Cliente,
+        motivo: str,
+        actor: str | None,
+        activo: bool | None = None,
+    ) -> None:
+        """Deja la transición en el historial, en la misma transacción.
+
+        Sin `try/except` a propósito, al revés que la bitácora de actividad: acá
+        la línea *es* el dato del que sale la serie del dashboard, y un
+        historial con huecos dibuja un gráfico equivocado sin que nadie lo note.
+        Si esto falla, tiene que fallar también el cambio de estado.
+
+        `activo` se pasa solo cuando la bandera del modelo todavía no refleja
+        el cambio; normalmente se lee de `cliente.activo`.
+        """
+        self.db.add(
+            ClienteEstadoHistorial.de(
+                cliente.cliente_id,
+                cliente.activo if activo is None else activo,
+                motivo,
+                actor,
+            )
+        )
 
     # ── Apoyo ─────────────────────────────────────────────
 

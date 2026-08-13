@@ -29,6 +29,7 @@ from app.repositories.estado_diario_corte_repository import EstadoDiarioCorteRep
 from app.services.estado_diario_service import EstadoDiarioService
 from app.services.import_service import ImportService
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
+from app.services import auditoria_service as auditoria
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +211,7 @@ def upload_file(
 )
 def eliminar_origen(
     origen_id: int,
+    request: Request,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -217,7 +219,16 @@ def eliminar_origen(
     origen = repo.find_by_id(origen_id)
     if not origen:
         return {"exito": False, "mensaje": "Origen no encontrado"}
+
+    # Se describe ANTES de borrar: después el objeto ya no tiene nombre que
+    # poner en la bitácora, y "se eliminó el origen 7" no le sirve a nadie.
+    descripcion = f"{origen.tipo}: {origen.nombre_archivo or f'origen {origen.id}'}"
     repo.delete(origen)
+    auditoria.registrar(
+        db, auditoria.MODULO_ESTADO_DIARIO, auditoria.ACCION_ELIMINAR,
+        usuario_id=current_user.id, ip=auditoria.ip_de(request), detalle=descripcion,
+    )
+    db.commit()
     return {"exito": True}
 
 
@@ -384,6 +395,7 @@ def detalle_movimiento(
 )
 def marcar_leido(
     estado_diario_id: int,
+    request: Request,
     body: MarcarLeidoRequest | None = None,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
@@ -395,6 +407,7 @@ def marcar_leido(
         estado_diario_id,
         current_user.id,
         body.observacion if body else None,
+        ip=auditoria.ip_de(request),
     )
 
 
@@ -405,6 +418,7 @@ def marcar_leido(
 def marcar_pendiente(
     estado_diario_id: int,
     body: MarcarPendienteRequest,
+    request: Request,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -412,6 +426,7 @@ def marcar_pendiente(
     return service.marcar_pendiente(
         estado_diario_id, body.nivel, body.username, body.mensaje, body.fecha_hora,
         body.notificar_whatsapp, body.whatsapp_telefono, body.fecha_hora_whatsapp,
+        usuario_id=current_user.id, ip=auditoria.ip_de(request),
     )
 
 
@@ -454,11 +469,14 @@ def crear_agenda(
 def finalizar_agenda(
     agenda_id: int,
     body: FinalizarAgendaRequest,
+    request: Request,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
-    return service.finalizar_agenda(agenda_id, body.marcar_resuelto, current_user)
+    return service.finalizar_agenda(
+        agenda_id, body.marcar_resuelto, current_user, ip=auditoria.ip_de(request),
+    )
 
 
 # ── Webhook Twilio ────────────────────────────────────────

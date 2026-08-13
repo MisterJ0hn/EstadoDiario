@@ -39,6 +39,7 @@ from app.utils.excel_pjud import (
     recortar,
 )
 
+from app.services import auditoria_service as auditoria
 from app.services.cartera_sync_service import sincronizar_cartera
 from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
 
@@ -338,12 +339,18 @@ class MovimientoImportService:
         # El cruce va ANTES del commit y en la misma transacción: si fallara,
         # no queda un archivo importado y una cartera a medio actualizar.
         self.db.flush()
-        sincronizar_cartera(self.db)
+        cruce = sincronizar_cartera(self.db)
 
-        self.db.commit()
         # `len(filas)` incluiría las de corte, que van a otra tabla: el número
         # que se informa tiene que ser el de filas realmente insertadas acá.
         movimientos = sum(por_materia.values())
+
+        auditoria.registrar(
+            self.db, auditoria.MODULO_MOVIMIENTOS, auditoria.ACCION_IMPORTAR,
+            usuario_id=usuario_id,
+            detalle=f"{origen.nombre_archivo or file_path}: {movimientos} movimientos, {cortes} de corte",
+        )
+        self.db.commit()
         logger.info(
             "Importados %d movimientos y %d causas de corte para origen %d (%s)",
             movimientos, cortes, origen.id, por_materia,
@@ -353,4 +360,7 @@ class MovimientoImportService:
             "movimientos_importados": movimientos,
             "cortes_importados": cortes,
             "por_materia": por_materia,
+            # Ver el mismo campo en `import_service`: el cruce dejó de ser mudo.
+            "aviso_cartera": cruce.como_aviso(),
+            "causas_agregadas": cruce.causas_creadas + cruce.cortes_creadas,
         }

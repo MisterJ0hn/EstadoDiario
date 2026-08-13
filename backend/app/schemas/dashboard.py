@@ -11,11 +11,26 @@ from pydantic import BaseModel
 
 
 class DashboardKpis(BaseModel):
-    """Las cuatro tarjetas de la fila superior."""
+    """Las tarjetas de la fila superior.
+
+    **Ninguna de las que se muestran hoy se acota al período.** Son el estado
+    del estudio ahora —deuda acumulada, cartera vigente, audiencias—, y el
+    filtro de días gobierna solo los gráficos. Los campos que sí miran el
+    período (`resueltos_periodo`, `recibidos_periodo`, los de recordatorios)
+    siguen acá porque los usan los gráficos y el estado vacío de la pantalla,
+    pero ya no tienen tarjeta propia.
+    """
 
     # Ni resueltos ni pendientes: el trabajo que nadie ha tocado. No se acota
     # al período porque es deuda acumulada.
     sin_revisar: int = 0
+    # Causas DISTINTAS (rol + tribunal) de la cartera actual. La misma causa
+    # puede venir repetida en el Excel del PJUD y contar filas la infla.
+    causas_activas: int = 0
+    causas_finalizadas: int = 0
+    # Todas las audiencias cargadas, mientras no exista el dato de asistencia:
+    # ver `MetricasRepository.contar_audiencias_no_asistidas`.
+    audiencias_no_asistidas: int = 0
     # Marcados pendientes y aún abiertos.
     pendientes: int = 0
     # Resueltos dentro del período consultado.

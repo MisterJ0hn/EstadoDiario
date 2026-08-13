@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from decimal import Decimal
+
+from sqlalchemy import Boolean, DateTime, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings
@@ -38,6 +40,38 @@ class ConfiguracionSistema(BaseMaestra):
     # Permite cerrar el alta de clientes nuevos sin tocar el código (por
     # ejemplo, durante una mantención).
     permitir_nuevos_clientes: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Días de mora tras los cuales un cliente se suspende solo. Se cuenta desde
+    # la emisión de la factura más antigua que sigue impaga: no hay fecha de
+    # vencimiento en el documento, y la emisión es lo único que consta.
+    #
+    # **Cero = la suspensión automática está apagada.** Es el valor por defecto
+    # a propósito: cortarle el acceso a un estudio es la acción más agresiva del
+    # sistema, y no puede empezar a ocurrir sola porque alguien desplegó una
+    # versión nueva. Hay que encenderla desde Configuración.
+    dias_mora_suspension: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    # ── Tarifas de la plataforma ──
+    # Lo que se cobra por causa cuando el cliente no tiene un valor propio. Es
+    # el piso de toda la facturación y por eso vive acá y no en una constante:
+    # cambiar el precio de lista no puede exigir un despliegue.
+    #
+    # No reemplaza a `tarifa_cliente`: ahí siguen los valores negociados con
+    # cada estudio, que pisan a estos. Y no reescribe el pasado — cada factura
+    # copia el valor unitario que usó.
+    #
+    # Numeric y no Integer: hoy son pesos enteros, pero un precio con decimales
+    # no debería obligar a migrar la columna. Nunca Float, que es lo que arruina
+    # un total al cuadrar la contabilidad.
+    tarifa_materia: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=Decimal("1"), server_default="1"
+    )
+    tarifa_apelaciones: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=Decimal("2"), server_default="2"
+    )
+    tarifa_suprema: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=Decimal("3"), server_default="3"
+    )
 
     # Última vez que se purgó la bitácora de actividad, la haya disparado el
     # job nocturno o el botón de la consola. Se muestra en la pantalla de

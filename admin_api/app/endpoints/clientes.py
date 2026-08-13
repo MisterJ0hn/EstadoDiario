@@ -68,7 +68,7 @@ def crear_cliente(
     estado `error` y con el motivo: se revisa y se reintenta desde
     `/aprovisionamiento/reintentar` en vez de quedar a medias sin rastro.
     """
-    respuesta = ClienteService(db).crear(datos)
+    respuesta = ClienteService(db).crear(datos, actor=admin.usuario)
     logger.info("Cliente %s creado por el administrador %s", respuesta.guid, admin.usuario)
     return respuesta
 
@@ -92,6 +92,7 @@ def actualizar_cliente(
     cliente_id: int,
     datos: ClienteUpdate,
     db: Session = Depends(get_db_maestra),
+    admin: UsuarioAdmin = Depends(require_admin),
 ):
     """Edita nombre, RUT, correo y si el cliente está activo.
 
@@ -99,7 +100,7 @@ def actualizar_cliente(
     causas del cliente y tocarlos las dejaría inalcanzables. El RUT sí, aunque
     es la credencial con la que entra el estudio: ver `ClienteUpdate`.
     """
-    return ClienteService(db).actualizar(cliente_id, datos)
+    return ClienteService(db).actualizar(cliente_id, datos, actor=admin.usuario)
 
 
 @router.put(
@@ -157,11 +158,15 @@ def reintentar_aprovisionamiento(
     response_model=ClienteResponse,
     summary="Suspender un cliente",
 )
-def suspender_cliente(cliente_id: int, db: Session = Depends(get_db_maestra)):
+def suspender_cliente(
+    cliente_id: int,
+    db: Session = Depends(get_db_maestra),
+    admin: UsuarioAdmin = Depends(require_admin),
+):
     """Suspender **conserva todos los datos**: apaga la bandera `activo` y nada
     más. Sus usuarios no pueden iniciar sesión y los jobs programados lo
     saltan, pero su base de datos queda intacta."""
-    return ClienteService(db).suspender(cliente_id)
+    return ClienteService(db).suspender(cliente_id, actor=admin.usuario)
 
 
 @router.post(
@@ -169,10 +174,14 @@ def suspender_cliente(cliente_id: int, db: Session = Depends(get_db_maestra)):
     response_model=ClienteResponse,
     summary="Reactivar un cliente suspendido",
 )
-def reactivar_cliente(cliente_id: int, db: Session = Depends(get_db_maestra)):
+def reactivar_cliente(
+    cliente_id: int,
+    db: Session = Depends(get_db_maestra),
+    admin: UsuarioAdmin = Depends(require_admin),
+):
     """Vuelve a encender la bandera. No hay que reaprovisionar nada: el cliente
     sigue con su información como la dejó."""
-    return ClienteService(db).reactivar(cliente_id)
+    return ClienteService(db).reactivar(cliente_id, actor=admin.usuario)
 
 
 # ── Casilla de ingesta ────────────────────────────────────

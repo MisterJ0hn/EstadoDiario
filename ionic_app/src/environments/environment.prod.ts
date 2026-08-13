@@ -7,16 +7,21 @@
  * relativa pega contra el propio teléfono y todo falla con un error de red que
  * no explica nada.
  *
- * Dos cosas del despliegue actual que hay que tener presentes:
+ * **Tiene que ser `https`, y no es una preferencia.** El servidor responde a
+ * todo lo que llega por http con un `301` hacia https, y el navegador —el
+ * WebView de Android es uno— **no sigue redirecciones en un preflight**: la
+ * petición `OPTIONS` moría con
  *
- * - El backend responde por **http**, no https. Android 9+ bloquea el tráfico
- *   en claro por defecto, y por eso el `AndroidManifest` habilita
- *   `usesCleartextTraffic` para este dominio. Cuando la API tenga TLS,
- *   cambiar a `https://` y quitar esa excepción.
- * - Para la build **web** servida desde otro origen hay que agregarlo a
- *   `BACKEND_CORS_ORIGINS` del backend. Android no pasa por CORS.
+ *     Redirect is not allowed for a preflight request
+ *
+ * y el login fallaba con un `ERR_FAILED` que parecía un problema de CORS del
+ * backend. No lo era: por https el preflight responde 200 y con el origen
+ * `https://localhost` permitido.
+ *
+ * Para la build **web** servida desde otro origen hay que agregarlo a
+ * `BACKEND_CORS_ORIGINS` del backend. Android no pasa por CORS.
  */
 export const environment = {
   production: true,
-  apiUrl: 'http://edapi.temposoft.cl/api/v1',
+  apiUrl: 'https://edapi.temposoft.cl/api/v1',
 };
