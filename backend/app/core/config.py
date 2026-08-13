@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     # Un separador equivocado no da error al arrancar, da un preflight
     # rechazado con "No 'Access-Control-Allow-Origin' header", que parece un
     # problema del endpoint y no de esta línea.
-    BACKEND_CORS_ORIGINS: str = "http://localhost:4300,http://localhost:4200"
+    BACKEND_CORS_ORIGINS: str = "http://localhost:4300,http://localhost:4200,https://localhost"
 
     # Logging
     BACKEND_LOG_LEVEL: str = "INFO"
