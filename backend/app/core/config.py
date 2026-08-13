@@ -119,6 +119,22 @@ class Settings(BaseSettings):
     # Pública por definición: la sirve GET /auth/recaptcha para que el frontend
     # no tenga que traerla compilada (ver app/core/recaptcha.py).
     RECAPTCHA_SITE_KEY: str = ""
+
+    # ── Segundo par, solo para la app Android ──
+    # El APK corre en un WebView cuyo origen es `https://localhost`, un dominio
+    # que no se puede registrar en la llave del sitio sin degradar los puntajes
+    # reales de la web (Google evalúa el dominio como una señal más). Con un par
+    # aparte, la llave de la web conserva su lista de dominios estricta y el
+    # riesgo de tener `localhost` habilitado queda acotado a las peticiones que
+    # llegan desde el APK.
+    #
+    # **Vacíos = no hay segundo par** y todo usa el de la web, que es como se
+    # comportaba antes. No hace falta configurarlos para desplegar.
+    RECAPTCHA_SECRET_KEY_APP: str = ""
+    RECAPTCHA_SITE_KEY_APP: str = ""
+    # Orígenes que se consideran "la app", separados por coma. Es el `Origin`
+    # que manda el WebView, no un dato que ponga el código de la app.
+    RECAPTCHA_ORIGENES_APP: str = "https://localhost"
     # Bajo este puntaje se rechaza. 0.0 es "bot seguro" y 1.0 "humano seguro";
     # 0.5 es el default de Google. Solo se puede calibrar con datos de
     # producción: en localhost Google devuelve casi siempre 0.9.
@@ -145,6 +161,21 @@ class Settings(BaseSettings):
     @property
     def recaptcha_hostnames(self) -> List[str]:
         return [h.strip().lower() for h in self.RECAPTCHA_HOSTNAMES.split(",") if h.strip()]
+
+    @property
+    def recaptcha_origenes_app(self) -> List[str]:
+        """Orígenes que usan el par de llaves del APK, normalizados.
+
+        Sin barra final y en minúsculas, que es como llega la cabecera `Origin`
+        del navegador: comparar contra un valor escrito a mano en el `.env` con
+        una barra de más haría que nunca calzara y el APK volvería a usar la
+        llave de la web sin que nada lo dijera.
+        """
+        return [
+            o.strip().rstrip("/").lower()
+            for o in self.RECAPTCHA_ORIGENES_APP.split(",")
+            if o.strip()
+        ]
 
     def url_base(self, nombre_base: str) -> str:
         """URL de conexión a una base cualquiera del mismo servidor.

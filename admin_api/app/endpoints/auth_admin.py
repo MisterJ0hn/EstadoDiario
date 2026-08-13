@@ -14,7 +14,7 @@ obvia para un cliente de la API que no conoce esa historia.
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -52,12 +52,20 @@ router = APIRouter(prefix="/auth", tags=["Autenticación (plataforma)"])
     response_model=RecaptchaConfigResponse,
     summary="Si reCAPTCHA está activo y con qué site key",
 )
-def config_recaptcha():
+def config_recaptcha(request: Request):
     """Gemelo del endpoint del backend de estudios, y a propósito: la consola
     habla con ESTE servicio, así que necesita preguntárselo a él. Las llaves
     tienen que ser las mismas en los dos (van en el `.env` compartido), por el
-    mismo motivo que `BACKEND_SECRET_KEY`."""
-    return RecaptchaConfigResponse(**recaptcha.configuracion_publica())
+    mismo motivo que `BACKEND_SECRET_KEY`.
+
+    Se pasa el `Origin` por simetría con el otro endpoint: la consola no corre
+    en un WebView, así que en la práctica siempre recibe la llave de la web.
+    Dejarlo escrito igual evita que los dos gemelos se separen el día que a
+    alguien le sirva la consola desde otra parte.
+    """
+    return RecaptchaConfigResponse(
+        **recaptcha.configuracion_publica(request.headers.get("Origin"))
+    )
 
 
 @router.post(

@@ -282,11 +282,39 @@ encarga. No hay que recompilar las aplicaciones Angular: la site key la
 entregan `GET /api/v1/auth/recaptcha` de cada API.
 
 En producción **hay que estrenarlo en modo monitor** antes de bloquear a
-nadie, y la app Android queda fuera. El procedimiento completo y por qué está
-en `DEPLOY.md`, sección "Encender reCAPTCHA".
+nadie. El procedimiento completo y por qué está en `DEPLOY.md`, sección
+"Encender reCAPTCHA".
 
 Para desarrollo conviene un par de llaves aparte con `localhost` registrado:
 meter `localhost` en la llave de producción degrada los puntajes reales.
+
+### La app Android necesita su propio par
+
+El APK corre en un WebView cuyo origen es `https://localhost`. Ese dominio no
+está registrado en la llave del sitio —y registrarlo ahí degradaría los
+puntajes reales de la web— así que sin llaves propias la app **no puede acuñar
+tokens y su login queda rechazado**.
+
+Se resuelve con un segundo par v3, con `localhost` en su lista de dominios:
+
+```env
+RECAPTCHA_SITE_KEY_APP=<site key del par de la app>
+RECAPTCHA_SECRET_KEY_APP=<su secret>
+```
+
+El backend elige el par mirando el `Origin` de cada petición, y con el mismo
+criterio en las dos mitades: la que sirve la site key por
+`GET /api/v1/auth/recaptcha` y la que verifica el token. **No hay que tocar
+nada en las apps**: ese encabezado lo pone el navegador.
+
+Con el par vacío —o a medias— todo usa la llave de la web, que es como se
+comportaba antes de que esto existiera.
+
+**Ojo con el tipo de clave.** En la consola de Google hay que crear una de tipo
+**sitio web (v3)**, que entrega *site key + secret*. Una clave de tipo
+**Android** entrega solo un identificador y no sirve acá: se verifica contra la
+API de *assessments* de reCAPTCHA Enterprise y exige el SDK nativo de Android,
+que esta app —un WebView— no usa.
 
 ## Purga de la Bitácora
 

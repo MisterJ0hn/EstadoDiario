@@ -72,11 +72,18 @@ def _payload_valido(credentials: HTTPAuthorizationCredentials) -> dict:
     response_model=RecaptchaConfigResponse,
     summary="Si reCAPTCHA está activo y con qué site key",
 )
-def config_recaptcha():
+def config_recaptcha(request: Request):
     """Público y sin sesión: lo consulta la pantalla de login antes de que
     exista una. Devuelve `activo: false` mientras no haya llaves configuradas,
-    y con eso el frontend no carga nada de Google."""
-    return RecaptchaConfigResponse(**recaptcha.configuracion_publica())
+    y con eso el frontend no carga nada de Google.
+
+    La site key depende del `Origin`: el APK tiene su propio par de llaves (ver
+    `app/core/recaptcha.py`). Servirle la de la web haría que acuñara un token
+    que después no valida contra el otro secret.
+    """
+    return RecaptchaConfigResponse(
+        **recaptcha.configuracion_publica(request.headers.get("Origin"))
+    )
 
 
 @router.post(

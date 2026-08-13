@@ -271,3 +271,91 @@ def test_el_token_no_aparece_en_ningun_log(encendido, caplog):
             with pytest.raises(BadRequestException):
                 recaptcha.exigir("TOKEN-SECRETO-XYZ", recaptcha.ACCION_LOGIN)
     assert "TOKEN-SECRETO-XYZ" not in caplog.text
+
+
+# ── Segundo par de llaves, para la app Android ────────────
+#
+# El APK corre en un WebView cuyo origen es `https://localhost`. Ese dominio no
+# se puede registrar en la llave del sitio sin degradar los puntajes reales de
+# la web, así que la app lleva su propio par y el backend elige mirando el
+# `Origin`. Lo que estos tests fijan es que las DOS mitades elijan igual: la
+# que sirve la site key y la que verifica el token. Si se separan, el APK acuña
+# con una llave y se valida con el secret de la otra — y eso falla el 100% de
+# las veces, con un `invalid-input-response` que parece un token falsificado.
+
+
+@pytest.fixture
+def con_llave_de_app(encendido, monkeypatch):
+    monkeypatch.setattr(settings, "RECAPTCHA_SITE_KEY_APP", "site-del-apk")
+    monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY_APP", "secreto-del-apk")
+    monkeypatch.setattr(settings, "RECAPTCHA_ORIGENES_APP", "https://localhost")
+
+
+def _secret_usado(post) -> str:
+    """El secret con el que se llamó a siteverify."""
+    return post.call_args.kwargs["data"]["secret"]
+
+
+def test_el_apk_recibe_su_propia_site_key(con_llave_de_app):
+    assert recaptcha.configuracion_publica("https://localhost")["site_key"] == "site-del-apk"
+
+
+def test_la_web_sigue_recibiendo_la_suya(con_llave_de_app):
+    assert recaptcha.configuracion_publica("https://ed.temposoft.cl")["site_key"] == "site-de-prueba"
+
+
+def test_sin_origen_se_sirve_la_llave_de_la_web(con_llave_de_app):
+    # Una petición sin `Origin` (mismo origen, o un cliente que no es un
+    # navegador) no es la app: se queda con la llave estricta.
+    assert recaptcha.configuracion_publica(None)["site_key"] == "site-de-prueba"
+
+
+def test_el_token_del_apk_se_verifica_con_el_secret_del_apk(con_llave_de_app):
+    with patch.object(recaptcha.requests, "post", return_value=_ok()) as post:
+        recaptcha.exigir("t", recaptcha.ACCION_LOGIN, origen="https://localhost")
+    assert _secret_usado(post) == "secreto-del-apk"
+
+
+def test_el_token_de_la_web_se_verifica_con_el_secret_de_la_web(con_llave_de_app):
+    with patch.object(recaptcha.requests, "post", return_value=_ok()) as post:
+        recaptcha.exigir("t", recaptcha.ACCION_LOGIN, origen="https://ed.temposoft.cl")
+    assert _secret_usado(post) == "secreto-de-prueba"
+
+
+def test_el_origen_se_compara_sin_barra_final_ni_mayusculas(con_llave_de_app):
+    # El `.env` lo escribe una persona: una barra de más dejaría al APK usando
+    # la llave de la web sin que nada lo dijera.
+    assert recaptcha.es_origen_app("https://LOCALHOST/") is True
+
+
+def test_medio_par_de_app_cae_en_la_llave_de_la_web(encendido, monkeypatch):
+    """Con el secret pegado y la site key olvidada, se usa el par de la web.
+
+    Es la misma regla que `activo()`: media configuración es peor que ninguna.
+    Acá, además, rechazar sería peor que degradar: dejaría a toda la app sin
+    poder entrar por una variable a medio copiar.
+    """
+    monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY_APP", "secreto-del-apk")
+    monkeypatch.setattr(settings, "RECAPTCHA_SITE_KEY_APP", "")
+
+    with patch.object(recaptcha.requests, "post", return_value=_ok()) as post:
+        recaptcha.exigir("t", recaptcha.ACCION_LOGIN, origen="https://localhost")
+
+    assert _secret_usado(post) == "secreto-de-prueba"
+    assert recaptcha.configuracion_publica("https://localhost")["site_key"] == "site-de-prueba"
+
+
+def test_sin_segundo_par_todo_sigue_como_antes(encendido, monkeypatch):
+    # Nadie tiene que configurar nada para desplegar este cambio.
+    monkeypatch.setattr(settings, "RECAPTCHA_SITE_KEY_APP", "")
+    monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY_APP", "")
+
+    with patch.object(recaptcha.requests, "post", return_value=_ok()) as post:
+        recaptcha.exigir("t", recaptcha.ACCION_LOGIN, origen="https://localhost")
+
+    assert _secret_usado(post) == "secreto-de-prueba"
+
+
+def test_el_secret_del_apk_tampoco_sale_en_la_configuracion_publica(con_llave_de_app):
+    publica = recaptcha.configuracion_publica("https://localhost")
+    assert "secreto-del-apk" not in str(publica)
