@@ -220,6 +220,21 @@ class EstadoDiarioService:
             self._save_log(log, False, error="Nivel inválido")
             raise BadRequestException("El campo nivel es obligatorio y debe ser bajo, medio o alto")
 
+        # El WhatsApp queda reservado a los pendientes urgentes: tiene costo por
+        # mensaje y, sobre todo, un aviso que llega para todo deja de avisar.
+        #
+        # La regla se valida acá y no solo en la pantalla porque el APK de
+        # Android consume esta misma API: un teléfono sin actualizar seguiría
+        # mandando la combinación vieja, y el modal nuevo no lo detendría.
+        # Tampoco va en el schema: `MarcarPendienteRequest` no puede expresar
+        # una dependencia entre dos campos sin un validador aparte, y el resto
+        # de las reglas de este flujo ya viven en este método.
+        if notificar_whatsapp and nivel != "alto":
+            self._save_log(log, False, error=f"WhatsApp pedido con nivel '{nivel}'")
+            raise BadRequestException(
+                "El aviso por WhatsApp solo está disponible en los pendientes de nivel alto"
+            )
+
         agendar = bool(mensaje and mensaje.strip() and fecha_hora)
 
         if notificar_whatsapp and not agendar:

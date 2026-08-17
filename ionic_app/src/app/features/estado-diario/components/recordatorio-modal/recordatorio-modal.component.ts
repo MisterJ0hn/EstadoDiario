@@ -35,7 +35,7 @@ const HORA_WHATSAPP_POR_DEFECTO = '09:00';
             </p>
             <div>
               <label class="form-label">Nivel de urgencia</label>
-              <select class="form-select" [(ngModel)]="nivel">
+              <select class="form-select" [(ngModel)]="nivel" (ngModelChange)="onNivelChange()">
                 <option value="bajo">Bajo</option>
                 <option value="medio">Medio</option>
                 <option value="alto">Alto</option>
@@ -55,29 +55,41 @@ const HORA_WHATSAPP_POR_DEFECTO = '09:00';
 
             <hr class="border-neutral-200" />
 
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" [(ngModel)]="notificarWhatsapp" />
-              <span class="text-sm text-neutral-700">Notificar por WhatsApp</span>
-            </label>
+            <!-- El WhatsApp es solo para los pendientes de nivel alto: tiene
+                 costo por mensaje y, sobre todo, si llega para todo deja de
+                 significar algo. En los otros niveles se dice la regla en vez
+                 de esconder la opción sin más, para que no se lea como que
+                 falta algo en la pantalla. -->
+            @if (nivel === 'alto') {
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" [(ngModel)]="notificarWhatsapp" />
+                <span class="text-sm text-neutral-700">Notificar por WhatsApp</span>
+              </label>
 
-            @if (notificarWhatsapp) {
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label class="form-label" for="wa-telefono">Teléfono</label>
-                  <input id="wa-telefono" type="text" class="form-input" [(ngModel)]="telefono"
-                         placeholder="+56912345678" />
+              @if (notificarWhatsapp) {
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="form-label" for="wa-telefono">Teléfono</label>
+                    <input id="wa-telefono" type="text" class="form-input" [(ngModel)]="telefono"
+                           placeholder="+56912345678" />
+                  </div>
+                  <div>
+                    <!-- Solo la hora: el WhatsApp se envía el mismo día del
+                         recordatorio, así que la fecha se toma de ahí y no se
+                         vuelve a pedir. -->
+                    <label class="form-label" for="wa-hora">Hora de envío</label>
+                    <input id="wa-hora" type="time" class="form-input" [(ngModel)]="horaWhatsapp" />
+                    <p class="text-xs text-neutral-400 mt-1">
+                      Se enviará el {{ fechaLegible() }}.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <!-- Solo la hora: el WhatsApp se envía el mismo día del
-                       recordatorio, así que la fecha se toma de ahí y no se
-                       vuelve a pedir. -->
-                  <label class="form-label" for="wa-hora">Hora de envío</label>
-                  <input id="wa-hora" type="time" class="form-input" [(ngModel)]="horaWhatsapp" />
-                  <p class="text-xs text-neutral-400 mt-1">
-                    Se enviará el {{ fechaLegible() }}.
-                  </p>
-                </div>
-              </div>
+              }
+            } @else {
+              <p class="text-sm text-neutral-500">
+                El aviso por WhatsApp está disponible solo en los pendientes de
+                nivel <strong>alto</strong>.
+              </p>
             }
           </div>
           <div class="modal-footer">
@@ -129,6 +141,19 @@ export class RecordatorioModalComponent {
     this.notificarWhatsapp = false;
     this.telefono = this.auth.user()?.telefono ?? '';
     this.horaWhatsapp = HORA_WHATSAPP_POR_DEFECTO;
+  }
+
+  /**
+   * Bajar de nivel apaga el WhatsApp, no solo lo esconde.
+   *
+   * Sin esto queda un agujero silencioso: se elige *alto*, se marca la casilla,
+   * se escribe un teléfono, se baja a *medio* — el bloque desaparece de la
+   * pantalla pero `notificarWhatsapp` sigue en true, y `guardar()` manda igual
+   * el aviso con un dato que el usuario ya no ve. El backend ahora lo rechaza,
+   * pero el usuario merecía no llegar a ese error.
+   */
+  onNivelChange(): void {
+    if (this.nivel !== 'alto') this.notificarWhatsapp = false;
   }
 
   /** Fecha del recordatorio en formato chileno, para el texto de ayuda. */

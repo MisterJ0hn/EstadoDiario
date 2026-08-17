@@ -144,37 +144,45 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                         <span class="badge-neutral">No leído</span>
                       }
                     </td>
-                    <td class="relative">
-                      <div class="inline-flex items-center gap-1 align-middle">
-                        @if (!m.leido) {
-                          <button (click)="toggleMenu(m.id, $event)" class="btn-outline btn-sm" title="Acciones">
+                    <td>
+                      <!-- Los dos botones sueltos, no dentro de un desplegable:
+                           son las dos únicas acciones de la fila y son las que
+                           se usan todo el día. Mismos colores que en el detalle
+                           del movimiento, para que la acción se reconozca igual
+                           en las dos pantallas. -->
+                      @if (!m.leido) {
+                        <div class="inline-flex items-center gap-2 align-middle">
+                          <!-- Solo icono: title da el tooltip, que es lo único
+                               que queda para descubrir qué hace el botón, y
+                               aria-label el nombre accesible — sin texto
+                               adentro, un lector de pantalla anunciaría "botón"
+                               y nada más.
+                               (Sin backticks en este comentario: el template es
+                               un template literal y lo cerrarían.) -->
+                          <button (click)="onResolver(m.id)" class="btn-success btn-sm"
+                                  title="Marcar como resuelto" aria-label="Marcar como resuelto">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                             </svg>
                           </button>
-                          @if (menuAbiertoId() === m.id) {
-                            <!-- Backdrop invisible para cerrar el menú al hacer click afuera -->
-                            <div class="fixed inset-0 z-10" (click)="cerrarMenu()"></div>
-                            <div class="absolute right-0 z-20 mt-1 w-40 rounded-lg border border-neutral-200 bg-white shadow-lg py-1">
-                              <button (click)="onResolver(m.id)"
-                                      class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
-                                Resuelto
-                              </button>
-                              <!-- "Pendiente" abre el modal de recordatorio: marcar pendiente
-                                   y agendar son una sola acción. -->
-                              <button (click)="onPendiente(m.id)"
-                                      class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
-                                Pendiente
-                              </button>
-                            </div>
-                          }
-                        }
-                      </div>
+                          <!-- "Pendiente" abre el modal de recordatorio: marcar
+                               pendiente y agendar son una sola acción. De ahí el
+                               reloj y no un signo de admiración: lo que se elige
+                               ahí es para cuándo queda agendado. -->
+                          <button (click)="onPendiente(m.id)" class="btn-warning btn-sm"
+                                  title="Marcar como pendiente" aria-label="Marcar como pendiente">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                        </div>
+                      }
                     </td>
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="9" class="text-center py-10 text-neutral-400">
+                    <td colspan="8" class="text-center py-10 text-neutral-400">
                       No se encontraron registros del estado diario
                     </td>
                   </tr>
@@ -282,8 +290,6 @@ export class MovimientosListComponent implements OnInit {
   readonly chipsFiltros = signal<ChipFiltro[]>([]);
   private readonly panel = viewChild(FiltrosPanelComponent);
 
-  menuAbiertoId = signal<number | null>(null);
-
   /**
    * Id del registro para el que está abierto el modal de recordatorio; null = cerrado.
    * Marcar "Pendiente" y agendar son una sola acción: el modal registra el
@@ -374,7 +380,6 @@ export class MovimientosListComponent implements OnInit {
 
   loadData(): void {
     this.loading.set(true);
-    this.cerrarMenu();
 
     if (this.isOrigen()) {
       const origenId = Number(this.route.snapshot.paramMap.get('id'));
@@ -543,17 +548,7 @@ export class MovimientosListComponent implements OnInit {
     this.loadData();
   }
 
-  toggleMenu(id: number, event: MouseEvent): void {
-    event.stopPropagation();
-    this.menuAbiertoId.set(this.menuAbiertoId() === id ? null : id);
-  }
-
-  cerrarMenu(): void {
-    this.menuAbiertoId.set(null);
-  }
-
   onResolver(id: number): void {
-    this.cerrarMenu();
     this.observacionResuelto = '';
     this.confirmarResolverId.set(id);
   }
@@ -591,7 +586,6 @@ export class MovimientosListComponent implements OnInit {
    * el recordatorio. No se pregunta el nivel dos veces.
    */
   onPendiente(id: number): void {
-    this.cerrarMenu();
     this.recordatorioMovimientoId.set(id);
   }
 

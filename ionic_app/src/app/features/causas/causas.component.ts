@@ -111,7 +111,7 @@ import { CausaService } from './services/causa.service';
         (quitar)="quitarFiltro($event)"
       >
         <div>
-          <label class="form-label" for="c-actividad">Sin novedades hace</label>
+          <label class="form-label" for="c-actividad">Sin movimientos hace</label>
           <select id="c-actividad" class="form-select" [(ngModel)]="filtroSinActividad">
             <option value="">No filtrar</option>
             <option value="1">Más de 1 mes</option>
@@ -139,7 +139,7 @@ import { CausaService } from './services/causa.service';
           <label class="form-label" for="c-orden">Ordenar por</label>
           <select id="c-orden" class="form-select" [(ngModel)]="filtroOrden">
             <option value="">Fecha de ingreso</option>
-            <option value="actividad">Última novedad, más antigua primero</option>
+            <option value="actividad">Último movimiento, más antiguo primero</option>
             <option value="audiencia">Próxima audiencia</option>
           </select>
         </div>
@@ -212,8 +212,8 @@ import { CausaService } from './services/causa.service';
                   <th>Institución</th>
                   <!-- El cruce con los otros tres reportes. Van al final porque
                        son lo que se consulta, no lo que identifica la causa. -->
-                  <th title="Última vez que la causa apareció en el estado diario, en movimientos o en una audiencia">
-                    Última novedad
+                  <th title="Fecha del último movimiento: la última vez que la causa apareció en el estado diario, en movimientos o en una audiencia ya celebrada">
+                    Último Movimiento
                   </th>
                   <th title="Próxima audiencia agendada">Audiencia</th>
                 </tr>
@@ -238,7 +238,7 @@ import { CausaService } from './services/causa.service';
                     </td>
                     <td class="whitespace-nowrap">
                       @if (c.ultima_actividad) {
-                        <span [title]="detalleActividad(c)">{{ hace(c.ultima_actividad) }}</span>
+                        <span [title]="detalleActividad(c)">{{ fmtFecha(c.ultima_actividad) }}</span>
                       } @else {
                         <!-- Sin registro NO es "sin movimiento": puede que el
                              estudio solo tenga cargados los reportes de esta
@@ -519,7 +519,7 @@ export class CausasComponent implements OnInit {
     if (this.filtroSinActividad) {
       chips.push({
         clave: 'sin_actividad',
-        etiqueta: 'Sin novedades',
+        etiqueta: 'Sin movimientos',
         valor: `más de ${this.filtroSinActividad} mes(es)`,
       });
     }
@@ -553,31 +553,17 @@ export class CausasComponent implements OnInit {
     this.onFiltrar();
   }
 
-  /** `2026-08-02` → `hace 9 días`. Lo que se pregunta no es la fecha sino
-   *  cuánto lleva quieta la causa. */
-  hace(iso: string | null): string {
-    if (!iso) return '-';
-    const [a, m, d] = iso.split('-').map(Number);
-    const dias = Math.floor((Date.now() - new Date(a, m - 1, d).getTime()) / 86400000);
-    if (dias <= 0) return 'hoy';
-    if (dias === 1) return 'ayer';
-    if (dias < 30) return `hace ${dias} días`;
-    const meses = Math.floor(dias / 30);
-    if (meses < 12) return `hace ${meses} mes${meses > 1 ? 'es' : ''}`;
-    const anios = Math.floor(meses / 12);
-    return `hace ${anios} año${anios > 1 ? 's' : ''}`;
-  }
-
-  /** De qué reporte salió la fecha, para el tooltip. */
+  /** De qué reporte salió la fecha, para el tooltip.
+   *
+   *  No repite la fecha: desde que la columna la muestra en vez del tiempo
+   *  relativo, el tooltip solo tiene que agregar lo que no se ve. */
   detalleActividad(c: Causa): string {
     const de: Record<string, string> = {
-      estado_diario: 'apareció en el estado diario',
-      movimientos: 'apareció en movimientos',
-      audiencias: 'tuvo una audiencia',
+      estado_diario: 'Apareció en el estado diario',
+      movimientos: 'Apareció en movimientos',
+      audiencias: 'Tuvo una audiencia',
     };
-    const origen = c.origen_actividad ? de[c.origen_actividad] : null;
-    const fecha = this.fmtFecha(c.ultima_actividad ?? null);
-    return origen ? `${fecha}: ${origen}` : fecha;
+    return (c.origen_actividad ? de[c.origen_actividad] : null) ?? 'Última vez que se movió';
   }
 
   /** Resalta la audiencia inminente: es lo más caro de dejar pasar. */
