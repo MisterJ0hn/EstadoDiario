@@ -34,6 +34,8 @@ from app.schemas.auth import (
     ActualizarPerfilRequest,
     CambiarPasswordRequest,
     LoginClienteRequest,
+    PjudCredencialesResponse,
+    PjudCredencialesUpdate,
     RecaptchaConfigResponse,
     RecuperarPasswordRequest,
     RefreshTokenRequest,
@@ -181,6 +183,65 @@ def actualizar_perfil(
     db.refresh(usuario)
     cliente = ClienteRepository(db_maestra).find_by_id(tenant.cliente_id)
     return perfil_cliente(usuario, cliente)
+
+
+# ── Clave del Poder Judicial (Oficina Judicial Virtual) ──
+# Es una credencial personal del abogado, solo para `/sincronizar_civil` de
+# api-pjud. Autoservicio puro: cada quien la carga y la cambia, nadie más la ve.
+
+
+@router.get(
+    "/pjud-credenciales",
+    response_model=PjudCredencialesResponse,
+    summary="Estado de la clave del OJV de la sesión (nunca devuelve la clave)",
+)
+def obtener_pjud_credenciales(usuario: Usuario = Depends(get_usuario_actual)):
+    return PjudCredencialesResponse(
+        configurado=usuario.pjud_configurado,
+        rut=usuario.pjud_rut,
+        metodo_login=usuario.pjud_metodo_login,
+    )
+
+
+@router.put(
+    "/pjud-credenciales",
+    response_model=PjudCredencialesResponse,
+    summary="Guardar la propia clave del OJV",
+    responses={400: {"description": "Falta la clave y no hay una guardada"}},
+)
+def guardar_pjud_credenciales(
+    body: PjudCredencialesUpdate,
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    """`clave` vacía = dejar la que ya estaba (para poder cambiar solo el RUT o
+    el método sin volver a tipearla). Si nunca hubo clave, es obligatoria."""
+    usuario.pjud_rut = _normalizar_rut_pjud(body.rut)
+    usuario.pjud_metodo_login = body.metodo_login
+    if body.clave and body.clave.strip():
+        usuario.pjud_clave = body.clave
+    if not usuario.pjud_clave_cifrada:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Falta la clave del Poder Judicial.",
+        )
+
+    db.commit()
+    db.refresh(usuario)
+    logger.info("El usuario %s del cliente %s guardó su clave del OJV", usuario.id, tenant.guid)
+    return PjudCredencialesResponse(
+        configurado=usuario.pjud_configurado,
+        rut=usuario.pjud_rut,
+        metodo_login=usuario.pjud_metodo_login,
+    )
+
+
+def _normalizar_rut_pjud(rut: str) -> str:
+    """Sin puntos, espacios ni guión: así lo pide api-pjud (`"17314741"`).
+    No se toca el dígito verificador —si la persona lo escribió, se manda—:
+    quitarlo a ciegas rompería el login cuando el OJV sí lo espera."""
+    return "".join(c for c in rut.strip() if c.isalnum())
 
 
 @router.post(

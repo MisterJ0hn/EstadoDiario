@@ -8,6 +8,8 @@ import {
   CambiarPasswordRequest,
   LoginRequest,
   OperacionResponse,
+  PjudCredenciales,
+  PjudCredencialesUpdate,
   RecuperarPasswordRequest,
   RestablecerPasswordRequest,
   TokenResponse,
@@ -148,6 +150,19 @@ export class AuthService {
         localStorage.setItem(USER_KEY, JSON.stringify(user));
         this._user.set(user);
       })
+    );
+  }
+
+  /** Estado de la clave del OJV de la persona. Nunca trae la clave. */
+  pjudCredenciales(): Observable<PjudCredenciales> {
+    return this.http.get<PjudCredenciales>(`${this.apiUrl}/pjud-credenciales`);
+  }
+
+  /** Guarda la propia clave del OJV (para `/sincronizar_civil` de api-pjud).
+   *  Refresca el perfil para que `pjud_configurado` de la sesión quede al día. */
+  guardarPjudCredenciales(datos: PjudCredencialesUpdate): Observable<PjudCredenciales> {
+    return this.http.put<PjudCredenciales>(`${this.apiUrl}/pjud-credenciales`, datos).pipe(
+      tap(() => this.loadProfile())
     );
   }
 

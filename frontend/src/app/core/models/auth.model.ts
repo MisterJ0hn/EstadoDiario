@@ -59,6 +59,28 @@ export interface UserInfo {
    * reseteada por soporte.
    */
   debe_cambiar_password?: boolean;
+  /**
+   * Si esta persona ya cargó su clave del Poder Judicial (Mi Perfil). La
+   * necesita `/sincronizar_civil` de "Detalle PJUD" para las causas que el
+   * PJUD todavía no scrapeó. La clave nunca viaja: solo si está o no.
+   */
+  pjud_configurado?: boolean;
+  /** 1 = Clave del Poder Judicial, 2 = ClaveÚnica. */
+  pjud_metodo_login?: number;
+}
+
+/** Estado de la clave del OJV. La clave nunca se devuelve. */
+export interface PjudCredenciales {
+  configurado: boolean;
+  rut: string | null;
+  metodo_login: number;
+}
+
+export interface PjudCredencialesUpdate {
+  rut: string;
+  /** Vacío / omitido = dejar la que ya está guardada. */
+  clave?: string | null;
+  metodo_login: number;
 }
 
 export interface CambiarPasswordRequest {

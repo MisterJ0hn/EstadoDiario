@@ -106,6 +106,12 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # Cartera armada por el cruce porque el estudio no ha cargado el reporte de
     # Causas. FALSE en todo lo que ya existe: esos archivos los subió alguien.
     ("estado_diario_origen", "deducida", "BOOLEAN DEFAULT FALSE"),
+    # Credenciales del abogado en la Oficina Judicial Virtual, para
+    # `/sincronizar_civil` de api-pjud. Nulas en los usuarios que ya existen:
+    # la función queda inactiva para ellos hasta que las carguen en Mi Perfil.
+    ("usuario", "pjud_rut", "VARCHAR(20)"),
+    ("usuario", "pjud_clave", "VARCHAR(500)"),
+    ("usuario", "pjud_metodo_login", "INTEGER DEFAULT 1"),
 ]
 
 # Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`

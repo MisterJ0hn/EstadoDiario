@@ -59,6 +59,8 @@ def perfil_cliente(usuario, cliente=None) -> UserInfo:
         # que la advertencia al importar se pueda mostrar sin otra petición.
         ruts=[r.rut for r in usuario.ruts],
         debe_cambiar_password=usuario.debe_cambiar_password,
+        pjud_configurado=usuario.pjud_configurado,
+        pjud_metodo_login=usuario.pjud_metodo_login,
     )
     if cliente is not None:
         info.cliente_id = cliente.cliente_id

@@ -310,23 +310,36 @@ def pjud_movimientos(
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
+    credenciales_pjud = {
+        "rut": current_user.pjud_rut,
+        "clave": current_user.pjud_clave,
+        "metodo_login": current_user.pjud_metodo_login,
+    }
+
     inicio = time.monotonic()
     resultado_log = "error"
     http_status = 502
     mensaje_log: str | None = None
     try:
         resultado = PjudService().obtener_detalle(
-            causa, forzar_sincronizacion=forzar, cuaderno_id=cuaderno
+            causa,
+            forzar_sincronizacion=forzar,
+            cuaderno_id=cuaderno,
+            credenciales_pjud=credenciales_pjud,
         )
+        estado = resultado.get("estado")
         # El scrape del proveedor es asíncrono: 202 mientras no esté listo, para
         # que el frontend distinga "espera y reintenta" de "listo".
-        if resultado.get("estado") == "sincronizando":
+        if estado == "sincronizando":
             response.status_code = http_status = 202
-            resultado_log = "sincronizando"
-            mensaje_log = resultado.get("mensaje")
+        elif estado == "sin_credenciales":
+            # No es un error: es que falta que la persona cargue su clave. 200
+            # con el estado en el cuerpo — el modal la manda a Mi Perfil.
+            http_status = 200
         else:
             http_status = 200
-            resultado_log = "listo"
+        resultado_log = estado or "listo"
+        mensaje_log = resultado.get("mensaje")
         return PjudMovimientosResponse(**resultado)
     except PjudApiError as e:
         mensaje_log = str(e)

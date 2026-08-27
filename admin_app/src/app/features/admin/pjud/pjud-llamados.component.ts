@@ -217,6 +217,7 @@ export class PjudLlamadosComponent implements OnInit {
     const partes: string[] = [];
     if (r.listo) partes.push(`${r.listo} ok`);
     if (r.sincronizando) partes.push(`${r.sincronizando} sincronizando`);
+    if (r.sin_credenciales) partes.push(`${r.sin_credenciales} sin clave`);
     if (r.error) partes.push(`${r.error} con error`);
     return partes.join(', ');
   });
@@ -311,13 +312,19 @@ export class PjudLlamadosComponent implements OnInit {
   }
 
   etiqueta(r: ResultadoPjud): string {
-    return { listo: 'Listo', sincronizando: 'Sincronizando', error: 'Error' }[r];
+    return {
+      listo: 'Listo',
+      sincronizando: 'Sincronizando',
+      sin_credenciales: 'Sin clave',
+      error: 'Error',
+    }[r];
   }
 
   badgeResultado(r: ResultadoPjud): string {
     return {
       listo: 'badge-success',
       sincronizando: 'badge-warning',
+      sin_credenciales: 'badge-neutral',
       error: 'badge-danger',
     }[r];
   }

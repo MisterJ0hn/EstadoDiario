@@ -108,6 +108,9 @@ def _causa_civil(rol="C-6181-2026", tribunal="1° Juzgado Civil de Puente Alto")
     return types.SimpleNamespace(id=1, materia="Civil", rol=rol, tribunal=tribunal)
 
 
+_CREDS = {"rut": "17314741", "clave": "secreta", "metodo_login": 1}
+
+
 class TestObtenerDetalle:
     """`obtener_detalle` orquesta 2-3 llamadas a `_request`. Se reemplaza
     `_request` por un doble que responde según la ruta, para probar el manejo
@@ -139,16 +142,43 @@ class TestObtenerDetalle:
             "/consultar_civil": PjudNoEncontrado("no está"),
             "/sincronizar_civil": {"exito": True},
         })
-        resultado = servicio.obtener_detalle(_causa_civil())
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert "/sincronizar_civil" in self.llamadas
+
+    def test_sin_clave_del_ojv_devuelve_sin_credenciales_y_no_sincroniza(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": PjudNoEncontrado("no está"),
+        })
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=None)
+        assert resultado["estado"] == "sin_credenciales"
+        assert "/sincronizar_civil" not in self.llamadas
+
+    def test_sincronizar_manda_rut_clave_y_metodo(self, monkeypatch):
+        cuerpos: list[dict] = []
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": {"causa": {"estado": "Sincronizando", "cuadernos": []}},
+            "/sincronizar_civil": {"exito": True},
+        })
+        original = servicio._request
+
+        def espia(metodo, ruta, **kwargs):
+            if ruta == "/sincronizar_civil":
+                cuerpos.append(kwargs.get("json"))
+            return original(metodo, ruta, **kwargs)
+
+        monkeypatch.setattr(servicio, "_request", espia)
+        servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        assert cuerpos and cuerpos[0]["rut"] == "17314741"
+        assert cuerpos[0]["clave"] == "secreta"
+        assert cuerpos[0]["metodo_login"] == 1
 
     def test_causa_en_proceso_devuelve_sincronizando(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
             "/consultar_civil": {"causa": {"estado": "Sincronizando", "cuadernos": []}},
             "/sincronizar_civil": {"exito": True},
         })
-        resultado = servicio.obtener_detalle(_causa_civil())
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
         assert resultado["estado"] == "sincronizando"
 
     def test_causa_lista_trae_las_secciones(self, monkeypatch):
@@ -165,7 +195,8 @@ class TestObtenerDetalle:
                 "exhortos": [{"rol_origen": "C-1-2020"}],
             },
         })
-        resultado = servicio.obtener_detalle(_causa_civil())
+        # Una causa lista NO necesita credenciales: no se sincroniza.
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=None)
         assert resultado["estado"] == "listo"
         assert resultado["cuaderno_consultado_id"] == 1
         assert resultado["historia"][0]["documento_url"] == "https://x/f1.pdf"

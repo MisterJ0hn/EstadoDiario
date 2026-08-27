@@ -249,8 +249,12 @@ export interface PjudExhortoItem {
 }
 
 export interface PjudMovimientosResponse {
-  /** `sincronizando` = el PJUD todavía está scrapeando; `causa` viene null. */
-  estado: 'listo' | 'sincronizando';
+  /**
+   * `sincronizando` = el PJUD todavía está scrapeando; `causa` viene null.
+   * `sin_credenciales` = hay que sincronizar pero falta cargar la clave del
+   * Poder Judicial en Mi Perfil.
+   */
+  estado: 'listo' | 'sincronizando' | 'sin_credenciales';
   mensaje: string | null;
   causa: PjudCausaDetalle | null;
   cuaderno_consultado_id: number | null;

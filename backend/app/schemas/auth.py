@@ -121,6 +121,13 @@ class UserInfo(BaseModel):
     # La sesión vale, pero el backend rechaza el resto hasta que se cambie.
     debe_cambiar_password: bool = False
 
+    # Si esta persona ya cargó su clave del OJV (Mi Perfil → Clave del Poder
+    # Judicial). Viaja en la sesión para que el modal de "Detalle PJUD" pueda
+    # avisar "configura tu clave" sin una petición aparte. La clave NUNCA sale
+    # de acá — solo si está o no, y con qué método entra.
+    pjud_configurado: bool = False
+    pjud_metodo_login: int = 1
+
     # RUT con los que ESTA persona recibe archivos del PJUD. Viajan en la
     # sesión porque la advertencia de "este archivo es de otro" se muestra al
     # elegir el archivo, antes de subir nada: pedirlos por un endpoint aparte
@@ -165,3 +172,21 @@ class ActualizarPerfilRequest(BaseModel):
     """Autoservicio: solo el propio teléfono, no correo ni contraseña."""
 
     telefono: str | None = Field(default=None, max_length=30)
+
+
+class PjudCredencialesResponse(BaseModel):
+    """Estado de la clave del OJV de la persona. Nunca incluye la clave."""
+
+    configurado: bool = False
+    rut: str | None = None
+    # 1 = Clave del Poder Judicial, 2 = ClaveÚnica.
+    metodo_login: int = 1
+
+
+class PjudCredencialesUpdate(BaseModel):
+    """Autoservicio: la propia clave del OJV, para `/sincronizar_civil`."""
+
+    rut: str = Field(..., min_length=7, max_length=20, examples=["17314741"])
+    # None o vacío = dejar la clave que ya está guardada (no reescribirla).
+    clave: str | None = Field(default=None, max_length=200)
+    metodo_login: int = Field(1, ge=1, le=2)

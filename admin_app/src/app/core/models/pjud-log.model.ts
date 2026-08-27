@@ -7,7 +7,7 @@
  * filtro opcional por cliente.
  */
 
-export type ResultadoPjud = 'listo' | 'sincronizando' | 'error';
+export type ResultadoPjud = 'listo' | 'sincronizando' | 'sin_credenciales' | 'error';
 
 export interface PjudLlamado {
   id: number;

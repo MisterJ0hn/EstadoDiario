@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import String, Boolean, DateTime
+from sqlalchemy import String, Boolean, DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.crypto import cifrar, descifrar
@@ -59,6 +59,17 @@ class Usuario(BaseTenant):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+    # ── Credenciales del abogado en la Oficina Judicial Virtual del PJUD ──
+    # Solo se usan para `/sincronizar_civil` de api-pjud: ese endpoint dispara un
+    # scrape que ENTRA al OJV como esta persona. El resto de la consulta (el
+    # catálogo, `consultar_civil`, `consultar_movimientos_civil`) va con la
+    # credencial de plataforma y no las necesita. La clave se guarda cifrada,
+    # igual que el correo y el teléfono: hay que mandarla en claro al login.
+    pjud_rut: Mapped[Optional[str]] = mapped_column(String(20))
+    pjud_clave_cifrada: Mapped[Optional[str]] = mapped_column("pjud_clave", String(500))
+    # 1 = Clave del Poder Judicial, 2 = ClaveÚnica.
+    pjud_metodo_login: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
     # Los RUT con los que esta persona recibe archivos del PJUD. Con cascada
     # porque no son una entidad propia: fuera de su usuario un RUT suelto no
     # significa nada. Ver `UsuarioRut`.
@@ -102,6 +113,20 @@ class Usuario(BaseTenant):
     @telefono.setter
     def telefono(self, valor: Optional[str]) -> None:
         self.telefono_cifrado = cifrar(valor.strip()) if valor else None
+
+    @property
+    def pjud_clave(self) -> Optional[str]:
+        return descifrar(self.pjud_clave_cifrada) if self.pjud_clave_cifrada else None
+
+    @pjud_clave.setter
+    def pjud_clave(self, valor: Optional[str]) -> None:
+        limpio = valor.strip() if valor else None
+        self.pjud_clave_cifrada = cifrar(limpio) if limpio else None
+
+    @property
+    def pjud_configurado(self) -> bool:
+        """Tiene lo mínimo para `/sincronizar_civil`: RUT y clave."""
+        return bool(self.pjud_rut and self.pjud_clave_cifrada)
 
     @property
     def nombre_completo(self) -> str:

@@ -54,6 +54,12 @@ _MENSAJE_SINCRONIZANDO = (
     "puede tardar varios minutos; vuelve a intentar en un rato."
 )
 
+_MENSAJE_SIN_CREDENCIALES = (
+    "Para consultar esta causa por primera vez hay que iniciar sesión en el "
+    "Poder Judicial con tu clave. Configúrala en Mi Perfil → Clave del Poder "
+    "Judicial."
+)
+
 
 class PjudApiError(Exception):
     """Cualquier motivo por el que no se pudo traer el detalle de una causa.
@@ -249,12 +255,21 @@ class PjudService:
 
     # ── Flujo completo ───────────────────────────────────────────
 
-    def _sincronizar(self, cuerpo_causa: dict) -> None:
-        """Encola el scrape en el proveedor. Best-effort: un 409 (ya en curso)
-        o cualquier otra falla acá no debe cortar la pantalla — solo significa
-        que hay que volver a intentar más tarde."""
+    def _sincronizar(self, cuerpo_causa: dict, credenciales: dict) -> None:
+        """Encola el scrape en el proveedor. `/sincronizar_civil` INICIA SESIÓN
+        en el OJV como la persona, así que el cuerpo lleva además su rut, clave
+        y método de login (1 = Clave del Poder Judicial, 2 = ClaveÚnica).
+
+        Best-effort: un 409 (ya en curso) o cualquier otra falla acá no corta la
+        pantalla — solo significa que hay que reintentar más tarde."""
+        cuerpo = {
+            **cuerpo_causa,
+            "rut": credenciales["rut"],
+            "clave": credenciales["clave"],
+            "metodo_login": credenciales.get("metodo_login") or 1,
+        }
         try:
-            self._request("POST", "/sincronizar_civil", json=cuerpo_causa)
+            self._request("POST", "/sincronizar_civil", json=cuerpo)
         except PjudConflicto:
             pass
         except PjudApiError as e:
@@ -265,17 +280,23 @@ class PjudService:
         causa,
         forzar_sincronizacion: bool = False,
         cuaderno_id: Optional[int] = None,
+        credenciales_pjud: Optional[dict] = None,
     ) -> dict:
         """Detalle completo de una `Causa` (materia Civil) desde el PJUD.
 
         Devuelve siempre un dict con `estado`:
-          - `"sincronizando"`: el proveedor todavía está scrapeando la causa.
-            `causa` viene en `None`. La pantalla muestra el aviso y "Reintentar".
+          - `"sin_credenciales"`: hay que sincronizar la causa (nunca vista, o
+            todavía en proceso) pero la persona no cargó su clave del OJV. La
+            pantalla la manda a Mi Perfil.
+          - `"sincronizando"`: el proveedor está scrapeando la causa. `causa`
+            viene en `None`. La pantalla muestra el aviso y "Reintentar".
           - `"listo"`: `causa` y las cinco secciones están pobladas.
 
+        `credenciales_pjud`: `{"rut", "clave", "metodo_login"}` de la persona;
+        sin ellas no se puede llamar a `/sincronizar_civil`.
+
         `forzar_sincronizacion` pide un scrape nuevo antes de consultar (botón
-        "Actualizar desde el PJUD"); igual puede volver `"sincronizando"` si el
-        worker no alcanzó a terminar.
+        "Actualizar desde el PJUD").
 
         `cuaderno_id` elige qué cuaderno traer en Historia/Notificaciones; por
         defecto, el primero.
@@ -290,24 +311,34 @@ class PjudService:
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
-        if forzar_sincronizacion:
-            self._sincronizar(cuerpo_causa)
+        puede_sincronizar = bool(
+            credenciales_pjud
+            and credenciales_pjud.get("rut")
+            and credenciales_pjud.get("clave")
+        )
+
+        if forzar_sincronizacion and puede_sincronizar:
+            self._sincronizar(cuerpo_causa, credenciales_pjud)
 
         try:
             detalle = self._request("POST", "/consultar_civil", json=cuerpo_causa)["causa"]
         except PjudNoEncontrado:
-            # Nunca vista por el proveedor: encolar y avisar que espere.
+            detalle = None
+
+        no_lista = (
+            detalle is None
+            or (detalle.get("estado") or "").strip().lower() in _ESTADOS_SINCRONIZANDO
+            or not (detalle.get("cuadernos") or [])
+        )
+        if no_lista:
+            if not puede_sincronizar:
+                return {"estado": "sin_credenciales", "mensaje": _MENSAJE_SIN_CREDENCIALES}
+            # `forzar` ya disparó el sync arriba; sin `forzar` se dispara acá.
             if not forzar_sincronizacion:
-                self._sincronizar(cuerpo_causa)
+                self._sincronizar(cuerpo_causa, credenciales_pjud)
             return {"estado": "sincronizando", "mensaje": _MENSAJE_SINCRONIZANDO}
 
-        estado_causa = (detalle.get("estado") or "").strip().lower()
         cuadernos = detalle.get("cuadernos") or []
-        if estado_causa in _ESTADOS_SINCRONIZANDO or not cuadernos:
-            if not forzar_sincronizacion:
-                self._sincronizar(cuerpo_causa)
-            return {"estado": "sincronizando", "mensaje": _MENSAJE_SINCRONIZANDO}
-
         cuaderno = self._elegir_cuaderno(cuadernos, cuaderno_id)
 
         movimientos = self._request(

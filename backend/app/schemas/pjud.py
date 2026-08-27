@@ -135,8 +135,10 @@ class PjudExhortoItem(BaseModel):
 class PjudMovimientosResponse(BaseModel):
     # `sincronizando` = api-pjud está scrapeando la causa por primera vez;
     # `causa` viene en null y el resto vacío. El frontend muestra el aviso y
-    # ofrece "Reintentar". `listo` = todo lo demás está poblado.
-    estado: Literal["listo", "sincronizando"] = "listo"
+    # ofrece "Reintentar". `sin_credenciales` = hay que sincronizar pero la
+    # persona no cargó su clave del OJV; el modal la manda a Mi Perfil.
+    # `listo` = todo lo demás está poblado.
+    estado: Literal["listo", "sincronizando", "sin_credenciales"] = "listo"
     mensaje: str | None = None
     causa: PjudCausaDetalle | None = None
     cuaderno_consultado_id: int | None = None

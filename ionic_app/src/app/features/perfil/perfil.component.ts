@@ -84,6 +84,64 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
         </div>
       </div>
 
+      <!-- Clave del OJV. Solo sirve para "Detalle PJUD": la primera consulta de
+           una causa Civil que el PJUD aún no tiene scrapeada dispara un login en
+           la Oficina Judicial Virtual como esta persona. Se guarda cifrada. -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="text-lg font-semibold">Clave del Poder Judicial</h3>
+        </div>
+        <div class="card-body space-y-4">
+          <p class="text-sm text-neutral-600">
+            Se usa solo al abrir <strong>Detalle PJUD</strong> de una causa Civil que el
+            Poder Judicial todavía no tiene sincronizada: ahí se inicia sesión en la
+            Oficina Judicial Virtual con tu clave para pedir la sincronización. Se guarda
+            cifrada y no se muestra después.
+          </p>
+
+          @if (pjudConfigurado()) {
+            <div class="alert-success">
+              Tu clave del Poder Judicial está guardada
+              (RUT {{ pjudRut() }}, {{ metodoTexto(pjudMetodo()) }}).
+              Vuelve a escribirla solo si cambió.
+            </div>
+          }
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="form-label" for="pjud-rut">RUT</label>
+              <input id="pjud-rut" type="text" class="form-input" [(ngModel)]="pjudRutInput"
+                     placeholder="17314741" autocomplete="off" />
+              <p class="text-xs text-neutral-400 mt-1">Sin puntos ni guión.</p>
+            </div>
+            <div>
+              <label class="form-label" for="pjud-metodo">Método de ingreso</label>
+              <select id="pjud-metodo" class="form-select" [(ngModel)]="pjudMetodoInput">
+                <option [ngValue]="1">Clave del Poder Judicial</option>
+                <option [ngValue]="2">ClaveÚnica</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="form-label" for="pjud-clave">Clave</label>
+            <input id="pjud-clave" type="password" class="form-input" [(ngModel)]="pjudClaveInput"
+                   autocomplete="off"
+                   [placeholder]="pjudConfigurado() ? 'Déjala en blanco para no cambiarla' : ''" />
+          </div>
+
+          @if (errorPjud()) {
+            <div class="alert-danger" role="alert">{{ errorPjud() }}</div>
+          }
+
+          <div class="flex justify-end">
+            <button (click)="guardarPjud()" class="btn-primary" [disabled]="guardandoPjud()">
+              {{ guardandoPjud() ? 'Guardando...' : 'Guardar clave del Poder Judicial' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Cambio voluntario de contraseña. La pantalla /cambiar-clave cubre el
            otro caso —clave provisoria, sin salida hasta reemplazarla—; acá la
            clave ya es definitiva, así que se exige la actual. -->
@@ -221,6 +279,17 @@ export class PerfilComponent implements OnInit {
   /** Marca "Copiado" en el botón un momento, para que se vea que pasó algo. */
   inboxCopiado = signal(false);
 
+  // Clave del Poder Judicial (OJV). `*Input` es lo que se escribe; los signals
+  // sin sufijo son lo que hay guardado, para el aviso de "ya está configurada".
+  pjudRutInput = '';
+  pjudClaveInput = '';
+  pjudMetodoInput = 1;
+  pjudConfigurado = signal(false);
+  pjudRut = signal<string | null>(null);
+  pjudMetodo = signal(1);
+  guardandoPjud = signal(false);
+  errorPjud = signal('');
+
   readonly notaHistorial = NOTA_HISTORIAL_PASSWORD;
   claveActual = signal('');
   claveNueva = signal('');
@@ -255,6 +324,7 @@ export class PerfilComponent implements OnInit {
     // que lo muestra todo, y es donde tiene que estar al día.
     this.auth.loadProfile();
     this.cargarEstadoGoogle();
+    this.cargarPjud();
 
     const resultado = this.route.snapshot.queryParamMap.get('google');
     if (resultado === 'ok') {
@@ -267,6 +337,60 @@ export class PerfilComponent implements OnInit {
     if (resultado) {
       this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
     }
+  }
+
+  metodoTexto(m: number): string {
+    return m === 2 ? 'ClaveÚnica' : 'Clave del Poder Judicial';
+  }
+
+  private cargarPjud(): void {
+    this.auth.pjudCredenciales().subscribe({
+      next: (c) => {
+        this.pjudConfigurado.set(c.configurado);
+        this.pjudRut.set(c.rut);
+        this.pjudMetodo.set(c.metodo_login);
+        this.pjudRutInput = c.rut ?? '';
+        this.pjudMetodoInput = c.metodo_login;
+      },
+      error: () => undefined,
+    });
+  }
+
+  guardarPjud(): void {
+    const rut = this.pjudRutInput.trim();
+    if (!rut) {
+      this.errorPjud.set('Escribe tu RUT.');
+      return;
+    }
+    if (!this.pjudConfigurado() && !this.pjudClaveInput) {
+      this.errorPjud.set('Escribe tu clave del Poder Judicial.');
+      return;
+    }
+    this.errorPjud.set('');
+    this.guardandoPjud.set(true);
+    this.auth
+      .guardarPjudCredenciales({
+        rut,
+        clave: this.pjudClaveInput || null,
+        metodo_login: this.pjudMetodoInput,
+      })
+      .subscribe({
+        next: (c) => {
+          this.guardandoPjud.set(false);
+          this.pjudClaveInput = '';
+          this.pjudConfigurado.set(c.configurado);
+          this.pjudRut.set(c.rut);
+          this.pjudMetodo.set(c.metodo_login);
+          this.notification.success('Clave del Poder Judicial guardada');
+        },
+        error: (err) => {
+          this.guardandoPjud.set(false);
+          const detail = (err as { error?: { detail?: unknown } })?.error?.detail;
+          this.errorPjud.set(
+            typeof detail === 'string' ? detail : 'No se pudo guardar. Intenta de nuevo.',
+          );
+        },
+      });
   }
 
   guardarTelefono(): void {

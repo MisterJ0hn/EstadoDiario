@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 
 import { Causa, PjudMovimientosResponse } from '@core/models/causa.model';
 import { CausaService } from '../../services/causa.service';
@@ -21,7 +22,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
 @Component({
   selector: 'app-pjud-movimientos-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     @if (causa !== null) {
       <div class="modal-backdrop" (click)="cerrar()">
@@ -54,6 +55,16 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                     {{ d.mensaje || 'La primera consulta puede tardar varios minutos. Vuelve a intentar en un rato.' }}
                   </p>
                   <button (click)="reintentar()" class="btn-primary btn-sm mt-1">Reintentar</button>
+                </div>
+              }
+
+              @if (d.estado === 'sin_credenciales') {
+                <div class="alert-warning flex-col items-start gap-2">
+                  <p class="font-medium">Falta tu clave del Poder Judicial</p>
+                  <p>
+                    {{ d.mensaje || 'Para consultar esta causa por primera vez hay que iniciar sesión en el Poder Judicial con tu clave. Configúrala en Mi Perfil.' }}
+                  </p>
+                  <a routerLink="/perfil" (click)="cerrar()" class="btn-primary btn-sm mt-1">Ir a Mi Perfil</a>
                 </div>
               }
 
