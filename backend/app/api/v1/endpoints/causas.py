@@ -12,10 +12,10 @@ import os
 import uuid
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.config import UPLOAD_DIR
+from app.core.config import UPLOAD_DIR, settings
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
@@ -29,7 +29,9 @@ from app.schemas.causa import (
     CausaResumenResponse,
     ConteoMateria,
 )
+from app.schemas.pjud import PjudDisponibleResponse, PjudMovimientosResponse
 from app.services.causa_import_service import CausaImportService, parse_nombre_archivo
+from app.services.pjud_service import PjudApiError, PjudService
 
 logger = logging.getLogger(__name__)
 
@@ -269,3 +271,41 @@ def listar(
         total_pages=total_pages,
         causas=[CausaResponse.from_model(c) for c in items],
     )
+
+
+# ── Movimientos en vivo desde el PJUD (solo Civil) ────────
+
+
+@router.get(
+    "/pjud/disponible",
+    response_model=PjudDisponibleResponse,
+    summary="Si la consulta de movimientos PJUD está configurada",
+)
+def pjud_disponible(current_user: Usuario = Depends(get_usuario_actual)):
+    """El frontend la consulta una vez para decidir si muestra el botón
+    'Ver movimientos PJUD': sin credenciales configuradas, no tiene sentido
+    ofrecerlo y que cada clic termine en un error."""
+    return PjudDisponibleResponse(disponible=settings.pjud_api_activo)
+
+
+@router.get(
+    "/{causa_id}/pjud/movimientos",
+    response_model=PjudMovimientosResponse,
+    summary="Movimientos de una causa Civil consultados en vivo al PJUD",
+)
+def pjud_movimientos(
+    causa_id: int,
+    forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    causa = CausaRepository(db).find_by_id(causa_id)
+    if not causa:
+        raise HTTPException(status_code=404, detail="Causa no encontrada")
+
+    try:
+        resultado = PjudService().obtener_movimientos(causa, forzar_sincronizacion=forzar)
+    except PjudApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return PjudMovimientosResponse(**resultado)

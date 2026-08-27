@@ -126,3 +126,72 @@ export interface CargarCausasResponse {
   cortes_importados: number;
   por_materia: Record<string, number>;
 }
+
+/**
+ * Movimientos de una causa Civil consultados EN VIVO al PJUD
+ * (api-pjud.codifica.cl), no al Excel de Movimientos que sube el estudio.
+ * Solo existe para causas de materia Civil: es lo único que esa API expone.
+ */
+export interface PjudCuaderno {
+  id: number;
+  nombre: string;
+}
+
+export interface PjudCausaDetalle {
+  identificador: string;
+  estado: string;
+  rol: string | null;
+  caratula: string | null;
+  tribunal: string | null;
+  fecha_ingreso: string | null;
+  etapa: string | null;
+  estado_proceso: string | null;
+  est_adm: string | null;
+  fecha_ultima_sincronizacion: string | null;
+  cuadernos: PjudCuaderno[];
+}
+
+export interface PjudMovimientoItem {
+  folio: number | null;
+  etapa: string | null;
+  tramite: string | null;
+  descripcion_tramite: string | null;
+  fecha_tramite: string | null;
+  foja: number | null;
+  doc: string | null;
+  /** Armada por el backend a partir de `doc`; null si el trámite no trae documento. */
+  documento_url: string | null;
+}
+
+export interface PjudLitiganteItem {
+  participante: string | null;
+  rut: string | null;
+  persona: string | null;
+  razon_social: string | null;
+}
+
+export interface PjudNotificacionItem {
+  tipo_notificacion: string | null;
+  estado_notificacion: string | null;
+  fecha_tramite: string | null;
+  tipo_part: string | null;
+  nombre: string | null;
+  tramite: string | null;
+  observacion_fallida: string | null;
+}
+
+export interface PjudEscritoResolverItem {
+  doc: string | null;
+  tipo_escrito: string | null;
+  solicitante: string | null;
+  fecha_ingreso: string | null;
+}
+
+export interface PjudMovimientosResponse {
+  exito: boolean;
+  causa: PjudCausaDetalle;
+  historia: PjudMovimientoItem[];
+  litigantes: PjudLitiganteItem[];
+  notificaciones: PjudNotificacionItem[];
+  escritos_resolver: PjudEscritoResolverItem[];
+}

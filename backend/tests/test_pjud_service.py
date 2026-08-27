@@ -1,0 +1,97 @@
+"""Lógica pura del cliente de api-pjud.codifica.cl, sin red.
+
+`parsear_rol_civil` y `resolver_tribunal` son lo único que puede fallar por un
+dato mal formado del Excel (rol raro, nombre de tribunal que no calza con el
+catálogo) en vez de por la API misma, así que son lo que vale la pena probar
+sin depender de que el servicio externo esté arriba.
+"""
+
+import pytest
+
+from app.services.pjud_service import PjudApiError, PjudService, _normalizar
+
+
+class TestParsearRolCivil:
+    def test_formato_estandar(self):
+        assert PjudService.parsear_rol_civil("C-10825-2026") == ("C", 10825, 2026)
+
+    def test_tipo_de_varias_letras(self):
+        # No medido en la cartera real, pero el schema de la API permite hasta
+        # 4 caracteres de tipo.
+        assert PjudService.parsear_rol_civil("EXH-17-2021") == ("EXH", 17, 2021)
+
+    def test_espacios_de_sobra_no_rompen_el_parseo(self):
+        assert PjudService.parsear_rol_civil("  C-17-2021  ") == ("C", 17, 2021)
+
+    def test_tipo_queda_en_mayusculas(self):
+        assert PjudService.parsear_rol_civil("c-17-2021") == ("C", 17, 2021)
+
+    @pytest.mark.parametrize(
+        "rol",
+        [None, "", "17-2021", "C-17", "C--2021", "C-17-21", "T-720-2020-1"],
+    )
+    def test_formato_invalido_se_rechaza(self, rol):
+        with pytest.raises(PjudApiError):
+            PjudService.parsear_rol_civil(rol)
+
+
+class TestNormalizar:
+    def test_ignora_acentos_mayusculas_y_espacios_de_sobra(self):
+        assert _normalizar("  23° Juzgado Civil de Santiago  ") == _normalizar(
+            "23º JUZGADO CIVIL DE SANTIAGO"
+        )
+
+    def test_nombres_distintos_no_calzan(self):
+        assert _normalizar("1° Juzgado Civil de Santiago") != _normalizar(
+            "2° Juzgado Civil de Santiago"
+        )
+
+
+class TestResolverTribunal:
+    """`resolver_tribunal` no llama a la red directamente: usa
+    `_obtener_catalogo_civil`, que sí lo hace. Se reemplaza por un catálogo
+    fijo para probar solo el calce de nombres."""
+
+    CATALOGO = [
+        {
+            "id": 5,
+            "nombre": "C.A. de Santiago",
+            "tribunales": [
+                {"id": 101, "nombre": "23° Juzgado Civil de Santiago"},
+                {"id": 102, "nombre": "1° Juzgado Civil de Santiago"},
+            ],
+        },
+    ]
+
+    def _servicio(self, monkeypatch) -> PjudService:
+        monkeypatch.setattr(
+            "app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@codifica.cl"
+        )
+        monkeypatch.setattr(
+            "app.services.pjud_service.settings.PJUD_API_PASSWORD", "x"
+        )
+        servicio = PjudService()
+        monkeypatch.setattr(servicio, "_obtener_catalogo_civil", lambda: self.CATALOGO)
+        return servicio
+
+    def test_calza_por_nombre_exacto(self, monkeypatch):
+        servicio = self._servicio(monkeypatch)
+        assert servicio.resolver_tribunal("23° Juzgado Civil de Santiago") == (5, 101)
+
+    def test_calza_ignorando_acentos_y_simbolo_de_grado(self, monkeypatch):
+        servicio = self._servicio(monkeypatch)
+        # "º" en vez de "°", como puede llegar de una fuente distinta al Excel.
+        assert servicio.resolver_tribunal("23º Juzgado Civil de Santiago") == (5, 101)
+
+    def test_tribunal_desconocido_da_error_claro(self, monkeypatch):
+        servicio = self._servicio(monkeypatch)
+        with pytest.raises(PjudApiError, match="no está en el catálogo"):
+            servicio.resolver_tribunal("Tribunal Que No Existe")
+
+
+class TestPjudServiceApagado:
+    def test_sin_credenciales_no_se_puede_instanciar(self, monkeypatch):
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "")
+        with pytest.raises(PjudApiError):
+            PjudService()

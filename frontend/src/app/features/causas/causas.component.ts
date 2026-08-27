@@ -9,6 +9,7 @@ import {
   ChipFiltro,
   FiltrosPanelComponent,
 } from '@shared/components/filtros-panel/filtros-panel.component';
+import { PjudMovimientosModalComponent } from './components/pjud-movimientos-modal/pjud-movimientos-modal.component';
 import { CausaService } from './services/causa.service';
 
 /**
@@ -22,7 +23,7 @@ import { CausaService } from './services/causa.service';
 @Component({
   selector: 'app-causas',
   standalone: true,
-  imports: [CommonModule, FormsModule, FiltrosPanelComponent],
+  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudMovimientosModalComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-4">
@@ -214,6 +215,9 @@ import { CausaService } from './services/causa.service';
                     Última novedad
                   </th>
                   <th title="Próxima audiencia agendada">Audiencia</th>
+                  @if (pjudDisponible()) {
+                    <th></th>
+                  }
                 </tr>
               </thead>
               <tbody>
@@ -255,10 +259,19 @@ import { CausaService } from './services/causa.service';
                         <span class="text-neutral-400">-</span>
                       }
                     </td>
+                    @if (pjudDisponible()) {
+                      <td class="whitespace-nowrap">
+                        @if (c.materia === 'Civil') {
+                          <button type="button" class="btn-outline btn-sm" (click)="verMovimientosPjud(c)">
+                            Movimientos PJUD
+                          </button>
+                        }
+                      </td>
+                    }
                   </tr>
                 } @empty {
                   <tr>
-                    <td [attr.colspan]="colspan" class="py-10 text-center">
+                    <td [attr.colspan]="colspan()" class="py-10 text-center">
                       <p class="text-neutral-600 font-medium">No hay causas para este filtro</p>
                       <p class="text-sm text-neutral-500 mt-1">
                         Cargue el Excel de causas desde el menú «Cargar Causas».
@@ -290,6 +303,8 @@ import { CausaService } from './services/causa.service';
         </div>
       }
     </div>
+
+    <app-pjud-movimientos-modal [causa]="causaPjud()" (cerrado)="causaPjud.set(null)" />
   `,
 })
 export class CausasComponent implements OnInit {
@@ -347,8 +362,15 @@ export class CausasComponent implements OnInit {
   private readonly panel = viewChild(FiltrosPanelComponent);
 
   /** TipoCausa + Rol/Rit + Ruc + Tribunal + FechaIngreso + Caratulado +
-   *  EstadoCausa + Institución. */
-  readonly colspan = 10;
+   *  EstadoCausa + Institución + Última novedad + Audiencia (+ Movimientos
+   *  PJUD, solo si esa función está configurada). */
+  colspan = computed(() => (this.pjudDisponible() ? 11 : 10));
+
+  /** Si api-pjud.codifica.cl está configurada; sin esto el botón de
+   *  Movimientos PJUD no tiene sentido y no se muestra. */
+  pjudDisponible = signal(false);
+  /** Causa cuyo modal de movimientos PJUD está abierto; null = cerrado. */
+  causaPjud = signal<Causa | null>(null);
 
   private readonly porPagina = 20;
 
@@ -371,6 +393,16 @@ export class CausasComponent implements OnInit {
 
     this.cargarResumen();
     this.cargar();
+
+    this.service.pjudDisponible().subscribe({
+      next: (res) => this.pjudDisponible.set(res.disponible),
+      // Si falla la consulta simplemente no se ofrece el botón.
+      error: () => this.pjudDisponible.set(false),
+    });
+  }
+
+  verMovimientosPjud(c: Causa): void {
+    this.causaPjud.set(c);
   }
 
   /** ISO (yyyy-MM-dd) a dd-MM-yyyy sin pasar por Date, que desplaza el día. */

@@ -8,6 +8,7 @@ import {
   CausaFiltros,
   CausaListResponse,
   CausaResumenResponse,
+  PjudMovimientosResponse,
 } from '@core/models/causa.model';
 
 /** Dentro de un estudio todos ven todo, así que nunca se manda un id de usuario. */
@@ -69,6 +70,20 @@ export class CausaService {
     if (rut) datos.append('rut', rut);
     if (fecha) datos.append('fecha', fecha);
     return this.http.post<CargarCausasResponse>(`${this.apiUrl}/upload`, datos);
+  }
+
+  /** Si api-pjud.codifica.cl está configurada. Se pide una sola vez para
+   *  decidir si se muestra el botón "Ver movimientos PJUD". */
+  pjudDisponible(): Observable<{ disponible: boolean }> {
+    return this.http.get<{ disponible: boolean }>(`${this.apiUrl}/pjud/disponible`);
+  }
+
+  /** Movimientos EN VIVO de una causa Civil, consultados directo al PJUD.
+   *  `forzar` pide además que el PJUD sincronice antes de responder. */
+  pjudMovimientos(causaId: number, forzar = false): Observable<PjudMovimientosResponse> {
+    return this.http.get<PjudMovimientosResponse>(`${this.apiUrl}/${causaId}/pjud/movimientos`, {
+      params: forzar ? new HttpParams().set('forzar', 'true') : undefined,
+    });
   }
 
   private toParams(filtros: object): HttpParams {

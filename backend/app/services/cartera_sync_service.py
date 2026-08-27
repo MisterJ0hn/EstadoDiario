@@ -147,7 +147,12 @@ class ResultadoSync:
             f"materia: {self.causas_creadas} creadas / {self.causas_actualizadas} "
             f"actualizadas · corte: {self.cortes_creadas} creadas / "
             f"{self.cortes_actualizadas} actualizadas · "
-            f"{self.estados_cambiados} estados{omitidas}{deducida}"
+            f"{self.estados_cambiados} estados · "
+            # Se informa aparte de `causas_actualizadas` porque no lo incluye:
+            # la última actividad se calcula en su propia pasada, después del
+            # cruce. Sin este número, correr el job para rellenar la columna de
+            # Mis Causas no dejaba ninguna señal de que hubiera hecho algo.
+            f"{self.actividad_calculada} últimas actividades{omitidas}{deducida}"
         )
 
     def como_aviso(self) -> Optional[str]:

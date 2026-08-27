@@ -69,6 +69,9 @@ class CausaRepository:
     def ultimo_origen_id(self) -> Optional[int]:
         return ultimo_origen_causas_id(self.db)
 
+    def find_by_id(self, causa_id: int) -> Optional[Causa]:
+        return self.db.get(Causa, causa_id)
+
     def find_origen(self, rut: str, fecha) -> Optional[EstadoDiarioOrigen]:
         """El archivo de causas ya cargado para ese RUT y fecha, si existe.
 

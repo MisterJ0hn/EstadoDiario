@@ -159,6 +159,24 @@ class Settings(BaseSettings):
     # documenta Google donde google.com está bloqueado.
     RECAPTCHA_VERIFY_URL: str = "https://www.google.com/recaptcha/api/siteverify"
 
+    # ── API PJUD (api-pjud.codifica.cl) ──
+    # Movimientos en vivo de causas Civiles, consultados bajo demanda desde la
+    # pantalla de la causa. Es una credencial de la PLATAFORMA (una suscripción
+    # de Temposoft al servicio), no del estudio: por eso vive acá y no en una
+    # tabla de configuración por cliente.
+    PJUD_API_BASE_URL: str = "http://api-pjud.codifica.cl"
+    PJUD_API_EMAIL: str = ""
+    PJUD_API_PASSWORD: str = ""
+    # Algunos endpoints del catálogo lo piden además del bearer del login.
+    PJUD_API_CLIENT_KEY: str = ""
+    PJUD_API_TIMEOUT_SEGUNDOS: float = 20.0
+
+    @property
+    def pjud_api_activo(self) -> bool:
+        """Igual que reCAPTCHA: mientras no haya credenciales, la función
+        queda apagada y el frontend no debe mostrar el botón."""
+        return bool(self.PJUD_API_EMAIL and self.PJUD_API_PASSWORD)
+
     @property
     def google_redirect_uri(self) -> str:
         return f"{self.PUBLIC_BASE_URL}/api/v1/google-calendar/callback"
