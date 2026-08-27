@@ -52,6 +52,15 @@ services:
       - RECAPTCHA_SITE_KEY_APP=${RECAPTCHA_SITE_KEY_APP:-}
       - RECAPTCHA_SECRET_KEY_APP=${RECAPTCHA_SECRET_KEY_APP:-}
       - RECAPTCHA_ORIGENES_APP=${RECAPTCHA_ORIGENES_APP:-https://localhost}
+      # API PJUD (api-pjud.codifica.cl): movimientos en vivo de causas Civiles.
+      # APAGADA mientras EMAIL/PASSWORD estén vacíos — el botón "Movimientos
+      # PJUD" no aparece en el frontend. Credencial de la plataforma, no del
+      # estudio. El contenedor NO lee el .env: estas líneas son lo único que
+      # hace llegar las variables adentro.
+      - PJUD_API_BASE_URL=${PJUD_API_BASE_URL:-http://api-pjud.codifica.cl}
+      - PJUD_API_EMAIL=${PJUD_API_EMAIL:-}
+      - PJUD_API_PASSWORD=${PJUD_API_PASSWORD:-}
+      - PJUD_API_CLIENT_KEY=${PJUD_API_CLIENT_KEY:-}
     ports:
       - "${BACKEND_PORT:-8091}:8000"
     volumes:
