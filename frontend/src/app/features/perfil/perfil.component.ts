@@ -112,7 +112,7 @@ import { GoogleCalendarService } from '../configuracion/services/google-calendar
               <label class="form-label" for="pjud-rut">RUT</label>
               <input id="pjud-rut" type="text" class="form-input" [(ngModel)]="pjudRutInput"
                      placeholder="17314741" autocomplete="off" />
-              <p class="text-xs text-neutral-400 mt-1">Sin puntos ni guión.</p>
+              <p class="text-xs text-neutral-400 mt-1">Solo el número, sin puntos ni dígito verificador.</p>
             </div>
             <div>
               <label class="form-label" for="pjud-metodo">Método de ingreso</label>

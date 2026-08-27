@@ -238,10 +238,18 @@ def guardar_pjud_credenciales(
 
 
 def _normalizar_rut_pjud(rut: str) -> str:
-    """Sin puntos, espacios ni guión: así lo pide api-pjud (`"17314741"`).
-    No se toca el dígito verificador —si la persona lo escribió, se manda—:
-    quitarlo a ciegas rompería el login cuando el OJV sí lo espera."""
-    return "".join(c for c in rut.strip() if c.isalnum())
+    """Solo el cuerpo numérico, SIN dígito verificador: así lo pide api-pjud
+    (`"17314741"`). Medido contra la API real: manda `17314741K` o `173147414`
+    y responde `400 Error en campo [rut]`; manda `17314741` y responde 200.
+
+    El DV se separa por el guión o por la K final —nunca de un string de puros
+    dígitos, que sería ambiguo entre un cuerpo de 8 y uno de 7 + DV."""
+    s = rut.strip().replace(".", "").replace(" ", "")
+    if "-" in s:
+        s = s.rsplit("-", 1)[0]
+    elif s[-1:] in ("k", "K"):
+        s = s[:-1]
+    return s
 
 
 @router.post(

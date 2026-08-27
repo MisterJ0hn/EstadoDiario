@@ -160,19 +160,35 @@ class PjudService:
             raise PjudNoEncontrado("El PJUD todavía no tiene registrada esta causa.")
         if respuesta.status_code == 409:
             raise PjudConflicto("El PJUD ya está sincronizando esta causa.")
-        if respuesta.status_code == 422:
-            raise PjudApiError("Los datos de la causa no calzan con lo que espera el PJUD.")
         if respuesta.status_code >= 400:
+            # El proveedor manda `{"mensaje": "Error en campo [rut]"}` en los
+            # 400/422. Se propaga ese texto tal cual: es lo que dice qué campo
+            # rechazó, y sin él el error queda como un genérico inútil.
+            detalle_proveedor = self._mensaje_error(respuesta)
             logger.warning(
                 "PJUD API %s %s -> HTTP %s: %s",
                 metodo, ruta, respuesta.status_code, respuesta.text[:500],
             )
-            raise PjudApiError("El servicio de detalle PJUD respondió con un error.")
+            raise PjudApiError(
+                f"api-pjud respondió HTTP {respuesta.status_code}"
+                + (f": {detalle_proveedor}" if detalle_proveedor else "")
+            )
 
         try:
             return respuesta.json()
         except ValueError as e:
             raise PjudApiError("El servicio de detalle PJUD devolvió una respuesta ilegible.") from e
+
+    @staticmethod
+    def _mensaje_error(respuesta) -> Optional[str]:
+        """El `mensaje` del cuerpo de error del proveedor, si trae uno."""
+        try:
+            cuerpo = respuesta.json()
+        except ValueError:
+            return (respuesta.text or "").strip()[:200] or None
+        if isinstance(cuerpo, dict):
+            return cuerpo.get("mensaje") or cuerpo.get("detail") or None
+        return None
 
     # ── Login (cacheado a nivel de proceso) ─────────────────────
 

@@ -42,6 +42,28 @@ class TestParsearRolCivil:
             PjudService.parsear_rol_civil(rol)
 
 
+class TestNormalizarRutPjud:
+    """api-pjud pide el cuerpo del RUT sin dígito verificador. Medido contra la
+    API real: con DV responde 400."""
+
+    @pytest.mark.parametrize(
+        "entrada, esperado",
+        [
+            ("17314741", "17314741"),
+            ("17.314.741", "17314741"),
+            ("17.314.741-4", "17314741"),
+            ("17314741-K", "17314741"),
+            ("17314741k", "17314741"),
+            ("9.876.543-2", "9876543"),
+            ("  17314741-4  ", "17314741"),
+        ],
+    )
+    def test_deja_solo_el_cuerpo(self, entrada, esperado):
+        from app.api.v1.endpoints.auth import _normalizar_rut_pjud
+
+        assert _normalizar_rut_pjud(entrada) == esperado
+
+
 class TestNormalizar:
     def test_ignora_acentos_mayusculas_y_espacios_de_sobra(self):
         assert _normalizar("  23° Juzgado Civil de Santiago  ") == _normalizar(
