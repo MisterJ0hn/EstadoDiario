@@ -81,6 +81,16 @@ export const routes: Routes = [
           ),
       },
       {
+        // Log de consultas a api-pjud.codifica.cl. A diferencia de la bitácora
+        // es global (las filas viven en la base principal), así que sí cuelga
+        // del menú; `?cliente=12` lo acota a un estudio.
+        path: 'pjud',
+        loadComponent: () =>
+          import('./features/admin/pjud/pjud-llamados.component').then(
+            (m) => m.PjudLlamadosComponent
+          ),
+      },
+      {
         // El enlace del perfil estaba en la barra lateral desde siempre, pero
         // sin esta ruta caía en el comodín `**` y volvía al dashboard: parecía
         // que no hacía nada.

@@ -65,6 +65,10 @@ const MENU_PLATAFORMA: GrupoMenu[] = [
       // pantalla exige elegir un cliente antes de mostrar nada —los registros
       // viven una base por estudio— así que llegar desde el menú obligaba a
       // elegirlo dos veces. La ruta /bitacora sigue existiendo.
+      //
+      // El log de api-pjud SÍ va: es global (una sola base) y se entra a
+      // revisarlo sin un cliente en mente.
+      { ruta: '/pjud', etiqueta: 'API PJUD', icono: ICONO.reloj },
       { ruta: '/configuracion', etiqueta: 'Configuración', icono: ICONO.engranaje },
     ],
   },

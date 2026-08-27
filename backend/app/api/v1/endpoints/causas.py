@@ -9,6 +9,7 @@ Sin filtro de visibilidad: dentro de un estudio todos ven todo.
 
 import logging
 import os
+import time
 import uuid
 from datetime import date, timedelta
 
@@ -16,10 +17,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
-from app.core.deps import get_db_tenant, get_usuario_actual
+from app.core.database import get_db_maestra
+from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
 from app.repositories.causa_repository import FINALIZADAS, VIGENTES, CausaRepository
+from app.repositories.pjud_llamado_repository import PjudLlamadoRepository
 from app.schemas.causa import (
     CargarCausasResponse,
     CausaCorteListResponse,
@@ -299,22 +302,67 @@ def pjud_movimientos(
     forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
     cuaderno: int | None = Query(None, description="Cuaderno a traer en Historia; por defecto el primero"),
     db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     causa = CausaRepository(db).find_by_id(causa_id)
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
+    inicio = time.monotonic()
+    resultado_log = "error"
+    http_status = 502
+    mensaje_log: str | None = None
     try:
         resultado = PjudService().obtener_detalle(
             causa, forzar_sincronizacion=forzar, cuaderno_id=cuaderno
         )
+        # El scrape del proveedor es asíncrono: 202 mientras no esté listo, para
+        # que el frontend distinga "espera y reintenta" de "listo".
+        if resultado.get("estado") == "sincronizando":
+            response.status_code = http_status = 202
+            resultado_log = "sincronizando"
+            mensaje_log = resultado.get("mensaje")
+        else:
+            http_status = 200
+            resultado_log = "listo"
+        return PjudMovimientosResponse(**resultado)
     except PjudApiError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        mensaje_log = str(e)
+        raise HTTPException(status_code=502, detail=mensaje_log)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra,
+            tenant=tenant,
+            causa_id=causa_id,
+            rol=causa.rol,
+            tribunal=causa.tribunal,
+            forzar=forzar,
+            resultado=resultado_log,
+            http_status=http_status,
+            mensaje=mensaje_log,
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
 
-    # El scrape del proveedor es asíncrono: 202 mientras no esté listo, para
-    # que el frontend distinga "espera y reintenta" de "listo".
-    if resultado.get("estado") == "sincronizando":
-        response.status_code = 202
 
-    return PjudMovimientosResponse(**resultado)
+def _registrar_llamado_pjud(db_maestra, *, tenant, causa_id, rol, tribunal, forzar,
+                            resultado, http_status, mensaje, duracion_ms) -> None:
+    """Anota la consulta en la base principal. Nunca revienta hacia afuera: un
+    fallo del log no puede impedir que el estudio vea su causa."""
+    try:
+        PjudLlamadoRepository(db_maestra).registrar(
+            cliente_id=tenant.cliente_id,
+            guid=tenant.guid,
+            usuario_id=tenant.usuario_id,
+            causa_id=causa_id,
+            rol=rol,
+            tribunal=tribunal,
+            forzar=forzar,
+            resultado=resultado,
+            http_status=http_status,
+            mensaje=mensaje,
+            duracion_ms=duracion_ms,
+        )
+    except Exception:
+        logger.exception("No se pudo registrar el llamado a api-pjud")
