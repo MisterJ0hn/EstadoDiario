@@ -6,9 +6,16 @@ catálogo) en vez de por la API misma, así que son lo que vale la pena probar
 sin depender de que el servicio externo esté arriba.
 """
 
+import types
+
 import pytest
 
-from app.services.pjud_service import PjudApiError, PjudService, _normalizar
+from app.services.pjud_service import (
+    PjudApiError,
+    PjudNoEncontrado,
+    PjudService,
+    _normalizar,
+)
 
 
 class TestParsearRolCivil:
@@ -95,3 +102,82 @@ class TestPjudServiceApagado:
         monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "")
         with pytest.raises(PjudApiError):
             PjudService()
+
+
+def _causa_civil(rol="C-6181-2026", tribunal="1° Juzgado Civil de Puente Alto"):
+    return types.SimpleNamespace(id=1, materia="Civil", rol=rol, tribunal=tribunal)
+
+
+class TestObtenerDetalle:
+    """`obtener_detalle` orquesta 2-3 llamadas a `_request`. Se reemplaza
+    `_request` por un doble que responde según la ruta, para probar el manejo
+    del scrape asíncrono del proveedor sin tocar la red."""
+
+    def _servicio(self, monkeypatch, respuestas: dict) -> PjudService:
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
+        servicio = PjudService()
+        monkeypatch.setattr(servicio, "_obtener_catalogo_civil", lambda: [
+            {"id": 91, "nombre": "C.A. de San Miguel", "tribunales": [
+                {"id": 364, "nombre": "1° Juzgado Civil de Puente Alto"},
+            ]},
+        ])
+        self.llamadas: list[str] = []
+
+        def fake_request(metodo, ruta, **kwargs):
+            self.llamadas.append(ruta)
+            valor = respuestas[ruta]
+            if isinstance(valor, Exception):
+                raise valor
+            return valor
+
+        monkeypatch.setattr(servicio, "_request", fake_request)
+        return servicio
+
+    def test_causa_nunca_vista_encola_y_devuelve_sincronizando(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": PjudNoEncontrado("no está"),
+            "/sincronizar_civil": {"exito": True},
+        })
+        resultado = servicio.obtener_detalle(_causa_civil())
+        assert resultado["estado"] == "sincronizando"
+        assert "/sincronizar_civil" in self.llamadas
+
+    def test_causa_en_proceso_devuelve_sincronizando(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": {"causa": {"estado": "Sincronizando", "cuadernos": []}},
+            "/sincronizar_civil": {"exito": True},
+        })
+        resultado = servicio.obtener_detalle(_causa_civil())
+        assert resultado["estado"] == "sincronizando"
+
+    def test_causa_lista_trae_las_secciones(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": {"causa": {
+                "identificador": "abc", "estado": "Completo",
+                "cuadernos": [{"id": 1, "nombre": "Principal"}],
+            }},
+            "/consultar_movimientos_civil": {
+                "historia": [{"folio": 1, "doc": "https://x/f1.pdf", "anexo": []}],
+                "litigantes": [{"participante": "DTE"}],
+                "notificaciones": [],
+                "escritos_resolver": [],
+                "exhortos": [{"rol_origen": "C-1-2020"}],
+            },
+        })
+        resultado = servicio.obtener_detalle(_causa_civil())
+        assert resultado["estado"] == "listo"
+        assert resultado["cuaderno_consultado_id"] == 1
+        assert resultado["historia"][0]["documento_url"] == "https://x/f1.pdf"
+        assert resultado["exhortos"][0]["rol_origen"] == "C-1-2020"
+
+    def test_url_de_documento_se_arma_si_viene_solo_el_nombre(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {})
+        url = servicio._url_documento("folio1.pdf", "abc-123", 2)
+        assert url.endswith("/public/abc-123/2/folio1.pdf")
+
+    def test_materia_no_civil_se_rechaza(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {})
+        causa = types.SimpleNamespace(id=1, materia="Laboral", rol="C-1-2020", tribunal="x")
+        with pytest.raises(PjudApiError, match="Civiles"):
+            servicio.obtener_detalle(causa)

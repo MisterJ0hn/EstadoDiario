@@ -73,17 +73,27 @@ export class CausaService {
   }
 
   /** Si api-pjud.codifica.cl está configurada. Se pide una sola vez para
-   *  decidir si se muestra el botón "Ver movimientos PJUD". */
+   *  decidir si se muestra el botón "Detalle PJUD". */
   pjudDisponible(): Observable<{ disponible: boolean }> {
     return this.http.get<{ disponible: boolean }>(`${this.apiUrl}/pjud/disponible`);
   }
 
-  /** Movimientos EN VIVO de una causa Civil, consultados directo al PJUD.
-   *  `forzar` pide además que el PJUD sincronice antes de responder. */
-  pjudMovimientos(causaId: number, forzar = false): Observable<PjudMovimientosResponse> {
-    return this.http.get<PjudMovimientosResponse>(`${this.apiUrl}/${causaId}/pjud/movimientos`, {
-      params: forzar ? new HttpParams().set('forzar', 'true') : undefined,
-    });
+  /** Detalle EN VIVO de una causa Civil, consultado directo al PJUD.
+   *  `forzar` pide además que el PJUD sincronice antes de responder.
+   *  `cuaderno` elige qué cuaderno traer en Historia (por defecto el primero).
+   *  Puede volver con `estado: 'sincronizando'` si el PJUD aún está scrapeando. */
+  pjudMovimientos(
+    causaId: number,
+    forzar = false,
+    cuaderno?: number,
+  ): Observable<PjudMovimientosResponse> {
+    let params = new HttpParams();
+    if (forzar) params = params.set('forzar', 'true');
+    if (cuaderno != null) params = params.set('cuaderno', String(cuaderno));
+    return this.http.get<PjudMovimientosResponse>(
+      `${this.apiUrl}/${causaId}/pjud/movimientos`,
+      { params },
+    );
   }
 
   private toParams(filtros: object): HttpParams {

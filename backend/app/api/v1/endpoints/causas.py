@@ -12,7 +12,7 @@ import os
 import uuid
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
@@ -273,29 +273,31 @@ def listar(
     )
 
 
-# ── Movimientos en vivo desde el PJUD (solo Civil) ────────
+# ── Detalle en vivo desde el PJUD (solo Civil) ────────────
 
 
 @router.get(
     "/pjud/disponible",
     response_model=PjudDisponibleResponse,
-    summary="Si la consulta de movimientos PJUD está configurada",
+    summary="Si la consulta de detalle PJUD está configurada",
 )
 def pjud_disponible(current_user: Usuario = Depends(get_usuario_actual)):
     """El frontend la consulta una vez para decidir si muestra el botón
-    'Ver movimientos PJUD': sin credenciales configuradas, no tiene sentido
-    ofrecerlo y que cada clic termine en un error."""
+    'Detalle PJUD': sin credenciales configuradas, no tiene sentido ofrecerlo
+    y que cada clic termine en un error."""
     return PjudDisponibleResponse(disponible=settings.pjud_api_activo)
 
 
 @router.get(
     "/{causa_id}/pjud/movimientos",
     response_model=PjudMovimientosResponse,
-    summary="Movimientos de una causa Civil consultados en vivo al PJUD",
+    summary="Detalle de una causa Civil consultado en vivo al PJUD",
 )
 def pjud_movimientos(
     causa_id: int,
+    response: Response,
     forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
+    cuaderno: int | None = Query(None, description="Cuaderno a traer en Historia; por defecto el primero"),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -304,8 +306,15 @@ def pjud_movimientos(
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
     try:
-        resultado = PjudService().obtener_movimientos(causa, forzar_sincronizacion=forzar)
+        resultado = PjudService().obtener_detalle(
+            causa, forzar_sincronizacion=forzar, cuaderno_id=cuaderno
+        )
     except PjudApiError as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+    # El scrape del proveedor es asíncrono: 202 mientras no esté listo, para
+    # que el frontend distinga "espera y reintenta" de "listo".
+    if resultado.get("estado") == "sincronizando":
+        response.status_code = 202
 
     return PjudMovimientosResponse(**resultado)

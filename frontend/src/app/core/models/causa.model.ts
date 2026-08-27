@@ -128,13 +128,36 @@ export interface CargarCausasResponse {
 }
 
 /**
- * Movimientos de una causa Civil consultados EN VIVO al PJUD
+ * Detalle de una causa Civil consultado EN VIVO al PJUD
  * (api-pjud.codifica.cl), no al Excel de Movimientos que sube el estudio.
  * Solo existe para causas de materia Civil: es lo único que esa API expone.
+ *
+ * El scrape del proveedor es asíncrono: la primera consulta de una causa la
+ * deja `estado: 'sincronizando'` (con `causa` en null) por varios minutos. El
+ * modal muestra el aviso y un botón "Reintentar".
  */
 export interface PjudCuaderno {
   id: number;
   nombre: string;
+}
+
+export interface PjudDocumentoRef {
+  nombre_archivo: string | null;
+  url: string | null;
+}
+
+export interface PjudAnexoCausaItem {
+  fecha: string | null;
+  referencia: string | null;
+  nombre_doc: string | null;
+  doc: string | null;
+}
+
+export interface PjudInformacionReceptorItem {
+  cuaderno: string | null;
+  datos_retiro: string | null;
+  fecha_retiro: string | null;
+  estado: string | null;
 }
 
 export interface PjudCausaDetalle {
@@ -147,8 +170,21 @@ export interface PjudCausaDetalle {
   etapa: string | null;
   estado_proceso: string | null;
   est_adm: string | null;
+  proceso: string | null;
+  ubicacion: string | null;
   fecha_ultima_sincronizacion: string | null;
+  texto_demanda: PjudDocumentoRef | null;
+  certificado_envio: PjudDocumentoRef | null;
+  ebook: PjudDocumentoRef | null;
+  anexos_causa: PjudAnexoCausaItem[];
+  informacion_receptor: PjudInformacionReceptorItem[];
   cuadernos: PjudCuaderno[];
+}
+
+export interface PjudHistoriaAnexoItem {
+  doc: string | null;
+  fecha: string | null;
+  referencia: string | null;
 }
 
 export interface PjudMovimientoItem {
@@ -159,6 +195,7 @@ export interface PjudMovimientoItem {
   fecha_tramite: string | null;
   foja: number | null;
   doc: string | null;
+  anexo: PjudHistoriaAnexoItem[];
   /** Armada por el backend a partir de `doc`; null si el trámite no trae documento. */
   documento_url: string | null;
 }
@@ -171,6 +208,7 @@ export interface PjudLitiganteItem {
 }
 
 export interface PjudNotificacionItem {
+  rol: string | null;
   tipo_notificacion: string | null;
   estado_notificacion: string | null;
   fecha_tramite: string | null;
@@ -182,16 +220,43 @@ export interface PjudNotificacionItem {
 
 export interface PjudEscritoResolverItem {
   doc: string | null;
+  anexo: string | null;
   tipo_escrito: string | null;
   solicitante: string | null;
   fecha_ingreso: string | null;
 }
 
+export interface PjudExhortoRolItem {
+  doc: string | null;
+  fecha: string | null;
+  referencia: string | null;
+  tramite: string | null;
+}
+
+export interface PjudExhortoRolDestinoItem {
+  nombre: string | null;
+  roles: PjudExhortoRolItem[];
+}
+
+export interface PjudExhortoItem {
+  rol_origen: string | null;
+  tipo_exhorto: string | null;
+  rol_destino: PjudExhortoRolDestinoItem[];
+  fecha_ordena_exhorto: string | null;
+  fecha_ingreso_exhorto: string | null;
+  tribunal_destino: string | null;
+  estado_exhorto: string | null;
+}
+
 export interface PjudMovimientosResponse {
-  exito: boolean;
-  causa: PjudCausaDetalle;
+  /** `sincronizando` = el PJUD todavía está scrapeando; `causa` viene null. */
+  estado: 'listo' | 'sincronizando';
+  mensaje: string | null;
+  causa: PjudCausaDetalle | null;
+  cuaderno_consultado_id: number | null;
   historia: PjudMovimientoItem[];
   litigantes: PjudLitiganteItem[];
   notificaciones: PjudNotificacionItem[];
   escritos_resolver: PjudEscritoResolverItem[];
+  exhortos: PjudExhortoItem[];
 }

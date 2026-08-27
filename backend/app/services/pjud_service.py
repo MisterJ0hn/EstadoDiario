@@ -1,9 +1,9 @@
 """Cliente de la API externa api-pjud.codifica.cl.
 
-Trae el detalle procesal (movimientos) de una causa **Civil** directamente
-desde el PJUD, en vivo, a pedido de la pantalla de la causa. No tiene nada que
-ver con `movimiento.py` / `MovimientoRepository`: aquello viene de los Excel
-que manda el estudio; esto se consulta por API cuando el usuario lo pide.
+Trae el detalle procesal de una causa **Civil** directamente desde el PJUD, en
+vivo, a pedido de la pantalla de la causa. No tiene nada que ver con
+`movimiento.py` / `MovimientoRepository`: aquello viene de los Excel que manda
+el estudio; esto se consulta por API cuando el usuario lo pide.
 
 Solo Civil porque es lo único que la API expone hoy (`/consultar_civil`,
 `/consultar_movimientos_civil`, catálogo `competencia=civil`). Si la causa es
@@ -14,6 +14,13 @@ El "Rol" de una causa Civil viene en el Excel como `C-10825-2026`
 ("23° Juzgado Civil de Santiago"); la API en cambio pide IDs numéricos de un
 catálogo (`/catalogo/tribunales`), así que hay que resolver el nombre contra
 ese catálogo antes de poder pedir nada.
+
+**El scrape del proveedor es asíncrono.** La primera vez que se pide una causa,
+`/consultar_civil` responde 404 (nunca vista) o `estado="Sincronizando"` sin
+cuadernos, y hay que llamar antes a `/sincronizar_civil` —que solo encola un
+job de Playwright y responde al instante— y esperar unos minutos. Por eso
+`obtener_detalle` distingue "sincronizando" de "error": lo primero se devuelve
+como un estado normal para que la pantalla muestre "Reintentar", no un 502.
 """
 
 import logging
@@ -35,8 +42,17 @@ logger = logging.getLogger(__name__)
 _RE_ROL_CIVIL = re.compile(r"^\s*([A-Za-zÑñ]{1,4})-(\d+)-(\d{4})\s*$")
 
 # El catálogo de tribunales cambia poquísimo (juzgados no se crean todos los
-# días); cachearlo evita pedirlo en cada clic de "ver movimientos".
+# días); cachearlo evita pedirlo en cada clic de "ver detalle".
 _CATALOGO_TTL_SEGUNDOS = 6 * 3600
+
+# Lo que devuelve `/consultar_civil` mientras el worker del proveedor todavía
+# está scrapeando la causa.
+_ESTADOS_SINCRONIZANDO = {"sincronizando", "pendiente", "en proceso", "encolada"}
+
+_MENSAJE_SINCRONIZANDO = (
+    "El Poder Judicial está sincronizando esta causa. La primera consulta "
+    "puede tardar varios minutos; vuelve a intentar en un rato."
+)
 
 
 class PjudApiError(Exception):
@@ -46,6 +62,20 @@ class PjudApiError(Exception):
     credenciales, causa que no calza con Civil, tribunal que no está en el
     catálogo, o la API misma respondiendo un error.
     """
+
+
+class PjudNoEncontrado(PjudApiError):
+    """La API respondió 404: la causa no está (todavía) en su base.
+
+    No es necesariamente un error: la primera vez que se pide una causa hay que
+    encolar el scrape con `/sincronizar_civil` y volver a consultar más tarde.
+    """
+
+
+class PjudConflicto(PjudApiError):
+    """La API respondió 409: ya hay una sincronización en curso para esa causa,
+    o se pidió otra antes del intervalo mínimo. No es un error para el usuario:
+    significa "espera"."""
 
 
 def _normalizar(texto: str) -> str:
@@ -71,7 +101,11 @@ class PjudService:
     usuario sería maltratar una API que no es nuestra.
     """
 
-    _lock = threading.Lock()
+    # Reentrante a propósito: `_obtener_catalogo_civil` toma el lock y por
+    # dentro `_request` llama a `_obtener_token`, que lo vuelve a tomar. Con un
+    # Lock normal eso es un deadlock y la consulta se cuelga hasta que el proxy
+    # la corta con un 502.
+    _lock = threading.RLock()
     _token: Optional[str] = None
     _token_expira: float = 0.0
     _catalogo_civil: Optional[list[dict]] = None
@@ -80,7 +114,7 @@ class PjudService:
     def __init__(self) -> None:
         if not settings.pjud_api_activo:
             raise PjudApiError(
-                "La consulta de movimientos PJUD no está configurada "
+                "La consulta de detalle PJUD no está configurada "
                 "(faltan las credenciales de api-pjud.codifica.cl)."
             )
         self._base_url = settings.PJUD_API_BASE_URL.rstrip("/")
@@ -105,19 +139,21 @@ class PjudService:
                 **kwargs,
             )
         except requests.exceptions.Timeout as e:
-            raise PjudApiError("El servicio de movimientos PJUD no respondió a tiempo.") from e
+            raise PjudApiError("El servicio de detalle PJUD no respondió a tiempo.") from e
         except requests.exceptions.RequestException as e:
-            raise PjudApiError("No se pudo conectar con el servicio de movimientos PJUD.") from e
+            raise PjudApiError("No se pudo conectar con el servicio de detalle PJUD.") from e
 
         if respuesta.status_code == 401:
             # El token pudo vencer entre que se cacheó y este request; un
             # reintento solo tras invalidar la caché evita quedar en loop si
             # las credenciales simplemente están mal.
             raise PjudApiError(
-                "El servicio de movimientos PJUD rechazó las credenciales configuradas."
+                "El servicio de detalle PJUD rechazó las credenciales configuradas."
             )
         if respuesta.status_code == 404:
-            raise PjudApiError("El PJUD no tiene registrada esa causa.")
+            raise PjudNoEncontrado("El PJUD todavía no tiene registrada esta causa.")
+        if respuesta.status_code == 409:
+            raise PjudConflicto("El PJUD ya está sincronizando esta causa.")
         if respuesta.status_code == 422:
             raise PjudApiError("Los datos de la causa no calzan con lo que espera el PJUD.")
         if respuesta.status_code >= 400:
@@ -125,12 +161,12 @@ class PjudService:
                 "PJUD API %s %s -> HTTP %s: %s",
                 metodo, ruta, respuesta.status_code, respuesta.text[:500],
             )
-            raise PjudApiError("El servicio de movimientos PJUD respondió con un error.")
+            raise PjudApiError("El servicio de detalle PJUD respondió con un error.")
 
         try:
             return respuesta.json()
         except ValueError as e:
-            raise PjudApiError("El servicio de movimientos PJUD devolvió una respuesta ilegible.") from e
+            raise PjudApiError("El servicio de detalle PJUD devolvió una respuesta ilegible.") from e
 
     # ── Login (cacheado a nivel de proceso) ─────────────────────
 
@@ -213,60 +249,121 @@ class PjudService:
 
     # ── Flujo completo ───────────────────────────────────────────
 
-    def obtener_movimientos(self, causa, forzar_sincronizacion: bool = False) -> dict:
-        """Historial completo de una `Causa` (materia Civil) desde el PJUD.
+    def _sincronizar(self, cuerpo_causa: dict) -> None:
+        """Encola el scrape en el proveedor. Best-effort: un 409 (ya en curso)
+        o cualquier otra falla acá no debe cortar la pantalla — solo significa
+        que hay que volver a intentar más tarde."""
+        try:
+            self._request("POST", "/sincronizar_civil", json=cuerpo_causa)
+        except PjudConflicto:
+            pass
+        except PjudApiError as e:
+            logger.warning("PJUD: sincronizar_civil falló, se sigue igual: %s", e)
 
-        `forzar_sincronizacion` dispara `/sincronizar_civil` antes de
-        consultar. Se ignora si falla: el PJUD puede tardar en reflejarlo, y
-        preferimos devolver lo último que sí tiene consultado antes que
-        cortar toda la pantalla por un timeout de la sincronización.
+    def obtener_detalle(
+        self,
+        causa,
+        forzar_sincronizacion: bool = False,
+        cuaderno_id: Optional[int] = None,
+    ) -> dict:
+        """Detalle completo de una `Causa` (materia Civil) desde el PJUD.
+
+        Devuelve siempre un dict con `estado`:
+          - `"sincronizando"`: el proveedor todavía está scrapeando la causa.
+            `causa` viene en `None`. La pantalla muestra el aviso y "Reintentar".
+          - `"listo"`: `causa` y las cinco secciones están pobladas.
+
+        `forzar_sincronizacion` pide un scrape nuevo antes de consultar (botón
+        "Actualizar desde el PJUD"); igual puede volver `"sincronizando"` si el
+        worker no alcanzó a terminar.
+
+        `cuaderno_id` elige qué cuaderno traer en Historia/Notificaciones; por
+        defecto, el primero.
         """
         if (causa.materia or "").strip().lower() != "civil":
-            raise PjudApiError("Los movimientos PJUD solo están disponibles para causas Civiles.")
+            raise PjudApiError("El detalle PJUD solo está disponible para causas Civiles.")
 
         tipo, rol, anio = self.parsear_rol_civil(causa.rol)
         corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "")
-        cuerpo_causa = {"corte": corte_id, "tribunal": tribunal_id, "tipo": tipo, "rol": rol, "anio": anio}
+        cuerpo_causa = {
+            "corte": corte_id, "tribunal": tribunal_id,
+            "tipo": tipo, "rol": rol, "anio": anio,
+        }
 
         if forzar_sincronizacion:
-            try:
-                self._request("POST", "/sincronizar_civil", json=cuerpo_causa)
-            except PjudApiError as e:
-                logger.warning("PJUD: sincronizar_civil falló, se sigue con lo ya consultado: %s", e)
+            self._sincronizar(cuerpo_causa)
 
-        detalle = self._request("POST", "/consultar_civil", json=cuerpo_causa)["causa"]
+        try:
+            detalle = self._request("POST", "/consultar_civil", json=cuerpo_causa)["causa"]
+        except PjudNoEncontrado:
+            # Nunca vista por el proveedor: encolar y avisar que espere.
+            if not forzar_sincronizacion:
+                self._sincronizar(cuerpo_causa)
+            return {"estado": "sincronizando", "mensaje": _MENSAJE_SINCRONIZANDO}
 
+        estado_causa = (detalle.get("estado") or "").strip().lower()
         cuadernos = detalle.get("cuadernos") or []
-        if not cuadernos:
-            raise PjudApiError("El PJUD no tiene cuadernos registrados para esta causa.")
-        cuaderno_id = cuadernos[0]["id"]
+        if estado_causa in _ESTADOS_SINCRONIZANDO or not cuadernos:
+            if not forzar_sincronizacion:
+                self._sincronizar(cuerpo_causa)
+            return {"estado": "sincronizando", "mensaje": _MENSAJE_SINCRONIZANDO}
+
+        cuaderno = self._elegir_cuaderno(cuadernos, cuaderno_id)
 
         movimientos = self._request(
             "POST", "/consultar_movimientos_civil",
-            json={"identificador": detalle["identificador"], "cuadeno": cuaderno_id},
+            json={"identificador": detalle["identificador"], "cuadeno": cuaderno["id"]},
         )
 
-        self._agregar_urls_documentos(movimientos.get("historia") or [], detalle["identificador"], cuaderno_id)
+        historia = movimientos.get("historia") or []
+        self._normalizar_documentos(historia, detalle["identificador"], cuaderno["id"])
 
         return {
+            "estado": "listo",
             "causa": detalle,
-            "cuadernos": cuadernos,
-            "cuaderno_consultado_id": cuaderno_id,
-            "historia": movimientos.get("historia") or [],
+            "cuaderno_consultado_id": cuaderno["id"],
+            "historia": historia,
             "litigantes": movimientos.get("litigantes") or [],
             "notificaciones": movimientos.get("notificaciones") or [],
             "escritos_resolver": movimientos.get("escritos_resolver") or [],
             "exhortos": movimientos.get("exhortos") or [],
         }
 
-    def _agregar_urls_documentos(self, historia: list[dict], identificador: str, cuaderno_id: int) -> None:
-        """Arma la URL descargable de cada trámite que trae un documento
-        adjunto, siguiendo `/public/{rol}/{cuaderno}/{archivo}` del schema.
-        `doc` en `historia` es solo el nombre de archivo, no una URL."""
+    @staticmethod
+    def _elegir_cuaderno(cuadernos: list[dict], cuaderno_id: Optional[int]) -> dict:
+        if cuaderno_id is not None:
+            for c in cuadernos:
+                if c.get("id") == cuaderno_id:
+                    return c
+        return cuadernos[0]
+
+    def _normalizar_documentos(
+        self, historia: list[dict], identificador: str, cuaderno_id: int
+    ) -> None:
+        """Deja en cada trámite un `documento_url` usable.
+
+        El proveedor hoy entrega `doc` como URL absoluta
+        (`https://api-pjud.codifica.cl/public/<rol>/<cuaderno>/<archivo>.pdf`),
+        pero versiones anteriores del schema lo mandaban como solo el nombre de
+        archivo. Se cubren los dos casos, y lo mismo para los anexos del
+        trámite."""
         for item in historia:
-            nombre_doc = item.get("doc")
-            if nombre_doc:
-                item["documento_url"] = (
-                    f"{self._base_url}/public/{quote(identificador, safe='')}/"
-                    f"{cuaderno_id}/{quote(nombre_doc, safe='')}"
+            item["documento_url"] = self._url_documento(
+                item.get("doc"), identificador, cuaderno_id
+            )
+            for anexo in item.get("anexo") or []:
+                anexo["doc"] = self._url_documento(
+                    anexo.get("doc"), identificador, cuaderno_id
                 )
+
+    def _url_documento(
+        self, doc: Optional[str], identificador: str, cuaderno_id: int
+    ) -> Optional[str]:
+        if not doc:
+            return None
+        if doc.startswith(("http://", "https://")):
+            return doc
+        return (
+            f"{self._base_url}/public/{quote(identificador, safe='')}/"
+            f"{cuaderno_id}/{quote(doc, safe='')}"
+        )

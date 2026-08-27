@@ -263,7 +263,7 @@ import { CausaService } from './services/causa.service';
                       <td class="whitespace-nowrap">
                         @if (c.materia === 'Civil') {
                           <button type="button" class="btn-outline btn-sm" (click)="verMovimientosPjud(c)">
-                            Movimientos PJUD
+                            Detalle PJUD
                           </button>
                         }
                       </td>
