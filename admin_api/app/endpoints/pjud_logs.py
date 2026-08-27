@@ -83,6 +83,7 @@ def listar_llamados(
             resultado=i.resultado,
             http_status=i.http_status,
             mensaje=i.mensaje,
+            diagnostico=i.diagnostico,
             duracion_ms=i.duracion_ms,
         )
         for i in items

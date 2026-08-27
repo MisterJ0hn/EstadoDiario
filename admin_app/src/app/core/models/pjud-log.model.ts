@@ -23,6 +23,8 @@ export interface PjudLlamado {
   http_status: number | null;
   /** El aviso de "sincronizando" o el texto del error. Nulo en 'listo'. */
   mensaje: string | null;
+  /** Notas técnicas paso a paso: qué respondió cada endpoint de api-pjud. */
+  diagnostico: string | null;
   duracion_ms: number | null;
 }
 

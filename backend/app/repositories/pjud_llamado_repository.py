@@ -32,6 +32,7 @@ class PjudLlamadoRepository:
         resultado: str,
         http_status: Optional[int],
         mensaje: Optional[str],
+        diagnostico: Optional[str],
         duracion_ms: Optional[int],
     ) -> PjudLlamado:
         fila = PjudLlamado(
@@ -45,6 +46,7 @@ class PjudLlamadoRepository:
             resultado=resultado,
             http_status=http_status,
             mensaje=mensaje,
+            diagnostico=diagnostico,
             duracion_ms=duracion_ms,
         )
         self.db.add(fila)
@@ -80,6 +82,7 @@ class PjudLlamadoRepository:
                 PjudLlamado.rol.ilike(patron)
                 | PjudLlamado.tribunal.ilike(patron)
                 | PjudLlamado.mensaje.ilike(patron)
+                | PjudLlamado.diagnostico.ilike(patron)
             )
 
         total = q.count()

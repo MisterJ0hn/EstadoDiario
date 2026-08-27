@@ -255,13 +255,14 @@ class PjudService:
 
     # ── Flujo completo ───────────────────────────────────────────
 
-    def _sincronizar(self, cuerpo_causa: dict, credenciales: dict) -> None:
+    def _sincronizar(self, cuerpo_causa: dict, credenciales: dict) -> str:
         """Encola el scrape en el proveedor. `/sincronizar_civil` INICIA SESIÓN
         en el OJV como la persona, así que el cuerpo lleva además su rut, clave
         y método de login (1 = Clave del Poder Judicial, 2 = ClaveÚnica).
 
         Best-effort: un 409 (ya en curso) o cualquier otra falla acá no corta la
-        pantalla — solo significa que hay que reintentar más tarde."""
+        pantalla. Devuelve una nota corta de qué pasó, para el log de
+        diagnóstico (no se le muestra al usuario)."""
         cuerpo = {
             **cuerpo_causa,
             "rut": credenciales["rut"],
@@ -270,10 +271,15 @@ class PjudService:
         }
         try:
             self._request("POST", "/sincronizar_civil", json=cuerpo)
+            return "sincronizar_civil: 200 (encolado)"
         except PjudConflicto:
-            pass
+            # Ya hay un job en curso, o se pidió otro antes del intervalo mínimo
+            # del proveedor (30 min). Si esto se repite en cada intento y la
+            # causa nunca queda lista, el job del proveedor está pegado o falló.
+            return "sincronizar_civil: 409 (ya en curso / muy pronto)"
         except PjudApiError as e:
             logger.warning("PJUD: sincronizar_civil falló, se sigue igual: %s", e)
+            return f"sincronizar_civil: error ({e})"
 
     def obtener_detalle(
         self,
@@ -317,13 +323,31 @@ class PjudService:
             and credenciales_pjud.get("clave")
         )
 
+        # Notas técnicas de cada paso, para el log de la consola. No se le
+        # muestran al usuario; sirven para responder "¿y por qué sigue
+        # sincronizando?" sin tener que abrir los logs del servidor de api-pjud.
+        diag: list[str] = [f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"]
+        if not puede_sincronizar:
+            diag.append("sin clave del OJV cargada")
+
         if forzar_sincronizacion and puede_sincronizar:
-            self._sincronizar(cuerpo_causa, credenciales_pjud)
+            diag.append("forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud))
 
         try:
             detalle = self._request("POST", "/consultar_civil", json=cuerpo_causa)["causa"]
+            estado_raw = detalle.get("estado")
+            diag.append(
+                f"consultar_civil: 200 estado={estado_raw!r} "
+                f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
+                f"cuadernos={len(detalle.get('cuadernos') or [])}"
+            )
         except PjudNoEncontrado:
             detalle = None
+            # 404 = api-pjud NUNCA creó esta causa. Si tras varios `/sincronizar`
+            # sigue en 404, su worker no está tomando el job (caído, o falla el
+            # login al OJV y se rinde). Revisar worker.log en el servidor de
+            # api-pjud.
+            diag.append("consultar_civil: 404 (api-pjud no tiene la causa)")
 
         no_lista = (
             detalle is None
@@ -332,11 +356,19 @@ class PjudService:
         )
         if no_lista:
             if not puede_sincronizar:
-                return {"estado": "sin_credenciales", "mensaje": _MENSAJE_SIN_CREDENCIALES}
+                return {
+                    "estado": "sin_credenciales",
+                    "mensaje": _MENSAJE_SIN_CREDENCIALES,
+                    "diagnostico": " · ".join(diag),
+                }
             # `forzar` ya disparó el sync arriba; sin `forzar` se dispara acá.
             if not forzar_sincronizacion:
-                self._sincronizar(cuerpo_causa, credenciales_pjud)
-            return {"estado": "sincronizando", "mensaje": _MENSAJE_SINCRONIZANDO}
+                diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud))
+            return {
+                "estado": "sincronizando",
+                "mensaje": _MENSAJE_SINCRONIZANDO,
+                "diagnostico": " · ".join(diag),
+            }
 
         cuadernos = detalle.get("cuadernos") or []
         cuaderno = self._elegir_cuaderno(cuadernos, cuaderno_id)
@@ -348,9 +380,13 @@ class PjudService:
 
         historia = movimientos.get("historia") or []
         self._normalizar_documentos(historia, detalle["identificador"], cuaderno["id"])
+        diag.append(
+            f"movimientos: cuaderno {cuaderno['id']}, {len(historia)} trámites"
+        )
 
         return {
             "estado": "listo",
+            "diagnostico": " · ".join(diag),
             "causa": detalle,
             "cuaderno_consultado_id": cuaderno["id"],
             "historia": historia,

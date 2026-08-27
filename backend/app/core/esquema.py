@@ -71,6 +71,9 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     ("factura", "origen_detalle", "VARCHAR(500)"),
     ("factura", "origen_causas_id", "INTEGER"),
     ("factura", "fecha_archivo_causas", "DATE"),
+    # Diagnóstico paso a paso de la consulta a api-pjud, agregado después de
+    # crear la tabla `pjud_llamado`. Nulo en las filas anteriores.
+    ("pjud_llamado", "diagnostico", "TEXT"),
     # Suspensión automática por mora. Arranca en 0 —apagada— también en las
     # instalaciones que ya existen: nadie la pidió, así que no puede empezar a
     # suspender clientes por el solo hecho de actualizar.

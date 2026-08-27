@@ -128,6 +128,7 @@ import { PjudLogService } from './pjud-log.service';
           } @else {
             <p class="text-sm text-neutral-500 mb-3">{{ total() }} consulta(s)</p>
 
+            <p class="text-xs text-neutral-400 mb-2">Haz clic en una fila para ver el diagnóstico paso a paso.</p>
             <div class="table-wrapper">
               <table class="data-table">
                 <thead>
@@ -144,7 +145,7 @@ import { PjudLogService } from './pjud-log.service';
                 </thead>
                 <tbody>
                   @for (r of registros(); track r.id) {
-                    <tr>
+                    <tr class="cursor-pointer" (click)="alternar(r.id)">
                       <td class="whitespace-nowrap tabular-nums">
                         {{ r.fecha_hora | date: 'dd-MM-yyyy HH:mm:ss' }}
                       </td>
@@ -171,6 +172,29 @@ import { PjudLogService } from './pjud-log.service';
                         {{ r.mensaje || '—' }}
                       </td>
                     </tr>
+                    @if (expandida() === r.id) {
+                      <tr>
+                        <td colspan="8" class="bg-neutral-50 !whitespace-normal">
+                          <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 py-1 text-sm">
+                            @if (r.mensaje) {
+                              <dt class="text-neutral-500">Mensaje</dt>
+                              <dd>{{ r.mensaje }}</dd>
+                            }
+                            <dt class="text-neutral-500">Diagnóstico</dt>
+                            <dd class="font-mono text-xs whitespace-pre-wrap break-words">
+                              {{ r.diagnostico || 'Sin diagnóstico registrado.' }}
+                            </dd>
+                          </dl>
+                          @if (r.resultado === 'sincronizando' || r.resultado === 'error') {
+                            <p class="text-xs text-neutral-500 mt-1">
+                              Si el diagnóstico dice <code>consultar_civil: 404</code> tras varios intentos,
+                              api-pjud nunca llegó a crear la causa: revisar <code>worker.log</code> y la tabla
+                              <code>sync_job</code> en el servidor de api-pjud (login al OJV, CAPTCHA, worker caído).
+                            </p>
+                          }
+                        </td>
+                      </tr>
+                    }
                   }
                 </tbody>
               </table>
@@ -208,6 +232,8 @@ export class PjudLlamadosComponent implements OnInit {
   totalPaginas = signal(1);
   cargando = signal(false);
   error = signal<string | null>(null);
+  /** Id de la fila cuyo diagnóstico está desplegado; null = ninguna. */
+  expandida = signal<number | null>(null);
 
   borrador: Borrador = vacio();
   private aplicado = signal<Borrador>(vacio());
@@ -309,6 +335,10 @@ export class PjudLlamadosComponent implements OnInit {
     if (pagina < 1 || pagina > this.totalPaginas()) return;
     this.pagina.set(pagina);
     this.cargar();
+  }
+
+  alternar(id: number): void {
+    this.expandida.set(this.expandida() === id ? null : id);
   }
 
   etiqueta(r: ResultadoPjud): string {

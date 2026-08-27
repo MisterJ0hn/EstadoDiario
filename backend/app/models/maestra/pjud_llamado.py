@@ -60,4 +60,10 @@ class PjudLlamado(BaseMaestra):
     # texto del error. En 'listo' queda nulo.
     mensaje: Mapped[Optional[str]] = mapped_column(Text)
 
+    # Notas técnicas paso a paso: qué respondió `/consultar_civil` (404 vs
+    # Sincronizando + fecha de última sync), qué respondió `/sincronizar_civil`
+    # (200 vs 409), cuántos trámites trajo. Es lo que responde "¿y por qué sigue
+    # sincronizando?" sin abrir los logs del servidor de api-pjud.
+    diagnostico: Mapped[Optional[str]] = mapped_column(Text)
+
     duracion_ms: Mapped[Optional[int]] = mapped_column(Integer)

@@ -20,6 +20,8 @@ class PjudLlamadoResponse(BaseModel):
     http_status: int | None = None
     # El aviso de "sincronizando" o el texto del error. Nulo en 'listo'.
     mensaje: str | None = None
+    # Notas técnicas paso a paso: qué respondió cada endpoint de api-pjud.
+    diagnostico: str | None = None
     duracion_ms: int | None = None
 
 

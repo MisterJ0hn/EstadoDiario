@@ -145,6 +145,9 @@ class TestObtenerDetalle:
         resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert "/sincronizar_civil" in self.llamadas
+        # El diagnóstico explica el 404 y el resultado del sync, para la consola.
+        assert "consultar_civil: 404" in resultado["diagnostico"]
+        assert "sincronizar_civil: 200" in resultado["diagnostico"]
 
     def test_sin_clave_del_ojv_devuelve_sin_credenciales_y_no_sincroniza(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {

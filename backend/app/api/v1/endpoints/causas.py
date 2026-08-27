@@ -320,6 +320,7 @@ def pjud_movimientos(
     resultado_log = "error"
     http_status = 502
     mensaje_log: str | None = None
+    diagnostico_log: str | None = None
     try:
         resultado = PjudService().obtener_detalle(
             causa,
@@ -328,6 +329,7 @@ def pjud_movimientos(
             credenciales_pjud=credenciales_pjud,
         )
         estado = resultado.get("estado")
+        diagnostico_log = resultado.pop("diagnostico", None)
         # El scrape del proveedor es asíncrono: 202 mientras no esté listo, para
         # que el frontend distinga "espera y reintenta" de "listo".
         if estado == "sincronizando":
@@ -355,12 +357,13 @@ def pjud_movimientos(
             resultado=resultado_log,
             http_status=http_status,
             mensaje=mensaje_log,
+            diagnostico=diagnostico_log,
             duracion_ms=int((time.monotonic() - inicio) * 1000),
         )
 
 
 def _registrar_llamado_pjud(db_maestra, *, tenant, causa_id, rol, tribunal, forzar,
-                            resultado, http_status, mensaje, duracion_ms) -> None:
+                            resultado, http_status, mensaje, diagnostico, duracion_ms) -> None:
     """Anota la consulta en la base principal. Nunca revienta hacia afuera: un
     fallo del log no puede impedir que el estudio vea su causa."""
     try:
@@ -375,6 +378,7 @@ def _registrar_llamado_pjud(db_maestra, *, tenant, causa_id, rol, tribunal, forz
             resultado=resultado,
             http_status=http_status,
             mensaje=mensaje,
+            diagnostico=diagnostico,
             duracion_ms=duracion_ms,
         )
     except Exception:
