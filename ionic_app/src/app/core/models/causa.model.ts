@@ -194,10 +194,10 @@ export interface PjudMovimientoItem {
   descripcion_tramite: string | null;
   fecha_tramite: string | null;
   foja: number | null;
-  doc: string | null;
   anexo: PjudHistoriaAnexoItem[];
-  /** Armada por el backend a partir de `doc`; null si el trámite no trae documento. */
-  documento_url: string | null;
+  /** URLs de los documentos del trámite (el proveedor manda 0, 1 o 2). Ya
+   *  resueltas por el backend a partir del `doc` (que llega como lista). */
+  documentos_url: string[];
 }
 
 export interface PjudLitiganteItem {

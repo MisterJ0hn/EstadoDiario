@@ -191,7 +191,11 @@ class TestObtenerDetalle:
                 "cuadernos": [{"id": 1, "nombre": "Principal"}],
             }},
             "/consultar_movimientos_civil": {
-                "historia": [{"folio": 1, "doc": "https://x/f1.pdf", "anexo": []}],
+                "historia": [{
+                    "folio": 1,
+                    "doc": [{"doc": "https://x/f1.pdf"}, {"doc": "https://x/f1b.pdf"}],
+                    "anexo": [],
+                }],
                 "litigantes": [{"participante": "DTE"}],
                 "notificaciones": [],
                 "escritos_resolver": [],
@@ -202,13 +206,30 @@ class TestObtenerDetalle:
         resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=None)
         assert resultado["estado"] == "listo"
         assert resultado["cuaderno_consultado_id"] == 1
-        assert resultado["historia"][0]["documento_url"] == "https://x/f1.pdf"
+        assert resultado["historia"][0]["documentos_url"] == [
+            "https://x/f1.pdf", "https://x/f1b.pdf",
+        ]
         assert resultado["exhortos"][0]["rol_origen"] == "C-1-2020"
 
     def test_url_de_documento_se_arma_si_viene_solo_el_nombre(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {})
         url = servicio._url_documento("folio1.pdf", "abc-123", 2)
         assert url.endswith("/public/abc-123/2/folio1.pdf")
+
+    @pytest.mark.parametrize(
+        "doc, esperado",
+        [
+            (None, []),
+            ("", []),
+            ([], []),
+            ("f1.pdf", ["f1.pdf"]),
+            ([{"doc": "a.pdf"}, {"doc": "b.pdf"}], ["a.pdf", "b.pdf"]),
+            ([{"doc": "a.pdf"}, {"doc": ""}], ["a.pdf"]),
+            (["a.pdf", "b.pdf"], ["a.pdf", "b.pdf"]),
+        ],
+    )
+    def test_docs_de_tramite_normaliza_las_formas_del_proveedor(self, doc, esperado):
+        assert PjudService._docs_de_tramite(doc) == esperado
 
     def test_materia_no_civil_se_rechaza(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {})

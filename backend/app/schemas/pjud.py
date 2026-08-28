@@ -71,7 +71,11 @@ class PjudHistoriaAnexoItem(BaseModel):
 
 
 class PjudMovimientoItem(BaseModel):
-    """Una fila de `historia`: un trámite del cuaderno."""
+    """Una fila de `historia`: un trámite del cuaderno.
+
+    El proveedor manda `doc` como lista (`[{"doc": ...}]`): un trámite puede
+    traer 0, 1 o 2 documentos. El servicio la resuelve a `documentos_url`, ya
+    lista para enlazar."""
 
     folio: int | None = None
     etapa: str | None = None
@@ -79,9 +83,8 @@ class PjudMovimientoItem(BaseModel):
     descripcion_tramite: str | None = None
     fecha_tramite: str | None = None
     foja: int | None = None
-    doc: str | None = None
     anexo: list[PjudHistoriaAnexoItem] = []
-    documento_url: str | None = None
+    documentos_url: list[str] = []
 
 
 class PjudLitiganteItem(BaseModel):

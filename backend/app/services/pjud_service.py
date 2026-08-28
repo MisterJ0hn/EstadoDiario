@@ -423,21 +423,43 @@ class PjudService:
     def _normalizar_documentos(
         self, historia: list[dict], identificador: str, cuaderno_id: int
     ) -> None:
-        """Deja en cada trámite un `documento_url` usable.
+        """Deja en cada trámite un `documentos_url` usable (lista, 0-2 ítems).
 
-        El proveedor hoy entrega `doc` como URL absoluta
-        (`https://api-pjud.codifica.cl/public/<rol>/<cuaderno>/<archivo>.pdf`),
-        pero versiones anteriores del schema lo mandaban como solo el nombre de
-        archivo. Se cubren los dos casos, y lo mismo para los anexos del
-        trámite."""
+        El proveedor hoy entrega `doc` como una lista `[{"doc": ...}]` —un
+        trámite puede tener 0, 1 o 2 documentos—, con cada `doc` como URL
+        absoluta (`https://api-pjud.codifica.cl/public/<rol>/<cuaderno>/<archivo>.pdf`).
+        Versiones anteriores lo mandaban como un solo string, o como solo el
+        nombre de archivo. Se cubren los tres casos, y lo mismo para los anexos
+        del trámite."""
         for item in historia:
-            item["documento_url"] = self._url_documento(
-                item.get("doc"), identificador, cuaderno_id
-            )
+            crudos = self._docs_de_tramite(item.pop("doc", None))
+            item["documentos_url"] = [
+                url
+                for crudo in crudos
+                if (url := self._url_documento(crudo, identificador, cuaderno_id))
+            ]
             for anexo in item.get("anexo") or []:
                 anexo["doc"] = self._url_documento(
                     anexo.get("doc"), identificador, cuaderno_id
                 )
+
+    @staticmethod
+    def _docs_de_tramite(doc) -> list[str]:
+        """Normaliza el `doc` de un trámite a una lista de strings crudos.
+
+        Acepta la forma nueva (`[{"doc": "..."}]`), una lista de strings, o un
+        único string (formas viejas). `None`/vacío → lista vacía."""
+        if not doc:
+            return []
+        if isinstance(doc, str):
+            return [doc]
+        crudos: list[str] = []
+        for entrada in doc:
+            if isinstance(entrada, str) and entrada:
+                crudos.append(entrada)
+            elif isinstance(entrada, dict) and entrada.get("doc"):
+                crudos.append(entrada["doc"])
+        return crudos
 
     def _url_documento(
         self, doc: Optional[str], identificador: str, cuaderno_id: int

@@ -232,8 +232,12 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                               <tr>
                                 <td class="text-center">{{ h.folio ?? '-' }}</td>
                                 <td class="text-center">
-                                  @if (h.documento_url) {
-                                    <a [href]="h.documento_url" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                                  @if (h.documentos_url.length > 0) {
+                                    <span class="flex flex-col items-center gap-0.5">
+                                      @for (url of h.documentos_url; track $index) {
+                                        <a [href]="url" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                                      }
+                                    </span>
                                   } @else { <span>-</span> }
                                 </td>
                                 <td class="text-center">
