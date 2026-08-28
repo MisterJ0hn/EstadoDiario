@@ -217,7 +217,7 @@ def guardar_pjud_credenciales(
 ):
     """`clave` vacía = dejar la que ya estaba (para poder cambiar solo el RUT o
     el método sin volver a tipearla). Si nunca hubo clave, es obligatoria."""
-    usuario.pjud_rut = _normalizar_rut_pjud(body.rut)
+    usuario.pjud_rut = body.rut
     usuario.pjud_metodo_login = body.metodo_login
     if body.clave and body.clave.strip():
         usuario.pjud_clave = body.clave
@@ -235,21 +235,6 @@ def guardar_pjud_credenciales(
         rut=usuario.pjud_rut,
         metodo_login=usuario.pjud_metodo_login,
     )
-
-
-def _normalizar_rut_pjud(rut: str) -> str:
-    """Solo el cuerpo numérico, SIN dígito verificador: así lo pide api-pjud
-    (`"17314741"`). Medido contra la API real: manda `17314741K` o `173147414`
-    y responde `400 Error en campo [rut]`; manda `17314741` y responde 200.
-
-    El DV se separa por el guión o por la K final —nunca de un string de puros
-    dígitos, que sería ambiguo entre un cuerpo de 8 y uno de 7 + DV."""
-    s = rut.strip().replace(".", "").replace(" ", "")
-    if "-" in s:
-        s = s.rsplit("-", 1)[0]
-    elif s[-1:] in ("k", "K"):
-        s = s[:-1]
-    return s
 
 
 @router.post(

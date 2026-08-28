@@ -186,7 +186,8 @@ class PjudCredencialesResponse(BaseModel):
 class PjudCredencialesUpdate(BaseModel):
     """Autoservicio: la propia clave del OJV, para `/sincronizar_civil`."""
 
-    rut: str = Field(..., min_length=7, max_length=20, examples=["17314741"])
+    # Se guarda tal cual lo escribe la persona: no se valida ni se normaliza.
+    rut: str = Field(..., examples=["17314741"])
     # None o vacío = dejar la clave que ya está guardada (no reescribirla).
     clave: str | None = Field(default=None, max_length=200)
     metodo_login: int = Field(1, ge=1, le=2)
