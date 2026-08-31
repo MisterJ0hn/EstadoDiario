@@ -195,7 +195,9 @@ export interface PjudDocumentoTramite {
 }
 
 export interface PjudMovimientoItem {
-  folio: number | null;
+  /** Folio tal como lo muestra el OJV: casi siempre un número, pero puede traer
+   *  sufijo ("1 bis", "12-A"). */
+  folio_texto: string | null;
   etapa: string | null;
   tramite: string | null;
   descripcion_tramite: string | null;

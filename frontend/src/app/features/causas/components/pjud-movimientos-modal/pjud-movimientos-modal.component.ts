@@ -286,7 +286,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                           <tbody>
                             @for (h of d.historia; track $index) {
                               <tr>
-                                <td class="text-center">{{ h.folio ?? '-' }}</td>
+                                <td class="text-center">{{ h.folio_texto ?? '-' }}</td>
                                 <td class="text-center">
                                   @if (h.documentos.length > 0) {
                                     <span class="inline-flex items-center justify-center gap-2">

@@ -88,7 +88,9 @@ class PjudMovimientoItem(BaseModel):
     trámite puede traer 0, 1 o 2 documentos. El servicio la resuelve a
     `documentos`, ya lista para enlazar."""
 
-    folio: int | None = None
+    # `folio_texto` es el folio tal como lo muestra el OJV: casi siempre un
+    # número, pero puede venir con sufijo ("1 bis", "12-A"), así que es string.
+    folio_texto: str | None = None
     etapa: str | None = None
     tramite: str | None = None
     descripcion_tramite: str | None = None
