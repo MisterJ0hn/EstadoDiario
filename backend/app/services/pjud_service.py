@@ -45,13 +45,23 @@ _RE_ROL_CIVIL = re.compile(r"^\s*([A-Za-zÑñ]{1,4})-(\d+)-(\d{4})\s*$")
 # días); cachearlo evita pedirlo en cada clic de "ver detalle".
 _CATALOGO_TTL_SEGUNDOS = 6 * 3600
 
-# Lo que devuelve `/consultar_civil` mientras el worker del proveedor todavía
-# está scrapeando la causa.
+# Lo que devuelve `/consultar_civil` en `estado` mientras el worker del
+# proveedor todavía está scrapeando la causa.
 _ESTADOS_SINCRONIZANDO = {"sincronizando", "pendiente", "en proceso", "encolada"}
+
+# `estado` cuando el scrape del proveedor terminó mal (login al OJV fallido,
+# causa que el OJV no deja ver, timeout del worker, etc.). El detalle legible va
+# en `detalle_estado`.
+_ESTADOS_ERROR = {"error", "fallido", "fallida", "fallo", "rechazada"}
 
 _MENSAJE_SINCRONIZANDO = (
     "El Poder Judicial está sincronizando esta causa. La primera consulta "
     "puede tardar varios minutos; vuelve a intentar en un rato."
+)
+
+_MENSAJE_ERROR_SYNC = (
+    "La sincronización de esta causa con el Poder Judicial falló. "
+    "Puedes reintentarla; si el problema persiste, revisa tu clave del OJV."
 )
 
 _MENSAJE_SIN_CREDENCIALES = (
@@ -311,8 +321,16 @@ class PjudService:
             todavía en proceso) pero la persona no cargó su clave del OJV. La
             pantalla la manda a Mi Perfil.
           - `"sincronizando"`: el proveedor está scrapeando la causa. `causa`
-            viene en `None`. La pantalla muestra el aviso y "Reintentar".
+            viene en `None`. La pantalla muestra el aviso, `detalle_estado`
+            (progreso del worker) y "Reintentar".
+          - `"error"`: el scrape del proveedor terminó mal. `causa` viene en
+            `None` y `detalle_estado` trae el motivo; la pantalla lo muestra en
+            rojo.
           - `"listo"`: `causa` y las cinco secciones están pobladas.
+
+        `detalle_estado` es el campo homónimo de `/consultar_civil`: un texto
+        legible con el progreso ("Procesando cuaderno 2 de 3") o el motivo del
+        fallo. Puede venir vacío.
 
         `credenciales_pjud`: `{"rut", "clave", "metodo_login"}` de la persona;
         sin ellas no se puede llamar a `/sincronizar_civil`.
@@ -349,11 +367,14 @@ class PjudService:
         if forzar_sincronizacion and puede_sincronizar:
             diag.append("forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud))
 
+        detalle_estado: Optional[str] = None
         try:
             detalle = self._request("POST", "/consultar_civil", json=cuerpo_causa)["causa"]
             estado_raw = detalle.get("estado")
+            detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
             diag.append(
                 f"consultar_civil: 200 estado={estado_raw!r} "
+                f"detalle_estado={detalle_estado!r} "
                 f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
                 f"cuadernos={len(detalle.get('cuadernos') or [])}"
             )
@@ -365,9 +386,21 @@ class PjudService:
             # api-pjud.
             diag.append("consultar_civil: 404 (api-pjud no tiene la causa)")
 
+        estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
+
+        # El scrape terminó mal: no se reintenta solo, se muestra el motivo en
+        # rojo y la pantalla ofrece "Reintentar" (que fuerza un sync nuevo).
+        if estado_norm in _ESTADOS_ERROR:
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": detalle_estado,
+                "diagnostico": " · ".join(diag),
+            }
+
         no_lista = (
             detalle is None
-            or (detalle.get("estado") or "").strip().lower() in _ESTADOS_SINCRONIZANDO
+            or estado_norm in _ESTADOS_SINCRONIZANDO
             or not (detalle.get("cuadernos") or [])
         )
         if no_lista:
@@ -375,6 +408,7 @@ class PjudService:
                 return {
                     "estado": "sin_credenciales",
                     "mensaje": _MENSAJE_SIN_CREDENCIALES,
+                    "detalle_estado": detalle_estado,
                     "diagnostico": " · ".join(diag),
                 }
             # `forzar` ya disparó el sync arriba; sin `forzar` se dispara acá.
@@ -383,6 +417,7 @@ class PjudService:
             return {
                 "estado": "sincronizando",
                 "mensaje": _MENSAJE_SINCRONIZANDO,
+                "detalle_estado": detalle_estado,
                 "diagnostico": " · ".join(diag),
             }
 

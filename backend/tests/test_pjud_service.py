@@ -178,11 +178,28 @@ class TestObtenerDetalle:
 
     def test_causa_en_proceso_devuelve_sincronizando(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
-            "/consultar_civil": {"causa": {"estado": "Sincronizando", "cuadernos": []}},
+            "/consultar_civil": {"causa": {
+                "estado": "Sincronizando", "cuadernos": [],
+                "detalle_estado": "Procesando cuaderno 2 de 3",
+            }},
             "/sincronizar_civil": {"exito": True},
         })
         resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
         assert resultado["estado"] == "sincronizando"
+        assert resultado["detalle_estado"] == "Procesando cuaderno 2 de 3"
+
+    def test_sync_con_error_devuelve_estado_error_y_detalle(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": {"causa": {
+                "estado": "Error", "cuadernos": [],
+                "detalle_estado": "No se pudo iniciar sesión en el OJV: clave incorrecta",
+            }},
+        })
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        assert resultado["estado"] == "error"
+        assert "clave incorrecta" in resultado["detalle_estado"]
+        # No reintenta solo: no llama a /sincronizar_civil.
+        assert "/sincronizar_civil" not in self.llamadas
 
     def test_causa_lista_trae_las_secciones(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {

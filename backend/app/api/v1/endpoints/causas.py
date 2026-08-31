@@ -334,9 +334,10 @@ def pjud_movimientos(
         # que el frontend distinga "espera y reintenta" de "listo".
         if estado == "sincronizando":
             response.status_code = http_status = 202
-        elif estado == "sin_credenciales":
-            # No es un error: es que falta que la persona cargue su clave. 200
-            # con el estado en el cuerpo — el modal la manda a Mi Perfil.
+        elif estado in ("sin_credenciales", "error"):
+            # No son errores HTTP: falta la clave, o el scrape del proveedor
+            # falló. 200 con el estado (y `detalle_estado`) en el cuerpo — el
+            # modal decide qué mostrar (ir a Mi Perfil / alerta roja).
             http_status = 200
         else:
             http_status = 200

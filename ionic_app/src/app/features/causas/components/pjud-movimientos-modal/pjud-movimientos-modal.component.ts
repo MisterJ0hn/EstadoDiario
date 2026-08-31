@@ -83,7 +83,31 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                   <p>
                     {{ d.mensaje || 'La primera consulta puede tardar varios minutos. Vuelve a intentar en un rato.' }}
                   </p>
+                  @if (d.detalle_estado) {
+                    <p class="inline-flex items-center gap-2 rounded-md bg-primary-100 px-2.5 py-1 text-sm font-medium text-primary-800">
+                      <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      {{ d.detalle_estado }}
+                    </p>
+                  }
                   <button (click)="reintentar()" class="btn-primary btn-sm mt-1">Reintentar</button>
+                </div>
+              }
+
+              @if (d.estado === 'error') {
+                <div class="flex flex-col items-start gap-2 rounded-lg bg-danger-600 px-4 py-3 text-white">
+                  <p class="font-semibold">La sincronización con el Poder Judicial falló</p>
+                  @if (d.detalle_estado) {
+                    <p class="text-sm text-white/90">{{ d.detalle_estado }}</p>
+                  } @else if (d.mensaje) {
+                    <p class="text-sm text-white/90">{{ d.mensaje }}</p>
+                  }
+                  <button (click)="actualizar()" [disabled]="cargando()"
+                          class="mt-1 rounded-md bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25 disabled:opacity-50">
+                    {{ cargando() ? 'Reintentando...' : 'Reintentar' }}
+                  </button>
                 </div>
               }
 

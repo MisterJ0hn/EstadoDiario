@@ -148,12 +148,18 @@ class PjudExhortoItem(BaseModel):
 
 class PjudMovimientosResponse(BaseModel):
     # `sincronizando` = api-pjud está scrapeando la causa por primera vez;
-    # `causa` viene en null y el resto vacío. El frontend muestra el aviso y
-    # ofrece "Reintentar". `sin_credenciales` = hay que sincronizar pero la
-    # persona no cargó su clave del OJV; el modal la manda a Mi Perfil.
+    # `causa` viene en null y el resto vacío. El frontend muestra el aviso, el
+    # `detalle_estado` (progreso del worker) y ofrece "Reintentar".
+    # `error` = el scrape del proveedor terminó mal; `detalle_estado` trae el
+    # motivo y el modal lo muestra en rojo.
+    # `sin_credenciales` = hay que sincronizar pero la persona no cargó su clave
+    # del OJV; el modal la manda a Mi Perfil.
     # `listo` = todo lo demás está poblado.
-    estado: Literal["listo", "sincronizando", "sin_credenciales"] = "listo"
+    estado: Literal["listo", "sincronizando", "error", "sin_credenciales"] = "listo"
     mensaje: str | None = None
+    # Campo `detalle_estado` de `/consultar_civil`: texto legible con el avance
+    # de la sincronización o el motivo del fallo. Null si el proveedor no lo manda.
+    detalle_estado: str | None = None
     causa: PjudCausaDetalle | None = None
     cuaderno_consultado_id: int | None = None
     historia: list[PjudMovimientoItem] = []

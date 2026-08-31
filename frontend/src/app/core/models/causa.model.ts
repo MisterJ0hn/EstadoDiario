@@ -257,12 +257,18 @@ export interface PjudExhortoItem {
 
 export interface PjudMovimientosResponse {
   /**
-   * `sincronizando` = el PJUD todavía está scrapeando; `causa` viene null.
+   * `sincronizando` = el PJUD todavía está scrapeando; `causa` viene null,
+   * `detalle_estado` trae el progreso del worker.
+   * `error` = el scrape del proveedor terminó mal; `detalle_estado` trae el
+   * motivo (se muestra en rojo).
    * `sin_credenciales` = hay que sincronizar pero falta cargar la clave del
    * Poder Judicial en Mi Perfil.
    */
-  estado: 'listo' | 'sincronizando' | 'sin_credenciales';
+  estado: 'listo' | 'sincronizando' | 'error' | 'sin_credenciales';
   mensaje: string | null;
+  /** Campo `detalle_estado` de `/consultar_civil`: avance de la sincronización
+   *  o motivo del fallo. Null si el proveedor no lo manda. */
+  detalle_estado: string | null;
   causa: PjudCausaDetalle | null;
   cuaderno_consultado_id: number | null;
   historia: PjudMovimientoItem[];
