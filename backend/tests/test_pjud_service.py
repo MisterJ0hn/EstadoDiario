@@ -281,7 +281,7 @@ class TestAbrirDocumento:
             None,
             "",
             "http://evil.com/public/x.pdf",
-            "https://api-pjud.codifica.cl/public/x.pdf",  # otro esquema
+            "ftp://api-pjud.codifica.cl/public/x.pdf",
             "http://api-pjud.codifica.cl/privado/x.pdf",
             "http://api-pjud.codifica.cl/public/../secreto",
         ],
@@ -290,6 +290,33 @@ class TestAbrirDocumento:
         servicio = self._servicio(monkeypatch)
         with pytest.raises(PjudApiError):
             servicio.abrir_documento(url)
+
+    def test_https_del_detalle_se_rehace_contra_la_base_http(self, monkeypatch):
+        # El detalle trae los documentos con `https://` y un certificado que no
+        # valida; la petición debe rehacerse contra PJUD_API_BASE_URL (`http`).
+        servicio = self._servicio(monkeypatch)
+        capturado: dict = {}
+
+        class _Resp:
+            status_code = 200
+            headers: dict = {}
+
+            def iter_content(self, chunk_size=0):
+                yield b"pdf"
+
+            def close(self):
+                pass
+
+        def _fake_get(url, **kw):
+            capturado["url"] = url
+            return _Resp()
+
+        monkeypatch.setattr("app.services.pjud_service.requests.get", _fake_get)
+        resp = servicio.abrir_documento(
+            "https://api-pjud.codifica.cl/public/abc/2/f1.pdf"
+        )
+        assert capturado["url"] == "http://api-pjud.codifica.cl/public/abc/2/f1.pdf"
+        assert b"".join(resp.iter_content()) == b"pdf"
 
     def test_reenvia_un_public_del_proveedor(self, monkeypatch):
         servicio = self._servicio(monkeypatch)

@@ -315,6 +315,7 @@ def pjud_documento(
     except PjudNoEncontrado:
         raise HTTPException(status_code=404, detail="Documento no encontrado en el PJUD")
     except PjudApiError as e:
+        logger.warning("PJUD documento: %s (url=%s)", e, url)
         raise HTTPException(status_code=502, detail=str(e))
 
     def _emitir():

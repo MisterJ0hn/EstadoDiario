@@ -520,13 +520,16 @@ class PjudService:
         """Abre en streaming un PDF de `/public/...` del proveedor para que el
         endpoint lo reenvíe al navegador.
 
-        El detalle deja los documentos como URLs del proveedor
-        (`http://api-pjud.codifica.cl/public/<id>/<cuaderno>/<archivo>.pdf`):
-        van por `http`, se sirven como adjunto y sin CORS, así que enlazadas
-        directas el navegador las descarga o las bloquea. El frontend nos pasa
-        esa misma `url`; acá se valida que apunte al `/public/` del proveedor
-        —mismo esquema, host y prefijo que `PJUD_API_BASE_URL`— antes de pedir
-        nada, para que el endpoint no sirva de proxy abierto (SSRF).
+        El detalle deja los documentos como URLs absolutas del proveedor
+        (`https://api-pjud.codifica.cl/public/<id>/<cuaderno>/<archivo>.pdf`):
+        se sirven como adjunto y sin CORS, así que enlazadas directas el
+        navegador las descarga o las bloquea. El frontend nos pasa esa misma
+        `url`; acá se valida que apunte al **mismo host** que
+        `PJUD_API_BASE_URL` y a `/public/...`, y se rehace la petición contra
+        `PJUD_API_BASE_URL` (su esquema y host): el detalle a veces trae `https`
+        con un certificado que no valida, mientras que la API se usa por `http`.
+        Quedarse con la ruta ya validada es además lo que impide que el
+        endpoint sirva de proxy abierto (SSRF).
 
         Devuelve la respuesta `requests` **sin consumir** (`stream=True`); el
         llamador la itera y la cierra. `PjudNoEncontrado` si el proveedor
@@ -535,22 +538,30 @@ class PjudService:
         base = urlsplit(self._base_url)
         pedido = urlsplit((url or "").strip())
         if (
-            (pedido.scheme, pedido.netloc) != (base.scheme, base.netloc)
+            pedido.scheme not in ("http", "https")
+            or pedido.hostname != base.hostname
             or not pedido.path.startswith("/public/")
             or ".." in pedido.path
         ):
+            logger.warning("PJUD documento: URL rechazada por validación: %r", url)
             raise PjudApiError("La URL no corresponde a un documento del PJUD.")
+
+        destino = f"{self._base_url}/{pedido.path.lstrip('/')}"
+        if pedido.query:
+            destino += f"?{pedido.query}"
 
         try:
             respuesta = requests.get(
-                url,
+                destino,
                 headers=self._headers(con_token=False),
                 stream=True,
                 timeout=settings.PJUD_API_TIMEOUT_SEGUNDOS,
             )
         except requests.exceptions.Timeout as e:
+            logger.warning("PJUD documento: timeout al pedir %s", destino)
             raise PjudApiError("El PJUD no entregó el documento a tiempo.") from e
         except requests.exceptions.RequestException as e:
+            logger.warning("PJUD documento: fallo de red al pedir %s: %s", destino, e)
             raise PjudApiError("No se pudo conectar con el PJUD para traer el documento.") from e
 
         if respuesta.status_code == 404:
@@ -558,6 +569,8 @@ class PjudService:
             raise PjudNoEncontrado("El PJUD no tiene este documento.")
         if respuesta.status_code >= 400:
             estado = respuesta.status_code
+            cuerpo = respuesta.text[:300]
             respuesta.close()
+            logger.warning("PJUD documento: HTTP %s al pedir %s: %s", estado, destino, cuerpo)
             raise PjudApiError(f"El PJUD respondió HTTP {estado} al pedir el documento.")
         return respuesta
