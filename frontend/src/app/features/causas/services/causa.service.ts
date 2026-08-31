@@ -96,6 +96,17 @@ export class CausaService {
     );
   }
 
+  /** Un PDF de documento del detalle PJUD, traído por el backend (que lo baja
+   *  del proveedor y lo reenvía por `https` como `application/pdf` inline).
+   *  Se pide como Blob para abrirlo en el visor del navegador sin descargarlo;
+   *  `url` es la que vino en el detalle. */
+  pjudDocumento(url: string): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/pjud/documento`, {
+      params: new HttpParams().set('url', url),
+      responseType: 'blob',
+    });
+  }
+
   private toParams(filtros: object): HttpParams {
     let params = new HttpParams();
     for (const [clave, valor] of Object.entries(filtros)) {

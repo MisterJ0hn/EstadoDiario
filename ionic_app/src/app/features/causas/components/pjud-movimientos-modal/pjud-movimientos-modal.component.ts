@@ -29,11 +29,13 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
   standalone: true,
   imports: [CommonModule, NgTemplateOutlet, FormsModule, RouterLink],
   template: `
-    <!-- Ícono reutilizable: enlace a un PDF del PJUD. Abre en pestaña nueva
-         (el navegador lo muestra en su visor; nunca fuerza descarga). Rojo para
-         el documento principal, azul para el certificado (doc2). -->
+    <!-- Ícono reutilizable: abre un PDF del PJUD en una pestaña nueva, en el
+         visor del navegador (sin descargarlo). El backend lo baja del proveedor
+         (http, adjunto, sin CORS) y lo reenvía https/inline; acá se pide como
+         blob para que el visor lo muestre. Rojo para el documento principal,
+         azul para el certificado (doc2). -->
     <ng-template #enlacePdf let-url let-tipo="tipo">
-      <a [href]="url" target="_blank" rel="noopener"
+      <button type="button" (click)="abrirDocumento(url)"
          class="inline-flex align-middle transition-opacity hover:opacity-60"
          [class.text-danger-600]="tipo !== 'certificado'"
          [class.text-blue-500]="tipo === 'certificado'"
@@ -43,7 +45,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                 d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7a1 1 0 0 0 1 1h3.5L13 3.5Z" />
         </svg>
         <span class="sr-only">PDF</span>
-      </a>
+      </button>
     </ng-template>
 
     <!-- Ícono reutilizable: carpeta (secciones desplegables). -->
@@ -299,9 +301,9 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                                     <span class="flex flex-col gap-0.5">
                                       @for (an of h.anexo; track $index) {
                                         @if (an.doc) {
-                                          <a [href]="an.doc" target="_blank" rel="noopener" class="pjud-doc">
+                                          <button type="button" (click)="abrirDocumento(an.doc)" class="pjud-doc">
                                             {{ an.referencia || 'anexo' }}
-                                          </a>
+                                          </button>
                                         }
                                       }
                                     </span>
@@ -479,6 +481,10 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
             }
           </div>
 
+          @if (docError()) {
+            <p class="px-4 pb-2 text-sm text-danger-600">{{ docError() }}</p>
+          }
+
           <div class="modal-footer">
             @if (datos()?.estado === 'listo') {
               <button (click)="actualizar()" class="btn-secondary" [disabled]="cargando()">
@@ -520,6 +526,7 @@ export class PjudMovimientosModalComponent {
       this.verAnexos.set(false);
       this.verReceptor.set(false);
       this.exhortoAbierto.set(null);
+      this.docError.set(null);
       this.cargar(c.id, false);
     }
   }
@@ -537,6 +544,7 @@ export class PjudMovimientosModalComponent {
   verAnexos = signal(false);
   verReceptor = signal(false);
   exhortoAbierto = signal<number | null>(null);
+  docError = signal<string | null>(null);
 
   private cargar(causaId: number, forzar: boolean, cuaderno?: number): void {
     this.cargando.set(true);
@@ -573,6 +581,35 @@ export class PjudMovimientosModalComponent {
 
   toggleExhorto(i: number): void {
     this.exhortoAbierto.set(this.exhortoAbierto() === i ? null : i);
+  }
+
+  /**
+   * Abre un documento del detalle en el visor del navegador, sin descargarlo.
+   *
+   * El backend (`/causas/pjud/documento`) baja el PDF del proveedor —que va por
+   * `http`, como adjunto y sin CORS— y lo reenvía `https`/inline. Se pide como
+   * blob (el interceptor le pone el token) y se navega la pestaña al
+   * `objectURL`: la pestaña se abre YA, en el gesto del clic, para que el
+   * bloqueador de pop-ups no la mate mientras llega la respuesta.
+   */
+  abrirDocumento(url: string | null | undefined): void {
+    if (!url) return;
+    this.docError.set(null);
+    const win = window.open('', '_blank');
+    this.service.pjudDocumento(url).subscribe({
+      next: (blob) => {
+        const obj = URL.createObjectURL(blob);
+        if (win) win.location.href = obj;
+        else window.open(obj, '_blank');
+        // Para entonces el visor ya cargó el PDF; revocar libera la memoria
+        // sin afectar la pestaña abierta.
+        setTimeout(() => URL.revokeObjectURL(obj), 60_000);
+      },
+      error: () => {
+        win?.close();
+        this.docError.set('No se pudo abrir el documento desde el PJUD.');
+      },
+    });
   }
 
   cerrar(): void {

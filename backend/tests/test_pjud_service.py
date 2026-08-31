@@ -261,3 +261,73 @@ class TestObtenerDetalle:
         causa = types.SimpleNamespace(id=1, materia="Laboral", rol="C-1-2020", tribunal="x")
         with pytest.raises(PjudApiError, match="Civiles"):
             servicio.obtener_detalle(causa)
+
+
+class TestAbrirDocumento:
+    """El endpoint que reenvía el PDF al navegador confía en que
+    `abrir_documento` no deje pedir cualquier URL: solo `/public/...` del
+    proveedor, mismo esquema y host que `PJUD_API_BASE_URL`."""
+
+    def _servicio(self, monkeypatch) -> PjudService:
+        monkeypatch.setattr(
+            "app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@codifica.cl"
+        )
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
+        return PjudService()
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            None,
+            "",
+            "http://evil.com/public/x.pdf",
+            "https://api-pjud.codifica.cl/public/x.pdf",  # otro esquema
+            "http://api-pjud.codifica.cl/privado/x.pdf",
+            "http://api-pjud.codifica.cl/public/../secreto",
+        ],
+    )
+    def test_rechaza_lo_que_no_es_public_del_proveedor(self, monkeypatch, url):
+        servicio = self._servicio(monkeypatch)
+        with pytest.raises(PjudApiError):
+            servicio.abrir_documento(url)
+
+    def test_reenvia_un_public_del_proveedor(self, monkeypatch):
+        servicio = self._servicio(monkeypatch)
+        capturado: dict = {}
+
+        class _Resp:
+            status_code = 200
+            headers = {"Content-Length": "3"}
+
+            def iter_content(self, chunk_size=0):
+                yield b"pdf"
+
+            def close(self):
+                capturado["cerrado"] = True
+
+        def _fake_get(url, **kw):
+            capturado["url"] = url
+            return _Resp()
+
+        monkeypatch.setattr("app.services.pjud_service.requests.get", _fake_get)
+        resp = servicio.abrir_documento(
+            "http://api-pjud.codifica.cl/public/abc/2/f1.pdf"
+        )
+        assert capturado["url"] == "http://api-pjud.codifica.cl/public/abc/2/f1.pdf"
+        assert b"".join(resp.iter_content()) == b"pdf"
+
+    def test_404_del_proveedor_es_no_encontrado(self, monkeypatch):
+        servicio = self._servicio(monkeypatch)
+
+        class _Resp:
+            status_code = 404
+            headers: dict = {}
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(
+            "app.services.pjud_service.requests.get", lambda *a, **k: _Resp()
+        )
+        with pytest.raises(PjudNoEncontrado):
+            servicio.abrir_documento("http://api-pjud.codifica.cl/public/abc/2/f1.pdf")

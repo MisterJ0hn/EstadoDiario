@@ -14,6 +14,7 @@ import uuid
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
@@ -34,7 +35,7 @@ from app.schemas.causa import (
 )
 from app.schemas.pjud import PjudDisponibleResponse, PjudMovimientosResponse
 from app.services.causa_import_service import CausaImportService, parse_nombre_archivo
-from app.services.pjud_service import PjudApiError, PjudService
+from app.services.pjud_service import PjudApiError, PjudNoEncontrado, PjudService
 
 logger = logging.getLogger(__name__)
 
@@ -289,6 +290,50 @@ def pjud_disponible(current_user: Usuario = Depends(get_usuario_actual)):
     'Detalle PJUD': sin credenciales configuradas, no tiene sentido ofrecerlo
     y que cada clic termine en un error."""
     return PjudDisponibleResponse(disponible=settings.pjud_api_activo)
+
+
+@router.get(
+    "/pjud/documento",
+    summary="Reenvía un PDF de documento del PJUD para verlo en el navegador",
+)
+def pjud_documento(
+    url: str = Query(..., description="URL del documento tal como vino en el detalle PJUD"),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """El detalle PJUD entrega los documentos como URLs del proveedor
+    (`http://api-pjud.codifica.cl/public/…pdf`): van por `http`, se sirven como
+    adjunto y sin CORS, así que enlazadas directas el navegador las descarga o
+    las bloquea. Esto las baja del proveedor y las reenvía por nuestra propia
+    respuesta `https`, como `application/pdf` inline, para que el visor del
+    navegador (o un iframe del modal) las muestre sin descargarlas.
+
+    La descarga del proveedor es servidor-a-servidor; el `url` se valida contra
+    `PJUD_API_BASE_URL` en `PjudService.abrir_documento` (no es un proxy
+    abierto)."""
+    try:
+        upstream = PjudService().abrir_documento(url)
+    except PjudNoEncontrado:
+        raise HTTPException(status_code=404, detail="Documento no encontrado en el PJUD")
+    except PjudApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    def _emitir():
+        try:
+            yield from upstream.iter_content(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+
+    # Sin Content-Length propio: `iter_content` puede entregar bytes ya
+    # descomprimidos y el largo del proveedor dejaría de cuadrar. Se manda
+    # chunked, que es lo que el visor del navegador espera igual.
+    return StreamingResponse(
+        _emitir(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "inline",
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 @router.get(

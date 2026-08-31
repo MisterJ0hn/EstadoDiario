@@ -29,7 +29,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 
@@ -513,3 +513,51 @@ class PjudService:
             f"{self._base_url}/public/{quote(identificador, safe='')}/"
             f"{cuaderno_id}/{quote(doc, safe='')}"
         )
+
+    # ── Reenvío de un PDF al navegador ───────────────────────────
+
+    def abrir_documento(self, url: str):
+        """Abre en streaming un PDF de `/public/...` del proveedor para que el
+        endpoint lo reenvíe al navegador.
+
+        El detalle deja los documentos como URLs del proveedor
+        (`http://api-pjud.codifica.cl/public/<id>/<cuaderno>/<archivo>.pdf`):
+        van por `http`, se sirven como adjunto y sin CORS, así que enlazadas
+        directas el navegador las descarga o las bloquea. El frontend nos pasa
+        esa misma `url`; acá se valida que apunte al `/public/` del proveedor
+        —mismo esquema, host y prefijo que `PJUD_API_BASE_URL`— antes de pedir
+        nada, para que el endpoint no sirva de proxy abierto (SSRF).
+
+        Devuelve la respuesta `requests` **sin consumir** (`stream=True`); el
+        llamador la itera y la cierra. `PjudNoEncontrado` si el proveedor
+        responde 404.
+        """
+        base = urlsplit(self._base_url)
+        pedido = urlsplit((url or "").strip())
+        if (
+            (pedido.scheme, pedido.netloc) != (base.scheme, base.netloc)
+            or not pedido.path.startswith("/public/")
+            or ".." in pedido.path
+        ):
+            raise PjudApiError("La URL no corresponde a un documento del PJUD.")
+
+        try:
+            respuesta = requests.get(
+                url,
+                headers=self._headers(con_token=False),
+                stream=True,
+                timeout=settings.PJUD_API_TIMEOUT_SEGUNDOS,
+            )
+        except requests.exceptions.Timeout as e:
+            raise PjudApiError("El PJUD no entregó el documento a tiempo.") from e
+        except requests.exceptions.RequestException as e:
+            raise PjudApiError("No se pudo conectar con el PJUD para traer el documento.") from e
+
+        if respuesta.status_code == 404:
+            respuesta.close()
+            raise PjudNoEncontrado("El PJUD no tiene este documento.")
+        if respuesta.status_code >= 400:
+            estado = respuesta.status_code
+            respuesta.close()
+            raise PjudApiError(f"El PJUD respondió HTTP {estado} al pedir el documento.")
+        return respuesta
