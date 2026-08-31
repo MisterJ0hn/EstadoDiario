@@ -1,5 +1,5 @@
 import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
@@ -27,8 +27,32 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
 @Component({
   selector: 'app-pjud-movimientos-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, NgTemplateOutlet, FormsModule, RouterLink],
   template: `
+    <!-- Ícono reutilizable: enlace a un PDF del PJUD. Abre en pestaña nueva
+         (el navegador lo muestra en su visor; nunca fuerza descarga). Rojo para
+         el documento principal, azul para el certificado (doc2). -->
+    <ng-template #enlacePdf let-url let-tipo="tipo">
+      <a [href]="url" target="_blank" rel="noopener"
+         class="inline-flex align-middle transition-opacity hover:opacity-60"
+         [class.text-danger-600]="tipo !== 'certificado'"
+         [class.text-blue-500]="tipo === 'certificado'"
+         [title]="(tipo === 'certificado' ? 'Ver certificado' : 'Ver documento') + ' (PDF)'">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
+          <path fill-rule="evenodd" clip-rule="evenodd"
+                d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7a1 1 0 0 0 1 1h3.5L13 3.5Z" />
+        </svg>
+        <span class="sr-only">PDF</span>
+      </a>
+    </ng-template>
+
+    <!-- Ícono reutilizable: carpeta (secciones desplegables). -->
+    <ng-template #iconoCarpeta>
+      <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
+        <path d="M3 6a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" />
+      </svg>
+    </ng-template>
+
     @if (causa !== null) {
       <div class="modal-backdrop" (click)="cerrar()">
         <div class="modal-content !max-w-7xl" (click)="$event.stopPropagation()">
@@ -95,25 +119,28 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                   @if (c.texto_demanda?.url || c.certificado_envio?.url || c.ebook?.url || c.anexos_causa.length > 0) {
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
                       @if (c.texto_demanda?.url) {
-                        <span><span class="pjud-k">Texto Demanda:</span>
-                          <a [href]="c.texto_demanda!.url" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Texto Demanda:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.texto_demanda!.url }" />
                         </span>
                       }
                       @if (c.anexos_causa.length > 0) {
-                        <span><span class="pjud-k">Anexos de la causa:</span>
-                          <button type="button" (click)="verAnexos.set(!verAnexos())" class="pjud-link">
-                            {{ verAnexos() ? 'ocultar' : 'ver (' + c.anexos_causa.length + ')' }}
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Anexos de la causa:</span>
+                          <button type="button" (click)="verAnexos.set(!verAnexos())"
+                                  class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
+                                  [title]="verAnexos() ? 'Ocultar anexos' : 'Ver anexos de la causa'">
+                            <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                            <span class="text-xs font-semibold text-neutral-500">{{ c.anexos_causa.length }}</span>
                           </button>
                         </span>
                       }
                       @if (c.certificado_envio?.url) {
-                        <span><span class="pjud-k">Certificado de Envío:</span>
-                          <a [href]="c.certificado_envio!.url" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
                         </span>
                       }
                       @if (c.ebook?.url) {
-                        <span><span class="pjud-k">Ebook:</span>
-                          <a [href]="c.ebook!.url" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
                         </span>
                       }
                     </div>
@@ -130,7 +157,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                               <tr>
                                 <td class="text-center">
                                   @if (a.doc) {
-                                    <a [href]="a.doc" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                                    <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: a.doc }" />
                                   } @else { <span>-</span> }
                                 </td>
                                 <td>{{ a.fecha || '-' }}</td>
@@ -161,8 +188,11 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                   @if (c.informacion_receptor.length > 0) {
                     <div>
                       <span class="pjud-k block mb-1">Información notificaciones receptor</span>
-                      <button type="button" (click)="verReceptor.set(!verReceptor())" class="btn-outline btn-sm">
-                        {{ verReceptor() ? 'Ocultar' : 'Ver (' + c.informacion_receptor.length + ')' }}
+                      <button type="button" (click)="verReceptor.set(!verReceptor())"
+                              class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
+                              [title]="verReceptor() ? 'Ocultar' : 'Ver información del receptor'">
+                        <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                        <span class="text-xs font-semibold text-neutral-500">{{ c.informacion_receptor.length }}</span>
                       </button>
                     </div>
                   }
@@ -232,10 +262,10 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                               <tr>
                                 <td class="text-center">{{ h.folio ?? '-' }}</td>
                                 <td class="text-center">
-                                  @if (h.documentos_url.length > 0) {
-                                    <span class="flex flex-col items-center gap-0.5">
-                                      @for (url of h.documentos_url; track $index) {
-                                        <a [href]="url" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                                  @if (h.documentos.length > 0) {
+                                    <span class="inline-flex items-center justify-center gap-2">
+                                      @for (doc of h.documentos; track $index) {
+                                        <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: doc.url, tipo: doc.tipo }" />
                                       }
                                     </span>
                                   } @else { <span>-</span> }
@@ -333,12 +363,12 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                               <tr>
                                 <td class="text-center">
                                   @if (e.doc) {
-                                    <a [href]="e.doc" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                                    <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: e.doc }" />
                                   } @else { <span>-</span> }
                                 </td>
                                 <td class="text-center">
                                   @if (e.anexo) {
-                                    <a [href]="e.anexo" target="_blank" rel="noopener" class="pjud-doc">PDF</a>
+                                    <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: e.anexo }" />
                                   } @else { <span>-</span> }
                                 </td>
                                 <td>{{ e.fecha_ingreso || '-' }}</td>
@@ -396,7 +426,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                                                 @if (rol.fecha) { <span class="text-neutral-400">({{ rol.fecha }})</span> }
                                               </span>
                                               @if (rol.doc) {
-                                                <a [href]="rol.doc" target="_blank" rel="noopener" class="pjud-doc whitespace-nowrap">PDF</a>
+                                                <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: rol.doc }" />
                                               }
                                             </li>
                                           }

@@ -70,12 +70,23 @@ class PjudHistoriaAnexoItem(BaseModel):
     referencia: str | None = None
 
 
+class PjudDocumentoTramite(BaseModel):
+    """Un documento de un trámite de la historia.
+
+    El proveedor manda `doc` como lista de 0-2 objetos: `{"doc": ...}` es el
+    documento principal (escrito/resolución) y `{"doc2": ...}` el certificado.
+    En el OJV se pintan como PDF rojo y azul respectivamente."""
+
+    url: str
+    tipo: Literal["principal", "certificado"] = "principal"
+
+
 class PjudMovimientoItem(BaseModel):
     """Una fila de `historia`: un trámite del cuaderno.
 
-    El proveedor manda `doc` como lista (`[{"doc": ...}]`): un trámite puede
-    traer 0, 1 o 2 documentos. El servicio la resuelve a `documentos_url`, ya
-    lista para enlazar."""
+    El proveedor manda `doc` como lista (`[{"doc": ...}, {"doc2": ...}]`): un
+    trámite puede traer 0, 1 o 2 documentos. El servicio la resuelve a
+    `documentos`, ya lista para enlazar."""
 
     folio: int | None = None
     etapa: str | None = None
@@ -84,7 +95,7 @@ class PjudMovimientoItem(BaseModel):
     fecha_tramite: str | None = None
     foja: int | None = None
     anexo: list[PjudHistoriaAnexoItem] = []
-    documentos_url: list[str] = []
+    documentos: list[PjudDocumentoTramite] = []
 
 
 class PjudLitiganteItem(BaseModel):

@@ -193,7 +193,7 @@ class TestObtenerDetalle:
             "/consultar_movimientos_civil": {
                 "historia": [{
                     "folio": 1,
-                    "doc": [{"doc": "https://x/f1.pdf"}, {"doc": "https://x/f1b.pdf"}],
+                    "doc": [{"doc": "https://x/f1.pdf"}, {"doc2": "https://x/cert.pdf"}],
                     "anexo": [],
                 }],
                 "litigantes": [{"participante": "DTE"}],
@@ -206,8 +206,9 @@ class TestObtenerDetalle:
         resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=None)
         assert resultado["estado"] == "listo"
         assert resultado["cuaderno_consultado_id"] == 1
-        assert resultado["historia"][0]["documentos_url"] == [
-            "https://x/f1.pdf", "https://x/f1b.pdf",
+        assert resultado["historia"][0]["documentos"] == [
+            {"url": "https://x/f1.pdf", "tipo": "principal"},
+            {"url": "https://x/cert.pdf", "tipo": "certificado"},
         ]
         assert resultado["exhortos"][0]["rol_origen"] == "C-1-2020"
 
@@ -222,10 +223,17 @@ class TestObtenerDetalle:
             (None, []),
             ("", []),
             ([], []),
-            ("f1.pdf", ["f1.pdf"]),
-            ([{"doc": "a.pdf"}, {"doc": "b.pdf"}], ["a.pdf", "b.pdf"]),
-            ([{"doc": "a.pdf"}, {"doc": ""}], ["a.pdf"]),
-            (["a.pdf", "b.pdf"], ["a.pdf", "b.pdf"]),
+            ("f1.pdf", [("f1.pdf", "principal")]),
+            (
+                [{"doc": "a.pdf"}, {"doc2": "cert.pdf"}],
+                [("a.pdf", "principal"), ("cert.pdf", "certificado")],
+            ),
+            ([{"doc2": "cert.pdf"}], [("cert.pdf", "certificado")]),
+            ([{"doc": "a.pdf"}, {"doc": ""}], [("a.pdf", "principal")]),
+            (
+                ["a.pdf", "b.pdf"],
+                [("a.pdf", "principal"), ("b.pdf", "certificado")],
+            ),
         ],
     )
     def test_docs_de_tramite_normaliza_las_formas_del_proveedor(self, doc, esperado):

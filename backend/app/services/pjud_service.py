@@ -423,19 +423,19 @@ class PjudService:
     def _normalizar_documentos(
         self, historia: list[dict], identificador: str, cuaderno_id: int
     ) -> None:
-        """Deja en cada trámite un `documentos_url` usable (lista, 0-2 ítems).
+        """Deja en cada trámite un `documentos` usable (lista, 0-2 ítems), cada
+        uno con `url` y `tipo` (`principal` | `certificado`).
 
-        El proveedor hoy entrega `doc` como una lista `[{"doc": ...}]` —un
-        trámite puede tener 0, 1 o 2 documentos—, con cada `doc` como URL
-        absoluta (`https://api-pjud.codifica.cl/public/<rol>/<cuaderno>/<archivo>.pdf`).
+        El proveedor hoy entrega `doc` como una lista `[{"doc": ...}, {"doc2": ...}]`
+        —un trámite puede tener 0, 1 o 2 documentos—, con cada URL absoluta
+        (`https://api-pjud.codifica.cl/public/<rol>/<cuaderno>/<archivo>.pdf`).
         Versiones anteriores lo mandaban como un solo string, o como solo el
         nombre de archivo. Se cubren los tres casos, y lo mismo para los anexos
         del trámite."""
         for item in historia:
-            crudos = self._docs_de_tramite(item.pop("doc", None))
-            item["documentos_url"] = [
-                url
-                for crudo in crudos
+            item["documentos"] = [
+                {"url": url, "tipo": tipo}
+                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
                 if (url := self._url_documento(crudo, identificador, cuaderno_id))
             ]
             for anexo in item.get("anexo") or []:
@@ -444,22 +444,28 @@ class PjudService:
                 )
 
     @staticmethod
-    def _docs_de_tramite(doc) -> list[str]:
-        """Normaliza el `doc` de un trámite a una lista de strings crudos.
+    def _docs_de_tramite(doc) -> list[tuple[str, str]]:
+        """Normaliza el `doc` de un trámite a `[(crudo, tipo), ...]`.
 
-        Acepta la forma nueva (`[{"doc": "..."}]`), una lista de strings, o un
+        `tipo`: `"principal"` para la clave `doc` (o un string suelto o el
+        primer elemento), `"certificado"` para la clave `doc2`. Acepta la forma
+        nueva (`[{"doc": "..."}, {"doc2": "..."}]`), una lista de strings, o un
         único string (formas viejas). `None`/vacío → lista vacía."""
         if not doc:
             return []
         if isinstance(doc, str):
-            return [doc]
-        crudos: list[str] = []
-        for entrada in doc:
-            if isinstance(entrada, str) and entrada:
-                crudos.append(entrada)
-            elif isinstance(entrada, dict) and entrada.get("doc"):
-                crudos.append(entrada["doc"])
-        return crudos
+            return [(doc, "principal")]
+        salida: list[tuple[str, str]] = []
+        for i, entrada in enumerate(doc):
+            if isinstance(entrada, str):
+                if entrada:
+                    salida.append((entrada, "principal" if i == 0 else "certificado"))
+            elif isinstance(entrada, dict):
+                if entrada.get("doc"):
+                    salida.append((entrada["doc"], "principal"))
+                if entrada.get("doc2"):
+                    salida.append((entrada["doc2"], "certificado"))
+        return salida
 
     def _url_documento(
         self, doc: Optional[str], identificador: str, cuaderno_id: int

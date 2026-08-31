@@ -187,6 +187,13 @@ export interface PjudHistoriaAnexoItem {
   referencia: string | null;
 }
 
+export interface PjudDocumentoTramite {
+  url: string;
+  /** `principal` = escrito/resolución (PDF rojo); `certificado` = certificado
+   *  del escrito (PDF azul). Es la distinción `doc` / `doc2` del proveedor. */
+  tipo: 'principal' | 'certificado';
+}
+
 export interface PjudMovimientoItem {
   folio: number | null;
   etapa: string | null;
@@ -195,9 +202,9 @@ export interface PjudMovimientoItem {
   fecha_tramite: string | null;
   foja: number | null;
   anexo: PjudHistoriaAnexoItem[];
-  /** URLs de los documentos del trámite (el proveedor manda 0, 1 o 2). Ya
-   *  resueltas por el backend a partir del `doc` (que llega como lista). */
-  documentos_url: string[];
+  /** Documentos del trámite (el proveedor manda 0, 1 o 2). Ya resueltos por el
+   *  backend a partir del `doc` (que llega como lista). */
+  documentos: PjudDocumentoTramite[];
 }
 
 export interface PjudLitiganteItem {
