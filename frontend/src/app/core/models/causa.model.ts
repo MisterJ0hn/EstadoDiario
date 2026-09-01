@@ -259,7 +259,8 @@ export interface PjudExhortoItem {
 
 export interface PjudMovimientosResponse {
   /**
-   * `sincronizando` = el PJUD todavía está scrapeando; `causa` viene null,
+   * `sincronizando` = el PJUD todavía está scrapeando; `causa` y las secciones
+   * traen los datos parciales que ya haya (pueden venir vacíos al principio),
    * `detalle_estado` trae el progreso del worker.
    * `error` = el scrape del proveedor terminó mal; `detalle_estado` trae el
    * motivo (se muestra en rojo).

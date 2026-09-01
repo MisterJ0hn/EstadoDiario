@@ -3,7 +3,7 @@ import { CommonModule, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
-import { Causa, PjudMovimientosResponse } from '@core/models/causa.model';
+import { Causa, PjudHistoriaAnexoItem, PjudMovimientosResponse } from '@core/models/causa.model';
 import { CausaService } from '../../services/causa.service';
 
 type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exhortos';
@@ -22,7 +22,9 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
  *
  * El scrape del proveedor es asíncrono: la primera consulta de una causa vuelve
  * con `estado: 'sincronizando'` y hay que reintentar a los pocos minutos. El
- * modal muestra ese aviso con un botón "Reintentar" en vez de un error.
+ * modal muestra ese aviso con un botón "Reintentar" en vez de un error, y por
+ * debajo va pintando los datos parciales (cabecera, historia) a medida que el
+ * proveedor los expone.
  */
 @Component({
   selector: 'app-pjud-movimientos-modal',
@@ -67,7 +69,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
           </div>
 
           <div class="modal-body space-y-4">
-            @if (cargando()) {
+            @if (cargando() && !datos()) {
               <div class="flex items-center justify-center py-16">
                 <svg class="animate-spin h-8 w-8 text-primary-600" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
@@ -94,7 +96,10 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                       {{ d.detalle_estado }}
                     </p>
                   }
-                  <button (click)="reintentar()" class="btn-primary btn-sm mt-1">Reintentar</button>
+                  <button (click)="reintentar()" [disabled]="cargando()"
+                          class="btn-primary btn-sm mt-1 disabled:opacity-50">
+                    {{ cargando() ? 'Consultando...' : 'Reintentar' }}
+                  </button>
                 </div>
               }
 
@@ -123,9 +128,13 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                 </div>
               }
 
-              @if (d.estado === 'listo' && d.causa; as c) {
+              @if ((d.estado === 'listo' || d.estado === 'sincronizando') && d.causa; as c) {
 
                 <!-- ── Panel de datos de la causa (gris, como el OJV) ──── -->
+                <!-- Se pinta también en 'sincronizando': el proveedor puede
+                     traer la cabecera y parte de la historia antes de terminar,
+                     y el aviso de sincronización queda arriba. -->
+
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
                     <p><span class="pjud-k">ROL:</span> {{ c.rol || causa.rol }}</p>
@@ -273,7 +282,11 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                   <!-- Historia -->
                   @if (tab() === 'historia') {
                     @if (d.historia.length === 0) {
-                      <p class="text-sm text-neutral-500">El PJUD no registra trámites en este cuaderno.</p>
+                      <p class="text-sm text-neutral-500">
+                        {{ d.estado === 'sincronizando'
+                          ? 'El Poder Judicial todavía no entrega los trámites de este cuaderno.'
+                          : 'El PJUD no registra trámites en este cuaderno.' }}
+                      </p>
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
@@ -298,15 +311,12 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                                 </td>
                                 <td class="text-center">
                                   @if (h.anexo.length > 0) {
-                                    <span class="flex flex-col gap-0.5">
-                                      @for (an of h.anexo; track $index) {
-                                        @if (an.doc) {
-                                          <button type="button" (click)="abrirDocumento(an.doc)" class="pjud-doc">
-                                            {{ an.referencia || 'anexo' }}
-                                          </button>
-                                        }
-                                      }
-                                    </span>
+                                    <button type="button" (click)="abrirAnexosTramite(h.anexo)"
+                                            class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
+                                            title="Ver anexos del trámite">
+                                      <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                                      <span class="text-xs font-semibold text-neutral-500">{{ h.anexo.length }}</span>
+                                    </button>
                                   } @else { <span>-</span> }
                                 </td>
                                 <td class="whitespace-normal">{{ h.etapa || '-' }}</td>
@@ -495,6 +505,49 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
           </div>
         </div>
       </div>
+
+      <!-- ── Anexos de un trámite de la Historia ──────────────────
+           El endpoint entrega la columna "Anexo" como un array; la celda
+           muestra una carpeta y este modal (por encima del principal) despliega
+           el detalle (Doc., Fecha, Referencia). El "Doc." se abre en el visor
+           del navegador con el mismo mecanismo que el resto de los PDF. -->
+      @if (anexosTramite(); as anexos) {
+        <div class="modal-backdrop !z-[60]" (click)="anexosTramite.set(null)">
+          <div class="modal-content !z-[70] !max-w-2xl" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold text-primary-700">Anexos del trámite</h3>
+              <button (click)="anexosTramite.set(null)"
+                      class="text-neutral-400 hover:text-neutral-600 text-xl leading-none">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="overflow-x-auto rounded-lg border border-neutral-200">
+                <table class="pjud-table">
+                  <thead><tr><th>Doc.</th><th>Fecha</th><th>Referencia</th></tr></thead>
+                  <tbody>
+                    @for (a of anexos; track $index) {
+                      <tr>
+                        <td class="text-center">
+                          @if (a.doc) {
+                            <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: a.doc }" />
+                          } @else { <span>-</span> }
+                        </td>
+                        <td>{{ a.fecha || '-' }}</td>
+                        <td class="whitespace-normal">{{ a.referencia || '-' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @if (docError()) {
+                <p class="mt-2 text-sm text-danger-600">{{ docError() }}</p>
+              }
+            </div>
+            <div class="modal-footer">
+              <button (click)="anexosTramite.set(null)" class="btn-primary">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      }
     }
   `,
   styles: [`
@@ -526,6 +579,7 @@ export class PjudMovimientosModalComponent {
       this.verAnexos.set(false);
       this.verReceptor.set(false);
       this.exhortoAbierto.set(null);
+      this.anexosTramite.set(null);
       this.docError.set(null);
       this.cargar(c.id, false);
     }
@@ -544,6 +598,9 @@ export class PjudMovimientosModalComponent {
   verAnexos = signal(false);
   verReceptor = signal(false);
   exhortoAbierto = signal<number | null>(null);
+  /** Array `anexo` del trámite de la Historia que se está mirando en el modal
+   *  secundario; `null` = cerrado. */
+  anexosTramite = signal<PjudHistoriaAnexoItem[] | null>(null);
   docError = signal<string | null>(null);
 
   private cargar(causaId: number, forzar: boolean, cuaderno?: number): void {
@@ -581,6 +638,13 @@ export class PjudMovimientosModalComponent {
 
   toggleExhorto(i: number): void {
     this.exhortoAbierto.set(this.exhortoAbierto() === i ? null : i);
+  }
+
+  /** Abre el modal secundario con el detalle del array de anexos de un trámite
+   *  de la Historia (Doc., Fecha, Referencia). */
+  abrirAnexosTramite(anexos: PjudHistoriaAnexoItem[]): void {
+    this.docError.set(null);
+    this.anexosTramite.set(anexos);
   }
 
   /**

@@ -188,6 +188,43 @@ class TestObtenerDetalle:
         assert resultado["estado"] == "sincronizando"
         assert resultado["detalle_estado"] == "Procesando cuaderno 2 de 3"
 
+    def test_sincronizando_con_cabecera_devuelve_datos_parciales(self, monkeypatch):
+        # El proveedor ya expuso la cabecera y un cuaderno, pero sigue en
+        # "Sincronizando": se devuelve la causa y la historia que ya haya, con
+        # el estado sincronizando para que el aviso quede arriba.
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": {"causa": {
+                "identificador": "abc", "estado": "Sincronizando",
+                "detalle_estado": "Procesando cuaderno 1 de 2",
+                "cuadernos": [{"id": 1, "nombre": "Principal"}],
+            }},
+            "/sincronizar_civil": {"exito": True},
+            "/consultar_movimientos_civil": {
+                "historia": [{"folio": 1, "doc": [], "anexo": []}],
+                "litigantes": [], "notificaciones": [],
+                "escritos_resolver": [], "exhortos": [],
+            },
+        })
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        assert resultado["estado"] == "sincronizando"
+        assert resultado["causa"]["identificador"] == "abc"
+        assert resultado["cuaderno_consultado_id"] == 1
+        assert len(resultado["historia"]) == 1
+
+    def test_sincronizando_sin_movimientos_aun_no_falla(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": {"causa": {
+                "identificador": "abc", "estado": "Sincronizando",
+                "cuadernos": [{"id": 1, "nombre": "Principal"}],
+            }},
+            "/sincronizar_civil": {"exito": True},
+            "/consultar_movimientos_civil": PjudNoEncontrado("aún no"),
+        })
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        assert resultado["estado"] == "sincronizando"
+        assert resultado["causa"]["identificador"] == "abc"
+        assert resultado["historia"] == []
+
     def test_sync_con_error_devuelve_estado_error_y_detalle(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
             "/consultar_civil": {"causa": {

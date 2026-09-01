@@ -149,9 +149,11 @@ class PjudExhortoItem(BaseModel):
 
 
 class PjudMovimientosResponse(BaseModel):
-    # `sincronizando` = api-pjud está scrapeando la causa por primera vez;
-    # `causa` viene en null y el resto vacío. El frontend muestra el aviso, el
-    # `detalle_estado` (progreso del worker) y ofrece "Reintentar".
+    # `sincronizando` = api-pjud está scrapeando la causa por primera vez.
+    # `causa` y las secciones vienen con lo que el proveedor ya haya expuesto
+    # (puede ser todo vacío al principio, luego la cabecera, luego la historia).
+    # El frontend muestra el aviso y el `detalle_estado` (progreso del worker)
+    # por encima de esos datos parciales y ofrece "Reintentar".
     # `error` = el scrape del proveedor terminó mal; `detalle_estado` trae el
     # motivo y el modal lo muestra en rojo.
     # `sin_credenciales` = hay que sincronizar pero la persona no cargó su clave

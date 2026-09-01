@@ -320,9 +320,11 @@ class PjudService:
           - `"sin_credenciales"`: hay que sincronizar la causa (nunca vista, o
             todavía en proceso) pero la persona no cargó su clave del OJV. La
             pantalla la manda a Mi Perfil.
-          - `"sincronizando"`: el proveedor está scrapeando la causa. `causa`
-            viene en `None`. La pantalla muestra el aviso, `detalle_estado`
-            (progreso del worker) y "Reintentar".
+          - `"sincronizando"`: el proveedor está scrapeando la causa. Se
+            devuelve lo que ya haya expuesto (cabecera de la causa y, si hay
+            cuadernos, la historia); puede venir todo vacío al principio. La
+            pantalla muestra el aviso, `detalle_estado` (progreso del worker) y
+            "Reintentar" por encima de esos datos parciales.
           - `"error"`: el scrape del proveedor terminó mal. `causa` viene en
             `None` y `detalle_estado` trae el motivo; la pantalla lo muestra en
             rojo.
@@ -398,54 +400,77 @@ class PjudService:
                 "diagnostico": " · ".join(diag),
             }
 
-        no_lista = (
+        cuadernos = (detalle.get("cuadernos") or []) if detalle else []
+        esta_sincronizando = (
             detalle is None
             or estado_norm in _ESTADOS_SINCRONIZANDO
-            or not (detalle.get("cuadernos") or [])
+            or not cuadernos
         )
-        if no_lista:
-            if not puede_sincronizar:
-                return {
-                    "estado": "sin_credenciales",
-                    "mensaje": _MENSAJE_SIN_CREDENCIALES,
-                    "detalle_estado": detalle_estado,
-                    "diagnostico": " · ".join(diag),
-                }
-            # `forzar` ya disparó el sync arriba; sin `forzar` se dispara acá.
-            if not forzar_sincronizacion:
-                diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud))
+
+        if esta_sincronizando and not puede_sincronizar:
             return {
-                "estado": "sincronizando",
-                "mensaje": _MENSAJE_SINCRONIZANDO,
+                "estado": "sin_credenciales",
+                "mensaje": _MENSAJE_SIN_CREDENCIALES,
                 "detalle_estado": detalle_estado,
                 "diagnostico": " · ".join(diag),
             }
 
-        cuadernos = detalle.get("cuadernos") or []
-        cuaderno = self._elegir_cuaderno(cuadernos, cuaderno_id)
+        # `forzar` ya disparó el sync arriba; sin `forzar` se dispara acá para
+        # que el worker del proveedor siga avanzando entre reintentos.
+        if esta_sincronizando and not forzar_sincronizacion:
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud))
 
-        movimientos = self._request(
-            "POST", "/consultar_movimientos_civil",
-            json={"identificador": detalle["identificador"], "cuadeno": cuaderno["id"]},
-        )
-
-        historia = movimientos.get("historia") or []
-        self._normalizar_documentos(historia, detalle["identificador"], cuaderno["id"])
-        diag.append(
-            f"movimientos: cuaderno {cuaderno['id']}, {len(historia)} trámites"
-        )
-
-        return {
-            "estado": "listo",
+        # Se responde con TODO lo que el proveedor ya haya alcanzado a exponer:
+        # mientras sincroniza, `/consultar_civil` va poblando primero la
+        # cabecera de la causa y luego los cuadernos. El frontend muestra esos
+        # datos parciales y mantiene el aviso de sincronización arriba.
+        identificador = (detalle or {}).get("identificador")
+        resultado: dict = {
+            "estado": "sincronizando" if esta_sincronizando else "listo",
+            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "detalle_estado": detalle_estado,
             "diagnostico": " · ".join(diag),
-            "causa": detalle,
-            "cuaderno_consultado_id": cuaderno["id"],
-            "historia": historia,
-            "litigantes": movimientos.get("litigantes") or [],
-            "notificaciones": movimientos.get("notificaciones") or [],
-            "escritos_resolver": movimientos.get("escritos_resolver") or [],
-            "exhortos": movimientos.get("exhortos") or [],
+            "causa": detalle if identificador else None,
+            "cuaderno_consultado_id": None,
+            "historia": [],
+            "litigantes": [],
+            "notificaciones": [],
+            "escritos_resolver": [],
+            "exhortos": [],
         }
+
+        if cuadernos and identificador:
+            cuaderno = self._elegir_cuaderno(cuadernos, cuaderno_id)
+            try:
+                movimientos = self._request(
+                    "POST", "/consultar_movimientos_civil",
+                    json={"identificador": identificador, "cuadeno": cuaderno["id"]},
+                )
+            except PjudApiError as e:
+                # Durante la sincronización los movimientos de un cuaderno
+                # pueden no estar listos todavía: se devuelve la cabecera y se
+                # deja la historia vacía en vez de fallar.
+                if not esta_sincronizando:
+                    raise
+                diag.append(f"movimientos: no disponibles aún ({e})")
+                resultado["diagnostico"] = " · ".join(diag)
+            else:
+                historia = movimientos.get("historia") or []
+                self._normalizar_documentos(historia, identificador, cuaderno["id"])
+                diag.append(
+                    f"movimientos: cuaderno {cuaderno['id']}, {len(historia)} trámites"
+                )
+                resultado.update(
+                    diagnostico=" · ".join(diag),
+                    cuaderno_consultado_id=cuaderno["id"],
+                    historia=historia,
+                    litigantes=movimientos.get("litigantes") or [],
+                    notificaciones=movimientos.get("notificaciones") or [],
+                    escritos_resolver=movimientos.get("escritos_resolver") or [],
+                    exhortos=movimientos.get("exhortos") or [],
+                )
+
+        return resultado
 
     @staticmethod
     def _elegir_cuaderno(cuadernos: list[dict], cuaderno_id: Optional[int]) -> dict:
