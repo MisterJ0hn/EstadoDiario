@@ -35,13 +35,14 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
          visor del navegador (sin descargarlo). El backend lo baja del proveedor
          (http, adjunto, sin CORS) y lo reenvía https/inline; acá se pide como
          blob para que el visor lo muestre. Rojo para el documento principal,
-         azul para el certificado (doc2). -->
+         azul para el certificado: lo marca el backend (tipo 'certificado') o,
+         donde no viene ese dato, la URL del proveedor con el sufijo _doc2. -->
     <ng-template #enlacePdf let-url let-tipo="tipo">
       <button type="button" (click)="abrirDocumento(url)"
          class="inline-flex align-middle transition-opacity hover:opacity-60"
-         [class.text-danger-600]="tipo !== 'certificado'"
-         [class.text-blue-500]="tipo === 'certificado'"
-         [title]="(tipo === 'certificado' ? 'Ver certificado' : 'Ver documento') + ' (PDF)'">
+         [class.text-danger-600]="!esCertificado(url, tipo)"
+         [class.text-blue-500]="esCertificado(url, tipo)"
+         [title]="(esCertificado(url, tipo) ? 'Ver certificado' : 'Ver documento') + ' (PDF)'">
         <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
           <path fill-rule="evenodd" clip-rule="evenodd"
                 d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7a1 1 0 0 0 1 1h3.5L13 3.5Z" />
@@ -638,6 +639,13 @@ export class PjudMovimientosModalComponent {
 
   toggleExhorto(i: number): void {
     this.exhortoAbierto.set(this.exhortoAbierto() === i ? null : i);
+  }
+
+  /** Un documento se pinta azul (certificado) si el backend lo marcó así
+   *  (`tipo === 'certificado'`) o si la URL del proveedor trae el sufijo
+   *  `_doc2`, que es como el OJV nombra el certificado de un escrito. */
+  esCertificado(url: string | null | undefined, tipo?: string): boolean {
+    return tipo === 'certificado' || (url ?? '').includes('_doc2');
   }
 
   /** Abre el modal secundario con el detalle del array de anexos de un trámite
