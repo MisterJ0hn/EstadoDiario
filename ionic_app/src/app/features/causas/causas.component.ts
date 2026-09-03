@@ -267,11 +267,7 @@ import { CausaService } from './services/causa.service';
                         @if (c.materia === 'Civil') {
                           <button type="button" class="btn-outline btn-sm !px-2" (click)="verMovimientosPjud(c)"
                                   title="Detalle PJUD" aria-label="Ver detalle de la causa en el Poder Judicial">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <path d="M10.5 3H5.6c-.6 0-1.1.5-1.1 1.1v15.8c0 .6.5 1.1 1.1 1.1h12.8c.6 0 1.1-.5 1.1-1.1V11.3A8.3 8.3 0 0 0 10.5 3Z" />
-                              <path d="M13.5 20.3 15 21.8m-4.5-4.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" />
-                            </svg>
+                            PJUD
                           </button>
                         }
                       </td>
