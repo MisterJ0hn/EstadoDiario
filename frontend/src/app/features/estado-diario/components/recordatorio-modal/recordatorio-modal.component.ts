@@ -114,7 +114,7 @@ export class RecordatorioModalComponent {
 
   saving = signal(false);
 
-  nivel: NivelRecordatorio = 'medio';
+  nivel: NivelRecordatorio = 'bajo';
   detalle = '';
   fecha = '';
   notificarWhatsapp = false;
@@ -123,7 +123,7 @@ export class RecordatorioModalComponent {
   horaWhatsapp = HORA_WHATSAPP_POR_DEFECTO;
 
   private resetForm(): void {
-    this.nivel = 'medio';
+    this.nivel = 'bajo';
     this.detalle = '';
     this.fecha = '';
     this.notificarWhatsapp = false;
