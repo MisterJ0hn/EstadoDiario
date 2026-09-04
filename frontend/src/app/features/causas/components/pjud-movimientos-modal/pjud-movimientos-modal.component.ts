@@ -107,14 +107,13 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
               @if (d.estado === 'error') {
                 <div class="flex flex-col items-start gap-2 rounded-lg bg-danger-600 px-4 py-3 text-white">
                   <p class="font-semibold">La sincronización con el Poder Judicial falló</p>
-                  @if (d.detalle_estado) {
+                  @if (d.ultimo_error) {
+                    <p class="text-sm text-white/90">{{ d.ultimo_error }}</p>
+                  } @else if (d.detalle_estado) {
                     <p class="text-sm text-white/90">{{ d.detalle_estado }}</p>
                   } @else if (d.mensaje) {
                     <p class="text-sm text-white/90">{{ d.mensaje }}</p>
                   } 
-                  @if (d.ultimo_error) {
-                    <p class="text-sm text-white/90">{{ d.ultimo_error }}</p>
-                  }
                   <button (click)="actualizar()" [disabled]="cargando()"
                           class="mt-1 rounded-md bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25 disabled:opacity-50">
                     {{ cargando() ? 'Reintentando...' : 'Reintentar' }}
