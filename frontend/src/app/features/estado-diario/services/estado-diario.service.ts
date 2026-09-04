@@ -118,6 +118,11 @@ export class EstadoDiarioService {
     return this.http.post<ApiResponse>(`${this.apiUrl}/${id}/leido`, body);
   }
 
+  /** Deshace un "resuelto": vuelve el movimiento a No Leído. */
+  marcarNoLeido(id: number): Observable<ApiResponse> {
+    return this.http.post<ApiResponse>(`${this.apiUrl}/${id}/no-leido`, {});
+  }
+
   marcarPendiente(id: number, data: MarcarPendienteRequest): Observable<ApiResponse> {
     return this.http.post<ApiResponse>(`${this.apiUrl}/${id}/pendiente`, data);
   }

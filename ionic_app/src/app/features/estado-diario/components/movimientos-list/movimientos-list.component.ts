@@ -158,7 +158,8 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                                adentro, un lector de pantalla anunciaría "botón"
                                y nada más.
                                (Sin backticks en este comentario: el template es
-                               un template literal y lo cerrarían.) -->
+                               un template literal y lo cerrarían.)
+                               Sin confirmación: marca resuelto de inmediato. -->
                           <button (click)="onResolver(m.id)" class="btn-success btn-sm"
                                   title="Marcar como resuelto" aria-label="Marcar como resuelto">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,6 +178,13 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                             </svg>
                           </button>
                         </div>
+                      } @else if (activeTab() === 'leidos') {
+                        <!-- Solo tiene sentido en la pestaña Resueltos: deshace
+                             el "resuelto" y el registro vuelve a No Leídos. -->
+                        <button (click)="onNoResuelto(m.id)" class="btn-outline btn-sm"
+                                title="Volver a No Leído" aria-label="Volver a No Leído">
+                          No resuelto
+                        </button>
                       }
                     </td>
                   </tr>
@@ -214,43 +222,6 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
       (cerrado)="recordatorioMovimientoId.set(null)"
       (guardado)="onRecordatorioGuardado()"
     />
-
-
-    <!-- Confirmar "Resuelto" -->
-    @if (confirmarResolverId() !== null) {
-      <div class="modal-backdrop" (click)="cancelarResolver()">
-        <div class="modal-content max-w-sm" (click)="$event.stopPropagation()">
-          <div class="modal-header">
-            <h3 class="text-lg font-semibold">Marcar como resuelto</h3>
-            <button (click)="cancelarResolver()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
-          </div>
-          <div class="modal-body space-y-4">
-            <div class="flex items-start gap-3">
-              <div class="shrink-0 w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
-                <svg class="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <p class="text-sm text-neutral-600 mt-2">
-                ¿Confirma que quiere marcar este registro como <strong>resuelto</strong>?
-              </p>
-            </div>
-            <div>
-              <label class="form-label">Observación (opcional)</label>
-              <textarea class="form-input" rows="3" [(ngModel)]="observacionResuelto"
-                        placeholder="Ej: se presentó escrito el 12-08-2026"></textarea>
-              <p class="text-xs text-neutral-400 mt-1">Queda registrada junto con la resolución.</p>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button (click)="cancelarResolver()" class="btn-secondary" [disabled]="confirmandoResolver()">Cancelar</button>
-            <button (click)="confirmarResolver()" class="btn-success" [disabled]="confirmandoResolver()">
-              {{ confirmandoResolver() ? 'Guardando...' : 'Sí, marcar resuelto' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    }
   `,
 })
 export class MovimientosListComponent implements OnInit {
@@ -296,11 +267,6 @@ export class MovimientosListComponent implements OnInit {
    * recordatorio y deja el registro en estado pendiente con el nivel elegido ahí.
    */
   recordatorioMovimientoId = signal<number | null>(null);
-
-  confirmarResolverId = signal<number | null>(null);
-  confirmandoResolver = signal(false);
-  /** Comentario opcional que acompaña al "resuelto"; se limpia en cada apertura del modal. */
-  observacionResuelto = '';
 
   title = computed(() => (this.isOrigen() ? 'Estado Diario del Archivo' : 'Estado Diario'));
 
@@ -548,35 +514,27 @@ export class MovimientosListComponent implements OnInit {
     this.loadData();
   }
 
+  /** Sin confirmación: marca resuelto de inmediato al apretar el botón. */
   onResolver(id: number): void {
-    this.observacionResuelto = '';
-    this.confirmarResolverId.set(id);
-  }
-
-  cancelarResolver(): void {
-    if (this.confirmandoResolver()) return;
-    this.observacionResuelto = '';
-    this.confirmarResolverId.set(null);
-  }
-
-  confirmarResolver(): void {
-    const id = this.confirmarResolverId();
-    if (id === null) return;
-
-    this.confirmandoResolver.set(true);
-    this.service.marcarLeido(id, this.observacionResuelto).subscribe({
+    this.service.marcarLeido(id).subscribe({
       next: () => {
-        this.confirmandoResolver.set(false);
-        this.confirmarResolverId.set(null);
-        this.observacionResuelto = '';
         this.notification.success('Marcado como resuelto');
         this.loadData();
         if (!this.isOrigen()) this.loadCounts();
       },
-      error: () => {
-        this.confirmandoResolver.set(false);
-        this.notification.error('Error al marcar como resuelto');
+      error: () => this.notification.error('Error al marcar como resuelto'),
+    });
+  }
+
+  /** Deshace un "resuelto" desde la pestaña Resueltos: vuelve a No Leídos. */
+  onNoResuelto(id: number): void {
+    this.service.marcarNoLeido(id).subscribe({
+      next: () => {
+        this.notification.success('Vuelto a No Leído');
+        this.loadData();
+        this.loadCounts();
       },
+      error: () => this.notification.error('Error al deshacer el resuelto'),
     });
   }
 

@@ -443,6 +443,25 @@ def marcar_leido(
 
 
 @router.post(
+    "/{estado_diario_id}/no-leido",
+    response_model=MarcarLeidoResponse,
+    summary="Deshacer 'resuelto': volver a No Leído",
+)
+def marcar_no_leido(
+    estado_diario_id: int,
+    request: Request,
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    service = EstadoDiarioService(db)
+    return service.marcar_no_leido(
+        estado_diario_id,
+        current_user.id,
+        ip=auditoria.ip_de(request),
+    )
+
+
+@router.post(
     "/{estado_diario_id}/pendiente",
     summary="Marcar como pendiente",
 )

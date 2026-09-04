@@ -182,6 +182,35 @@ class EstadoDiarioService:
         self._save_log(log, True, json.dumps({"exito": True}))
         return {"exito": True}
 
+    def marcar_no_leido(
+        self,
+        estado_diario_id: int,
+        usuario_id: Optional[int] = None,
+        ip: Optional[str] = None,
+    ):
+        """Deshace un "resuelto": vuelve el movimiento a No Leído. Se usa desde
+        la pestaña Resueltos cuando alguien se equivocó o el caso se reabre."""
+        log = self._create_log("no-leido")
+        ed = self.repo.find_by_id(estado_diario_id)
+        if not ed:
+            self._save_log(log, False, error="No encontrado")
+            raise NotFoundException("Estado diario no encontrado")
+
+        log.estado_diario_id = ed.id
+        ed.leido = False
+        ed.fecha_leido = None
+        ed.usuario_leido_id = None
+        ed.observacion_resuelto = None
+
+        auditoria.registrar(
+            self.db, auditoria.MODULO_ESTADO_DIARIO, auditoria.ACCION_MARCAR_NO_LEIDO,
+            usuario_id=usuario_id, ip=ip, detalle=f"Vuelto a No Leído {_describir(ed)}",
+        )
+        self.repo.save()
+
+        self._save_log(log, True, json.dumps({"exito": True}))
+        return {"exito": True}
+
     @staticmethod
     def _parse_fecha_hora(valor: str) -> datetime:
         try:

@@ -1,6 +1,5 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
@@ -15,7 +14,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
   selector: 'app-movimiento-detail',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, RecordatorioModalComponent,
+    CommonModule, RecordatorioModalComponent,
     PjudBotonComponent, PjudMovimientosModalComponent,
   ],
   template: `
@@ -47,10 +46,18 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
               <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())" />
             }
             @if (!movimiento()!.leido) {
-              <button (click)="abrirResolver()" class="btn-success">Marcar como Resuelto</button>
+              <!-- Sin confirmación: marca resuelto de inmediato. -->
+              <button (click)="onMarcarLeido()" class="btn-success" [disabled]="marcandoLeido()">
+                {{ marcandoLeido() ? 'Guardando...' : 'Marcar como Resuelto' }}
+              </button>
               <!-- Marcar pendiente y agendar son una sola acción: el modal de
                    recordatorio deja el registro pendiente con el nivel elegido ahí. -->
               <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning">Marcar como Pendiente</button>
+            } @else {
+              <!-- Deshace el "resuelto": vuelve el registro a No Leído. -->
+              <button (click)="onMarcarNoLeido()" class="btn-outline" [disabled]="marcandoLeido()">
+                {{ marcandoLeido() ? 'Guardando...' : 'No resuelto' }}
+              </button>
             }
           </div>
         </div>
@@ -228,42 +235,6 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
       />
 
       <app-pjud-movimientos-modal [causa]="pjudModal()" (cerrado)="pjudModal.set(null)" />
-
-      <!-- Confirmar "Resolver" -->
-      @if (confirmarResolver()) {
-        <div class="modal-backdrop" (click)="cancelarResolver()">
-          <div class="modal-content max-w-sm" (click)="$event.stopPropagation()">
-            <div class="modal-header">
-              <h3 class="text-lg font-semibold">Marcar como resuelto</h3>
-              <button (click)="cancelarResolver()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
-            </div>
-            <div class="modal-body space-y-4">
-              <div class="flex items-start gap-3">
-                <div class="shrink-0 w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
-                  <svg class="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <p class="text-sm text-neutral-600 mt-2">
-                  ¿Confirma que quiere marcar este registro como <strong>resuelto</strong>?
-                </p>
-              </div>
-              <div>
-                <label class="form-label">Observación (opcional)</label>
-                <textarea class="form-input" rows="3" [(ngModel)]="observacionResuelto"
-                          placeholder="Ej: se presentó escrito el 12-08-2026"></textarea>
-                <p class="text-xs text-neutral-400 mt-1">Queda registrada junto con la resolución.</p>
-              </div>
-            </div>
-            <div class="modal-footer">
-              <button (click)="cancelarResolver()" class="btn-secondary" [disabled]="confirmandoResolver()">Cancelar</button>
-              <button (click)="onMarcarLeido()" class="btn-success" [disabled]="confirmandoResolver()">
-                {{ confirmandoResolver() ? 'Guardando...' : 'Sí, marcar resuelto' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      }
     </div>
   `,
 })
@@ -291,10 +262,7 @@ export class MovimientoDetailComponent implements OnInit {
   /** id del registro para el que se abre el modal "Marcar como pendiente"; null = cerrado */
   recordatorioMovimientoId = signal<number | null>(null);
 
-  confirmarResolver = signal(false);
-  confirmandoResolver = signal(false);
-  /** Comentario opcional que acompaña al "resuelto" */
-  observacionResuelto = '';
+  marcandoLeido = signal(false);
 
   ngOnInit(): void {
     const id = Number(this.route.snapshot.paramMap.get('id'));
@@ -351,31 +319,36 @@ export class MovimientoDetailComponent implements OnInit {
     return 'badge-orange';
   }
 
-  abrirResolver(): void {
-    this.observacionResuelto = '';
-    this.confirmarResolver.set(true);
-  }
-
-  cancelarResolver(): void {
-    if (this.confirmandoResolver()) return;
-    this.observacionResuelto = '';
-    this.confirmarResolver.set(false);
-  }
-
+  /** Sin confirmación: marca resuelto de inmediato al apretar el botón. */
   onMarcarLeido(): void {
     const id = this.movimiento()!.id;
-    this.confirmandoResolver.set(true);
-    this.service.marcarLeido(id, this.observacionResuelto).subscribe({
+    this.marcandoLeido.set(true);
+    this.service.marcarLeido(id).subscribe({
       next: () => {
-        this.confirmandoResolver.set(false);
-        this.confirmarResolver.set(false);
-        this.observacionResuelto = '';
+        this.marcandoLeido.set(false);
         this.notification.success('Marcado como resuelto');
         this.loadDetalle(id);
       },
       error: () => {
-        this.confirmandoResolver.set(false);
+        this.marcandoLeido.set(false);
         this.notification.error('Error al marcar como resuelto');
+      },
+    });
+  }
+
+  /** Deshace un "resuelto": vuelve el registro a No Leído. */
+  onMarcarNoLeido(): void {
+    const id = this.movimiento()!.id;
+    this.marcandoLeido.set(true);
+    this.service.marcarNoLeido(id).subscribe({
+      next: () => {
+        this.marcandoLeido.set(false);
+        this.notification.success('Vuelto a No Leído');
+        this.loadDetalle(id);
+      },
+      error: () => {
+        this.marcandoLeido.set(false);
+        this.notification.error('Error al deshacer el resuelto');
       },
     });
   }

@@ -60,6 +60,7 @@ ACCION_ENVIAR = "enviar"
 # Van separadas de `editar` porque es lo que se pregunta en soporte: no "quién
 # tocó esto", sino "quién lo dio por resuelto".
 ACCION_MARCAR_LEIDO = "marcar_leido"
+ACCION_MARCAR_NO_LEIDO = "marcar_no_leido"
 ACCION_MARCAR_PENDIENTE = "marcar_pendiente"
 ACCION_CONECTAR = "conectar"
 ACCION_DESCONECTAR = "desconectar"
