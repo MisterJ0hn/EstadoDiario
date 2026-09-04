@@ -400,6 +400,7 @@ class PjudService:
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
                 "detalle_estado": detalle_estado,
+                "ultimo_error": ultimo_error,
                 "diagnostico": " · ".join(diag),
             }
 
