@@ -43,6 +43,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
             @if (pjudDisponible()) {
               <!-- Mismo botón que Mis Causas: solo se pinta si la causa
                    resultó Civil (lo único que expone la API del PJUD). -->
+              PJUD: 
               <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())" />
             }
             @if (!movimiento()!.leido) {
