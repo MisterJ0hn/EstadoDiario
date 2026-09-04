@@ -163,6 +163,7 @@ class PjudMovimientosResponse(BaseModel):
     # `listo` = todo lo demás está poblado.
     estado: Literal["listo", "sincronizando", "error", "sin_credenciales"] = "listo"
     mensaje: str | None = None
+    ultimo_error: str | None = None
     # Campo `detalle_estado` de `/consultar_civil`: texto legible con el avance
     # de la sincronización o el motivo del fallo. Null si el proveedor no lo manda.
     detalle_estado: str | None = None

@@ -278,6 +278,7 @@ export interface PjudMovimientosResponse {
   /** Campo `detalle_estado` de `/consultar_civil`: avance de la sincronización
    *  o motivo del fallo. Null si el proveedor no lo manda. */
   detalle_estado: string | null;
+  ultimo_error: string | null;
   causa: PjudCausaDetalle | null;
   cuaderno_consultado_id: number | null;
   historia: PjudMovimientoItem[];
