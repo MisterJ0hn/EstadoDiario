@@ -262,13 +262,34 @@ import { CausaService } from './services/causa.service';
                     @if (pjudDisponible()) {
                       <td class="whitespace-nowrap">
                         @if (c.materia === 'Civil') {
+                          @let estadoPjud = pjudBotonEstado(c);
                           <button type="button" class="btn-outline btn-sm !px-2" (click)="verMovimientosPjud(c)"
-                                  title="Detalle PJUD" aria-label="Ver detalle de la causa en el Poder Judicial">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <path d="M10.5 3H5.6c-.6 0-1.1.5-1.1 1.1v15.8c0 .6.5 1.1 1.1 1.1h12.8c.6 0 1.1-.5 1.1-1.1V11.3A8.3 8.3 0 0 0 10.5 3Z" />
-                              <path d="M13.5 20.3 15 21.8m-4.5-4.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" />
-                            </svg>
+                                  [class.text-warning-500]="estadoPjud === 'nuevo'"
+                                  [class.text-accent-600]="estadoPjud === 'sincronizando'"
+                                  [class.text-danger-600]="estadoPjud === 'error'"
+                                  [title]="pjudBotonTitulo(estadoPjud)"
+                                  aria-label="Ver detalle de la causa en el Poder Judicial">
+                            @if (estadoPjud === 'listo') {
+                              <!-- Estado normal: el botón de siempre. -->
+                              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M10.5 3H5.6c-.6 0-1.1.5-1.1 1.1v15.8c0 .6.5 1.1 1.1 1.1h12.8c.6 0 1.1-.5 1.1-1.1V11.3A8.3 8.3 0 0 0 10.5 3Z" />
+                                <path d="M13.5 20.3 15 21.8m-4.5-4.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" />
+                              </svg>
+                            } @else {
+                              <!-- Nunca sincronizada (amarillo, quieto),
+                                   sincronizando (verde, girando) o con error
+                                   (rojo, tachado): mismo icono de "sincronizar",
+                                   el color/animación/tache cuentan el estado. -->
+                              <svg class="h-4 w-4" [class.animate-spin]="estadoPjud === 'sincronizando'"
+                                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                @if (estadoPjud === 'error') {
+                                  <line x1="4" y1="4" x2="20" y2="20" />
+                                }
+                              </svg>
+                            }
                           </button>
                         }
                       </td>
@@ -408,6 +429,26 @@ export class CausasComponent implements OnInit {
 
   verMovimientosPjud(c: Causa): void {
     this.causaPjud.set(c);
+  }
+
+  /** Traduce `pjud_estado` (del log de llamados, ver `Causa.pjud_estado`) a la
+   *  variante del icono del botón "Detalle PJUD": `nuevo` = nunca se
+   *  sincronizó (o falta la clave del OJV), `sincronizando`, `error` o
+   *  `listo` = el botón queda tal cual siempre. */
+  pjudBotonEstado(c: Causa): 'nuevo' | 'sincronizando' | 'error' | 'listo' {
+    if (c.pjud_estado === 'sincronizando') return 'sincronizando';
+    if (c.pjud_estado === 'error') return 'error';
+    if (c.pjud_estado === 'listo') return 'listo';
+    return 'nuevo';
+  }
+
+  pjudBotonTitulo(estado: 'nuevo' | 'sincronizando' | 'error' | 'listo'): string {
+    switch (estado) {
+      case 'sincronizando': return 'Sincronizando con el Poder Judicial...';
+      case 'error': return 'La sincronización con el Poder Judicial falló';
+      case 'listo': return 'Detalle PJUD';
+      default: return 'Aún no se ha sincronizado con el Poder Judicial';
+    }
   }
 
   /** ISO (yyyy-MM-dd) a dd-MM-yyyy sin pasar por Date, que desplaza el día. */

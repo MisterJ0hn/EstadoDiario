@@ -252,6 +252,8 @@ def listar(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
+    db_maestra: Session = Depends(get_db_maestra),
+    tenant: TenantContexto = Depends(get_tenant_actual),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     """Sin `origen_id`, devuelve **solo el último archivo de causas**: el
@@ -269,11 +271,28 @@ def listar(
         orden=orden,
         page=page, limit=limit,
     )
+    causas_resp = [CausaResponse.from_model(c) for c in items]
+
+    # Último estado conocido de "Detalle PJUD" por causa (del log de llamados,
+    # NO en vivo al proveedor): pinta el icono del botón sin el costo de
+    # golpear a api-pjud una vez por fila. Solo aplica a las Civiles, que son
+    # las únicas con ese botón.
+    if settings.pjud_api_activo:
+        civiles_ids = [
+            r.id for r, c in zip(causas_resp, items)
+            if (c.materia or "").strip().lower() == "civil"
+        ]
+        estados_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
+            cliente_id=tenant.cliente_id, causa_ids=civiles_ids,
+        )
+        for r in causas_resp:
+            r.pjud_estado = estados_pjud.get(r.id)
+
     return CausaListResponse(
         total=total,
         page=pagina,
         total_pages=total_pages,
-        causas=[CausaResponse.from_model(c) for c in items],
+        causas=causas_resp,
     )
 
 

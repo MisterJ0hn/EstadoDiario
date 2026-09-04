@@ -41,6 +41,13 @@ class CausaResponse(BaseModel):
     # archivo.
     proxima_audiencia: date | None = None
 
+    # Último resultado conocido de "Detalle PJUD" (`listo` | `sincronizando` |
+    # `error` | `sin_credenciales`), sacado del log de llamados. Null = nunca
+    # se consultó. Solo se resuelve para causas Civiles; el resto queda null.
+    # Es lo que pinta el icono del botón en el listado sin tener que abrir el
+    # modal (que sí consulta al proveedor en vivo).
+    pjud_estado: str | None = None
+
     @classmethod
     def from_model(cls, c) -> "CausaResponse":
         origen = c.estado_diario_origen

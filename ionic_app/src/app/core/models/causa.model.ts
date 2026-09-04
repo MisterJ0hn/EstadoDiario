@@ -34,6 +34,10 @@ export interface Causa {
   origen_actividad?: string | null;
   /** Próxima audiencia agendada, desde hoy. */
   proxima_audiencia?: string | null;
+  /** Último resultado conocido de "Detalle PJUD" (`listo` | `sincronizando` |
+   *  `error` | `sin_credenciales`), del log de llamados — no en vivo al
+   *  proveedor. Null/undefined = nunca se consultó. Solo viene en Civiles. */
+  pjud_estado?: string | null;
 }
 
 export interface CausaListResponse {

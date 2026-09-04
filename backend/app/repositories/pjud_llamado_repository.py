@@ -95,6 +95,42 @@ class PjudLlamadoRepository:
         )
         return items, total, total_pages
 
+    def ultimos_por_causa(
+        self, *, cliente_id: Optional[int], causa_ids: list[int]
+    ) -> dict[int, str]:
+        """`{causa_id: resultado}` del llamado más reciente de cada causa, para
+        pintar en el listado de causas el icono de estado del PJUD (nunca
+        sincronizada / sincronizando / error / lista) sin tener que abrir el
+        modal (que sí golpea al proveedor en vivo)."""
+        if not causa_ids:
+            return {}
+        ultima_fecha = (
+            self.db.query(
+                PjudLlamado.causa_id,
+                func.max(PjudLlamado.fecha_hora).label("ultima"),
+            )
+            .filter(
+                PjudLlamado.cliente_id == cliente_id,
+                PjudLlamado.causa_id.in_(causa_ids),
+            )
+            .group_by(PjudLlamado.causa_id)
+            .subquery()
+        )
+        filas = (
+            self.db.query(PjudLlamado.causa_id, PjudLlamado.resultado)
+            .join(
+                ultima_fecha,
+                (PjudLlamado.causa_id == ultima_fecha.c.causa_id)
+                & (PjudLlamado.fecha_hora == ultima_fecha.c.ultima),
+            )
+            .filter(PjudLlamado.cliente_id == cliente_id)
+            .all()
+        )
+        # Si dos llamados de la misma causa cayeron en el mismo instante (no
+        # debería, pero por las dudas), se queda con cualquiera de los dos: da
+        # igual para lo que se usa (pintar un icono de estado).
+        return {causa_id: resultado for causa_id, resultado in filas}
+
     def resumen(self, dias: int = 7) -> dict[str, int]:
         """Conteo por resultado en los últimos `dias`, para la cabecera de la
         pantalla ("32 consultas, 4 con error")."""
