@@ -380,6 +380,7 @@ class PjudService:
                 f"consultar_civil: 200 estado={estado_raw!r} "
                 f"detalle_estado={detalle_estado!r} "
                 f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
+                f"ultimo_error={ultimo_error!r} "
                 f"cuadernos={len(detalle.get('cuadernos') or [])}"
             )
         except PjudNoEncontrado:
