@@ -55,13 +55,12 @@ _ESTADOS_SINCRONIZANDO = {"sincronizando", "pendiente", "en proceso", "encolada"
 _ESTADOS_ERROR = {"error", "fallido", "fallida", "fallo", "rechazada"}
 
 _MENSAJE_SINCRONIZANDO = (
-    "El Poder Judicial está sincronizando esta causa. La primera consulta "
-    "puede tardar varios minutos; vuelve a intentar en un rato."
+    "La primera consulta puede tardar varios minutos."
 )
 
 _MENSAJE_ERROR_SYNC = (
     "La sincronización de esta causa con el Poder Judicial falló. "
-    "Puedes reintentarla; si el problema persiste, revisa tu clave del OJV."
+    "Puedes reintentarla."
 )
 
 _MENSAJE_SIN_CREDENCIALES = (
