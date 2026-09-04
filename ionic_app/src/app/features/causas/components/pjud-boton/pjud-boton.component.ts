@@ -8,7 +8,7 @@ import { PjudBotonVariante, pjudBotonEstado, pjudBotonTitulo } from '@core/utils
  * (quien lo use debe ponerlo y escuchar `(abrir)`). El icono cuenta el último
  * estado conocido de sincronización sin tener que abrir el modal:
  *
- * - `listo`: el icono normal (el botón de siempre).
+ * - `listo`: el martillo del Poder Judicial (el icono normal, de siempre).
  * - nunca sincronizada / sin clave del OJV: el icono de "sincronizar", amarillo y quieto.
  * - sincronizando: el mismo icono, verde y girando.
  * - error: el mismo icono, rojo y tachado.
@@ -29,11 +29,11 @@ import { PjudBotonVariante, pjudBotonEstado, pjudBotonTitulo } from '@core/utils
               [class.text-danger-600]="variante() === 'error'"
               [title]="titulo()" aria-label="Ver detalle de la causa en el Poder Judicial">
         @if (variante() === 'listo') {
-          <!-- Estado normal: el botón de siempre. -->
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M10.5 3H5.6c-.6 0-1.1.5-1.1 1.1v15.8c0 .6.5 1.1 1.1 1.1h12.8c.6 0 1.1-.5 1.1-1.1V11.3A8.3 8.3 0 0 0 10.5 3Z" />
-            <path d="M13.5 20.3 15 21.8m-4.5-4.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" />
+          <!-- Estado normal: martillo del Poder Judicial (mazo + base). -->
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="2" y="2" width="9" height="5" rx="1.5" />
+            <rect x="9" y="3.5" width="10" height="2" rx="1" />
+            <rect x="3" y="17" width="15" height="4" rx="1" />
           </svg>
         } @else {
           <!-- Nunca sincronizada (amarillo, quieta), sincronizando (verde,
