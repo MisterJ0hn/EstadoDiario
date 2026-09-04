@@ -9,6 +9,7 @@ import {
   CausaListResponse,
   CausaResumenResponse,
   PjudMovimientosResponse,
+  PjudPorRolResponse,
 } from '@core/models/causa.model';
 
 /** Dentro de un estudio todos ven todo, así que nunca se manda un id de usuario. */
@@ -76,6 +77,14 @@ export class CausaService {
    *  decidir si se muestra el botón "Detalle PJUD". */
   pjudDisponible(): Observable<{ disponible: boolean }> {
     return this.http.get<{ disponible: boolean }>(`${this.apiUrl}/pjud/disponible`);
+  }
+
+  /** Resuelve la Causa Civil de la cartera por rol y tribunal, para ofrecer el
+   *  botón "Detalle PJUD" en pantallas que no tienen el id de la Causa
+   *  (Estado Diario, Movimientos). `causa: null` si no calza o no es Civil. */
+  pjudPorRol(rol: string, tribunal: string): Observable<PjudPorRolResponse> {
+    const params = new HttpParams().set('rol', rol).set('tribunal', tribunal);
+    return this.http.get<PjudPorRolResponse>(`${this.apiUrl}/pjud/por-rol`, { params });
   }
 
   /** Detalle EN VIVO de una causa Civil, consultado directo al PJUD.

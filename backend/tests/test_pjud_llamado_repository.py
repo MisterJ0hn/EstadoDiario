@@ -1,5 +1,6 @@
-"""`ultimos_por_causa`: el último `resultado` de cada causa, para pintar el
-icono de estado del PJUD en el listado de causas sin golpear al proveedor.
+"""`ultimos_por_causa`: el `PjudLlamado` más reciente de cada causa, para
+pintar en el listado de causas el icono de estado del PJUD y la fecha de
+última sincronización sin golpear al proveedor.
 
 Usa SQLite en memoria: la tabla no depende de nada específico de Postgres.
 """
@@ -46,7 +47,25 @@ class TestUltimosPorCausa:
         resultado = PjudLlamadoRepository(db).ultimos_por_causa(
             cliente_id=1, causa_ids=[10, 11]
         )
-        assert resultado == {10: "listo", 11: "error"}
+        assert {causa_id: f.resultado for causa_id, f in resultado.items()} == {
+            10: "listo", 11: "error",
+        }
+
+    def test_trae_la_fecha_de_ese_ultimo_llamado(self, db):
+        db.add_all([
+            _llamado(cliente_id=1, causa_id=10, resultado="sincronizando", hace_minutos=30),
+            _llamado(cliente_id=1, causa_id=10, resultado="listo", hace_minutos=1),
+        ])
+        db.commit()
+
+        resultado = PjudLlamadoRepository(db).ultimos_por_causa(
+            cliente_id=1, causa_ids=[10]
+        )
+        # Se queda con la fecha del llamado más reciente (1 minuto), no del
+        # primero (30 minutos). SQLite no guarda el timezone: se compara naive.
+        fecha = resultado[10].fecha_hora.replace(tzinfo=None)
+        antiguedad = datetime.now(timezone.utc).replace(tzinfo=None) - fecha
+        assert antiguedad < timedelta(minutes=5)
 
     def test_no_mezcla_causas_de_otro_cliente(self, db):
         db.add_all([
@@ -58,7 +77,7 @@ class TestUltimosPorCausa:
         resultado = PjudLlamadoRepository(db).ultimos_por_causa(
             cliente_id=1, causa_ids=[10]
         )
-        assert resultado == {10: "listo"}
+        assert resultado[10].resultado == "listo"
 
     def test_causa_nunca_consultada_no_aparece(self, db):
         db.add(_llamado(cliente_id=1, causa_id=10, resultado="listo", hace_minutos=1))

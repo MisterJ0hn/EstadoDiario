@@ -16,6 +16,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.schemas.causa import CausaResponse
+
 
 class PjudDocumentoRef(BaseModel):
     """Un PDF de la causa (texto de demanda, certificado de envío, ebook)."""
@@ -180,3 +182,13 @@ class PjudErrorResponse(BaseModel):
 
 class PjudDisponibleResponse(BaseModel):
     disponible: bool
+
+
+class PjudPorRolResponse(BaseModel):
+    """Resuelve, por rol y tribunal, la Causa Civil de la cartera vigente que
+    corresponde: es lo que ofrece el botón "Detalle PJUD" en pantallas que no
+    tienen el id de la Causa (Estado Diario, Movimientos) y solo conocen su
+    rol y tribunal. `causa` viene en `null` si no hay cartera cargada, no
+    calza ninguna, o la que calza no es Civil."""
+
+    causa: CausaResponse | None = None

@@ -5,12 +5,19 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Agenda } from '@core/models/estado-diario.model';
+import { Causa } from '@core/models/causa.model';
+import { PjudBotonComponent } from '@features/causas/components/pjud-boton/pjud-boton.component';
+import { PjudMovimientosModalComponent } from '@features/causas/components/pjud-movimientos-modal/pjud-movimientos-modal.component';
+import { CausaService } from '@features/causas/services/causa.service';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 
 @Component({
   selector: 'app-movimiento-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RecordatorioModalComponent],
+  imports: [
+    CommonModule, FormsModule, RecordatorioModalComponent,
+    PjudBotonComponent, PjudMovimientosModalComponent,
+  ],
   template: `
     <div class="space-y-6">
       @if (loading()) {
@@ -32,7 +39,12 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
             </button>
             <h1 class="text-2xl font-bold text-neutral-800">Detalle del Estado Diario #{{ movimiento()!.id }}</h1>
           </div>
-          <div class="flex gap-2">
+          <div class="flex items-center gap-2">
+            @if (pjudDisponible()) {
+              <!-- Mismo botón que Mis Causas: solo se pinta si la causa
+                   resultó Civil (lo único que expone la API del PJUD). -->
+              <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())" />
+            }
             @if (!movimiento()!.leido) {
               <button (click)="abrirResolver()" class="btn-success">Marcar como Resuelto</button>
               <!-- Marcar pendiente y agendar son una sola acción: el modal de
@@ -214,6 +226,8 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
         (guardado)="onRecordatorioGuardado()"
       />
 
+      <app-pjud-movimientos-modal [causa]="pjudModal()" (cerrado)="pjudModal.set(null)" />
+
       <!-- Confirmar "Resolver" -->
       @if (confirmarResolver()) {
         <div class="modal-backdrop" (click)="cancelarResolver()">
@@ -254,6 +268,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
 })
 export class MovimientoDetailComponent implements OnInit {
   private service = inject(EstadoDiarioService);
+  private causaService = inject(CausaService);
   private notification = inject(NotificationService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -261,6 +276,16 @@ export class MovimientoDetailComponent implements OnInit {
   movimiento = signal<Movimiento | null>(null);
   agendas = signal<Agenda[]>([]);
   loading = signal(true);
+
+  /** Si api-pjud.codifica.cl está configurada; sin esto el botón "Detalle
+   *  PJUD" no tiene sentido y no se muestra (mismo criterio que Mis Causas). */
+  pjudDisponible = signal(false);
+  /** La Causa Civil de la cartera que calza con el rol/tribunal de este
+   *  registro, resuelta por `/causas/pjud/por-rol`; null = no hay cartera
+   *  cargada, no calza ninguna, o no es Civil (ahí no se muestra el botón). */
+  pjudCausa = signal<Causa | null>(null);
+  /** Causa para la que está abierto el modal de detalle PJUD; null = cerrado. */
+  pjudModal = signal<Causa | null>(null);
 
   /** id del registro para el que se abre el modal "Marcar como pendiente"; null = cerrado */
   recordatorioMovimientoId = signal<number | null>(null);
@@ -274,6 +299,11 @@ export class MovimientoDetailComponent implements OnInit {
     const id = Number(this.route.snapshot.paramMap.get('id'));
     this.loadDetalle(id);
     this.loadAgendas(id);
+
+    this.causaService.pjudDisponible().subscribe({
+      next: (res) => this.pjudDisponible.set(res.disponible),
+      error: () => this.pjudDisponible.set(false),
+    });
   }
 
   private loadDetalle(id: number): void {
@@ -281,11 +311,26 @@ export class MovimientoDetailComponent implements OnInit {
       next: (res) => {
         this.movimiento.set(res.movimiento);
         this.loading.set(false);
+        this.resolverPjud(res.movimiento);
       },
       error: () => {
         this.loading.set(false);
         this.notification.error('Error al cargar detalle');
       },
+    });
+  }
+
+  /** Busca la Causa Civil que corresponde a este registro por rol/tribunal,
+   *  para el botón "Detalle PJUD". Sin rol o tribunal, o si no calza ninguna,
+   *  simplemente no se ofrece el botón. */
+  private resolverPjud(m: Movimiento): void {
+    if (!m.rol || !m.tribunal) {
+      this.pjudCausa.set(null);
+      return;
+    }
+    this.causaService.pjudPorRol(m.rol, m.tribunal).subscribe({
+      next: (res) => this.pjudCausa.set(res.causa),
+      error: () => this.pjudCausa.set(null),
     });
   }
 

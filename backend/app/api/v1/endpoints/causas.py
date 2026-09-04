@@ -33,7 +33,7 @@ from app.schemas.causa import (
     CausaResumenResponse,
     ConteoMateria,
 )
-from app.schemas.pjud import PjudDisponibleResponse, PjudMovimientosResponse
+from app.schemas.pjud import PjudDisponibleResponse, PjudMovimientosResponse, PjudPorRolResponse
 from app.services.causa_import_service import CausaImportService, parse_nombre_archivo
 from app.services.pjud_service import PjudApiError, PjudNoEncontrado, PjudService
 
@@ -282,11 +282,14 @@ def listar(
             r.id for r, c in zip(causas_resp, items)
             if (c.materia or "").strip().lower() == "civil"
         ]
-        estados_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
+        ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
             cliente_id=tenant.cliente_id, causa_ids=civiles_ids,
         )
         for r in causas_resp:
-            r.pjud_estado = estados_pjud.get(r.id)
+            llamado = ultimos_pjud.get(r.id)
+            if llamado:
+                r.pjud_estado = llamado.resultado
+                r.pjud_fecha_sincronizacion = llamado.fecha_hora
 
     return CausaListResponse(
         total=total,
@@ -309,6 +312,41 @@ def pjud_disponible(current_user: Usuario = Depends(get_usuario_actual)):
     'Detalle PJUD': sin credenciales configuradas, no tiene sentido ofrecerlo
     y que cada clic termine en un error."""
     return PjudDisponibleResponse(disponible=settings.pjud_api_activo)
+
+
+@router.get(
+    "/pjud/por-rol",
+    response_model=PjudPorRolResponse,
+    summary="Resuelve la Causa Civil de la cartera por rol y tribunal",
+)
+def pjud_por_rol(
+    rol: str = Query(...),
+    tribunal: str = Query(...),
+    db: Session = Depends(get_db_tenant),
+    db_maestra: Session = Depends(get_db_maestra),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Para ofrecer el botón "Detalle PJUD" desde pantallas que muestran una
+    causa por su rol/tribunal pero no conocen su id en la tabla `Causa`
+    (Estado Diario, Movimientos): resuelve la Causa Civil de la cartera
+    vigente que calza, con su `pjud_estado` ya resuelto (mismo icono que en
+    Mis Causas). `causa: null` si no calza ninguna o no es Civil: ahí la
+    pantalla que llama simplemente no muestra el botón."""
+    causa = CausaRepository(db).find_civil_por_rol_tribunal(rol, tribunal)
+    if not causa:
+        return PjudPorRolResponse(causa=None)
+
+    respuesta = CausaResponse.from_model(causa)
+    if settings.pjud_api_activo:
+        ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
+            cliente_id=tenant.cliente_id, causa_ids=[causa.id],
+        )
+        llamado = ultimos_pjud.get(causa.id)
+        if llamado:
+            respuesta.pjud_estado = llamado.resultado
+            respuesta.pjud_fecha_sincronizacion = llamado.fecha_hora
+    return PjudPorRolResponse(causa=respuesta)
 
 
 @router.get(

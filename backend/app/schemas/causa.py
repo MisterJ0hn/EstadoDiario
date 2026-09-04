@@ -5,7 +5,7 @@ no hay schemas de acciones (leído / pendiente / recordatorio) como en estado
 diario: acá no hay nada que despachar.
 """
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -47,6 +47,9 @@ class CausaResponse(BaseModel):
     # Es lo que pinta el icono del botón en el listado sin tener que abrir el
     # modal (que sí consulta al proveedor en vivo).
     pjud_estado: str | None = None
+    # Fecha/hora de ese último llamado (cualquiera sea su resultado). Null si
+    # nunca se consultó.
+    pjud_fecha_sincronizacion: datetime | None = None
 
     @classmethod
     def from_model(cls, c) -> "CausaResponse":

@@ -86,7 +86,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                 <div class="alert-info flex-col items-start gap-2">
                   <p class="font-medium">El Poder Judicial está sincronizando esta causa</p>
                   <p>
-                    {{ d.mensaje || 'La primera consulta puede tardar varios minutos. Vuelve a intentar en un rato.' }}
+                    {{ d.mensaje || 'La primera consulta puede tardar varios minutos.' }}
                   </p>
                   @if (d.detalle_estado) {
                     <p class="inline-flex items-center gap-2 rounded-md bg-primary-100 px-2.5 py-1 text-sm font-medium text-primary-800">

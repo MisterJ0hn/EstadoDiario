@@ -38,6 +38,8 @@ export interface Causa {
    *  `error` | `sin_credenciales`), del log de llamados — no en vivo al
    *  proveedor. Null/undefined = nunca se consultó. Solo viene en Civiles. */
   pjud_estado?: string | null;
+  /** Fecha/hora de ese último llamado (cualquiera sea su resultado). */
+  pjud_fecha_sincronizacion?: string | null;
 }
 
 export interface CausaListResponse {
@@ -283,4 +285,15 @@ export interface PjudMovimientosResponse {
   notificaciones: PjudNotificacionItem[];
   escritos_resolver: PjudEscritoResolverItem[];
   exhortos: PjudExhortoItem[];
+}
+
+/**
+ * Resuelve, por rol y tribunal, la Causa Civil de la cartera vigente que
+ * corresponde: lo usan pantallas que muestran una causa por su rol/tribunal
+ * pero no conocen su id en la tabla Causa (Estado Diario, Movimientos), para
+ * poder ofrecer el mismo botón "Detalle PJUD" que Mis Causas.
+ * `causa: null` = no hay cartera cargada, no calza ninguna, o no es Civil.
+ */
+export interface PjudPorRolResponse {
+  causa: Causa | null;
 }
