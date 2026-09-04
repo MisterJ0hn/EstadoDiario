@@ -111,7 +111,8 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                     <p class="text-sm text-white/90">{{ d.detalle_estado }}</p>
                   } @else if (d.mensaje) {
                     <p class="text-sm text-white/90">{{ d.mensaje }}</p>
-                  } @else if (d.ultimo_error) {
+                  } 
+                  @if (d.ultimo_error) {
                     <p class="text-sm text-white/90">{{ d.ultimo_error }}</p>
                   }
                   <button (click)="actualizar()" [disabled]="cargando()"
