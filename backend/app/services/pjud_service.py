@@ -370,10 +370,12 @@ class PjudService:
             diag.append("forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud))
 
         detalle_estado: Optional[str] = None
+        ultimo_error: Optional[str] = None
         try:
             detalle = self._request("POST", "/consultar_civil", json=cuerpo_causa)["causa"]
             estado_raw = detalle.get("estado")
             detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
+            ultimo_error = (detalle.get("ultimo_error") or "").strip() or None
             diag.append(
                 f"consultar_civil: 200 estado={estado_raw!r} "
                 f"detalle_estado={detalle_estado!r} "
