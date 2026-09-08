@@ -1,7 +1,11 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, inject, signal } from '@angular/core';
 
 import { Causa } from '@core/models/causa.model';
 import { PjudBotonVariante, pjudBotonEstado, pjudBotonTitulo } from '@core/utils/pjud-estado';
+import { CausaService } from '../../services/causa.service';
+
+/** Cada cuánto se pregunta si una sincronización en curso ya terminó. */
+const INTERVALO_POLL_MS = 5000;
 
 /**
  * `martillo_2.png` (carpeta `datos/` del repo): el ícono del estado `listo`.
@@ -27,13 +31,20 @@ const MARTILLO_PJUD_PNG =
  * del PJUD). Se usa tanto en Mis Causas (que ya tiene la `Causa` completa)
  * como en pantallas que la resuelven por rol/tribunal (Estado Diario,
  * Movimientos): mismo botón, mismos íconos, en un solo lugar.
+ *
+ * El ícono no espera a que el padre vuelva a pedir la lista:
+ * - Al hacer clic en una causa `nuevo`, pasa a `sincronizando` al toque (antes
+ *   de que responda nada), porque abrir el modal es lo que dispara el scrape.
+ * - Mientras está `sincronizando` (por ese clic, o porque ya venía así desde
+ *   el padre), se pregunta por Ajax cada 5 segundos si terminó. Al quedar
+ *   `listo` o `error` se pinta de inmediato y se deja de preguntar.
  */
 @Component({
   selector: 'app-pjud-boton',
   standalone: true,
   template: `
     @if (causa && causa.materia === 'Civil') {
-      <button type="button" class="btn-outline btn-sm !px-2" (click)="abrir.emit()"
+      <button type="button" class="btn-outline btn-sm !px-2" (click)="onClick()"
               [class.text-warning-500]="variante() === 'nuevo'"
               [class.text-accent-600]="variante() === 'sincronizando'"
               [class.text-danger-600]="variante() === 'error'"
@@ -58,17 +69,87 @@ const MARTILLO_PJUD_PNG =
     }
   `,
 })
-export class PjudBotonComponent {
+export class PjudBotonComponent implements OnChanges, OnDestroy {
+  private causaService = inject(CausaService);
+
   @Input() causa: Causa | null = null;
   @Output() abrir = new EventEmitter<void>();
 
   readonly martillo = MARTILLO_PJUD_PNG;
 
+  /** Pisa el estado de `causa` mientras este componente sincroniza por su
+   *  cuenta (clic optimista o polling en curso); null = mostrar el de `causa`. */
+  private estadoLocal = signal<PjudBotonVariante | null>(null);
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private causaIdPolling: number | null = null;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!('causa' in changes)) return;
+
+    // Cambió de causa (no solo se refrescó el objeto de la misma fila): se
+    // olvida cualquier estado y polling que fueran de la anterior.
+    if (this.causa?.id !== this.causaIdPolling && this.pollTimer) {
+      this.detenerPolling();
+      this.estadoLocal.set(null);
+    }
+
+    // Si ya viene "sincronizando" desde el padre (p.ej. al recargar la lista
+    // mientras el PJUD sigue scrapeando), hay que seguir preguntando por su
+    // cuenta: nada más la va a refrescar.
+    if (this.causa && !this.estadoLocal() && pjudBotonEstado(this.causa.pjud_estado) === 'sincronizando') {
+      this.iniciarPolling(this.causa.id);
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.detenerPolling();
+  }
+
   variante(): PjudBotonVariante {
-    return pjudBotonEstado(this.causa?.pjud_estado);
+    return this.estadoLocal() ?? pjudBotonEstado(this.causa?.pjud_estado);
   }
 
   titulo(): string {
     return pjudBotonTitulo(this.variante());
+  }
+
+  onClick(): void {
+    // Optimista: si nunca se sincronizó, se ve "sincronizando" al toque, sin
+    // esperar la respuesta — abrir el modal es lo que dispara el scrape.
+    if (this.variante() === 'nuevo' && this.causa) {
+      this.estadoLocal.set('sincronizando');
+      this.iniciarPolling(this.causa.id);
+    }
+    this.abrir.emit();
+  }
+
+  private iniciarPolling(causaId: number): void {
+    if (this.pollTimer && this.causaIdPolling === causaId) return;
+    this.detenerPolling();
+    this.causaIdPolling = causaId;
+    this.pollTimer = setInterval(() => this.consultarEstado(causaId), INTERVALO_POLL_MS);
+  }
+
+  private detenerPolling(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
+    this.causaIdPolling = null;
+  }
+
+  /** Mismo GET que usa el modal para consultar (sin `forzar`): solo pregunta
+   *  el estado actual, no dispara un scrape nuevo. Cualquier resultado que no
+   *  sea "sincronizando" es terminal — incluido "sin_credenciales", que si no
+   *  se corta acá dejaría preguntando para siempre a quien no cargó su clave. */
+  private consultarEstado(causaId: number): void {
+    this.causaService.pjudMovimientos(causaId).subscribe({
+      next: (res) => {
+        if (res.estado === 'sincronizando') return;
+        this.estadoLocal.set(pjudBotonEstado(res.estado));
+        this.detenerPolling();
+      },
+      // Error de red al consultar: no se sabe nada nuevo, se sigue intentando
+      // en el próximo tick en vez de mostrar una falla que no es tal.
+      error: () => {},
+    });
   }
 }
