@@ -222,7 +222,7 @@ import { CausaService } from './services/causa.service';
                     <th title="Última vez que se consultó esta causa contra el Poder Judicial, cualquiera sea el resultado">
                       Últ. Sync. PJUD
                     </th>
-                    <th></th>
+                    <th>PJUD</th>
                   }
                 </tr>
               </thead>
