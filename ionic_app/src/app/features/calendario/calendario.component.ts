@@ -97,8 +97,11 @@ function claveDia(d: Date): string {
                        ante un tribunal, y mandan sobre un recordatorio propio. -->
                   @for (a of dia.audiencias; track a.id) {
                     <button
-                      (click)="verAudiencias(a)"
-                      class="w-full text-left truncate rounded px-1.5 py-0.5 text-xs font-medium bg-primary-100 text-primary-800 hover:bg-primary-200"
+                      (click)="abrirAudiencia(a)"
+                      class="w-full text-left truncate rounded px-1.5 py-0.5 text-xs font-medium hover:brightness-95"
+                      [class]="a.asistio
+                        ? 'bg-accent-100 text-accent-800'
+                        : 'bg-primary-100 text-primary-800'"
                       [title]="tituloAudiencia(a)"
                     >{{ fmtHora(a.hora) }} {{ a.caratulado || a.rol || a.ruc }}</button>
                   }
@@ -179,6 +182,86 @@ function claveDia(d: Date): string {
         </div>
       </div>
     }
+
+    <!-- Detalle de audiencia + marca de asistencia.
+         El calendario solo anuncia la audiencia; la única acción es la misma
+         que en el módulo Audiencias: marcar "Asistí" (toggle). Sin marca, una
+         audiencia ya pasada cuenta como inasistencia en el KPI del dashboard. -->
+    @if (audienciaSel(); as a) {
+      <div class="modal-backdrop" (click)="cerrarAudiencia()">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h3 class="text-lg font-semibold">{{ a.tipo_audiencia || 'Audiencia' }}</h3>
+            <button (click)="cerrarAudiencia()" class="text-neutral-400 hover:text-neutral-600">&times;</button>
+          </div>
+          <div class="modal-body space-y-4">
+            <div class="flex items-center gap-2">
+              <span class="bg-primary-100 text-primary-800 px-2 py-0.5 rounded-full text-xs font-medium">Audiencia</span>
+              <span class="text-sm text-neutral-500">
+                {{ a.fecha_audiencia | date:'dd/MM/yyyy' }}{{ a.hora ? ' · ' + fmtHora(a.hora) : '' }}
+              </span>
+            </div>
+
+            <div>
+              <span class="text-xs text-neutral-500 uppercase">Caratulado</span>
+              <p class="text-sm mt-0.5">{{ a.caratulado || '-' }}</p>
+            </div>
+
+            <dl class="grid grid-cols-2 gap-3">
+              <div>
+                <dt class="text-xs text-neutral-500 uppercase">RIT / RUC</dt>
+                <dd class="text-sm mt-0.5">{{ a.rol || a.ruc || '-' }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-neutral-500 uppercase">Sala</dt>
+                <dd class="text-sm mt-0.5">{{ a.sala || '-' }}</dd>
+              </div>
+              <div class="col-span-2">
+                <dt class="text-xs text-neutral-500 uppercase">Tribunal</dt>
+                <dd class="text-sm mt-0.5">{{ a.tribunal || '-' }}</dd>
+              </div>
+              @if (a.juez) {
+                <div class="col-span-2">
+                  <dt class="text-xs text-neutral-500 uppercase">Juez</dt>
+                  <dd class="text-sm mt-0.5">{{ a.juez }}</dd>
+                </div>
+              }
+              @if (a.estado) {
+                <div class="col-span-2">
+                  <dt class="text-xs text-neutral-500 uppercase">Estado</dt>
+                  <dd class="text-sm mt-0.5">{{ a.estado }}</dd>
+                </div>
+              }
+            </dl>
+
+            <hr class="border-neutral-200" />
+
+            <button
+              type="button"
+              (click)="alternarAsistencia(a)"
+              [disabled]="marcandoAsistencia()"
+              class="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-50"
+              [class]="a.asistio
+                ? 'bg-accent-100 text-accent-700 hover:bg-accent-200'
+                : 'border border-neutral-300 text-neutral-600 hover:bg-neutral-100'"
+            >
+              @if (a.asistio) {
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Asistí — clic para deshacer
+              } @else {
+                Marcar "Asistí"
+              }
+            </button>
+
+            <button (click)="verEnAudiencias(a)" class="text-primary-600 hover:underline text-sm">
+              Ver en el módulo Audiencias →
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
 })
 export class CalendarioComponent implements OnInit {
@@ -197,6 +280,9 @@ export class CalendarioComponent implements OnInit {
   seleccionado = signal<RecordatorioVigente | null>(null);
   confirmandoFinalizar = signal(false);
   finalizando = signal(false);
+
+  audienciaSel = signal<Audiencia | null>(null);
+  marcandoAsistencia = signal(false);
 
   private porDia = computed(() => {
     const mapa = new Map<string, RecordatorioVigente[]>();
@@ -329,8 +415,45 @@ export class CalendarioComponent implements OnInit {
       .join(' · ');
   }
 
-  /** El detalle de una audiencia vive en su módulo; el calendario solo la anuncia. */
-  verAudiencias(a: Audiencia): void {
+  /** Abre el detalle de la audiencia en un popup, con la acción de marcar asistencia. */
+  abrirAudiencia(a: Audiencia): void {
+    this.audienciaSel.set(a);
+    this.marcandoAsistencia.set(false);
+  }
+
+  cerrarAudiencia(): void {
+    if (this.marcandoAsistencia()) return;
+    this.audienciaSel.set(null);
+  }
+
+  /**
+   * Mismo efecto que el módulo Audiencias: toggle de la marca de asistencia.
+   * Actualiza la audiencia en la grilla y en el popup sin recargar el mes.
+   */
+  alternarAsistencia(a: Audiencia): void {
+    if (this.marcandoAsistencia()) return;
+    const asistio = !a.asistio;
+    this.marcandoAsistencia.set(true);
+    this.audienciaService.marcarAsistencia(a.id, asistio).subscribe({
+      next: (actualizada) => {
+        this.audiencias.update((lista) =>
+          lista.map((x) => (x.id === actualizada.id ? actualizada : x)),
+        );
+        this.audienciaSel.set(actualizada);
+        this.marcandoAsistencia.set(false);
+        this.notification.success(
+          asistio ? 'Audiencia marcada como asistida' : 'Se quitó la marca de asistencia',
+        );
+      },
+      error: () => {
+        this.marcandoAsistencia.set(false);
+        this.notification.error('No se pudo actualizar la asistencia');
+      },
+    });
+  }
+
+  /** El detalle completo vive en su módulo; desde el popup se puede saltar allá. */
+  verEnAudiencias(a: Audiencia): void {
     this.router.navigate(['/audiencias'], {
       queryParams: { busqueda: a.rol || a.ruc || a.caratulado },
     });
