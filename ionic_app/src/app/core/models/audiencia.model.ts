@@ -1,9 +1,10 @@
 /**
  * Módulo Audiencias: las audiencias que el tribunal ya fijó.
  *
- * Es el tercer Excel del PJUD y el único que mira hacia adelante. De SOLO
- * CONSULTA, como Movimientos: la audiencia la fija el tribunal, acá solo se
- * informa. Lo que sí tiene es publicación en Google Calendar.
+ * Es el tercer Excel del PJUD y el único que mira hacia adelante. La única
+ * acción es marcar asistencia (`asistio`): la audiencia la fija el tribunal,
+ * pero quién asistió lo sabe el estudio. También tiene publicación en Google
+ * Calendar.
  */
 
 export interface Audiencia {
@@ -28,6 +29,10 @@ export interface Audiencia {
   jurisdiccion_id: number | null;
   en_google_calendar: boolean;
   google_sync_error: string | null;
+  /** Marca manual del estudio: alguien asistió a esta audiencia. */
+  asistio: boolean;
+  /** ISO 8601 — cuándo se marcó la asistencia. Null si no está marcada. */
+  asistencia_marcada_en: string | null;
   // Datos heredados del archivo del que vino la fila
   rut: string | null;
   fecha_archivo: string | null;

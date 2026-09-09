@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '@env/environment';
 import {
+  Audiencia,
   AudienciaFiltros,
   AudienciaListResponse,
   AudienciaResumenResponse,
@@ -63,6 +64,14 @@ export class AudienciaService {
   /** Reintento manual: publica en Google las audiencias futuras que falten. */
   sincronizarGoogle(): Observable<SincronizarGoogleResponse> {
     return this.http.post<SincronizarGoogleResponse>(`${this.apiUrl}/sincronizar-google`, {});
+  }
+
+  /**
+   * Marca o desmarca la asistencia a una audiencia. Toggle simple: `true` la
+   * deja como asistida, `false` lo deshace. Devuelve la audiencia actualizada.
+   */
+  marcarAsistencia(id: number, asistio: boolean): Observable<Audiencia> {
+    return this.http.post<Audiencia>(`${this.apiUrl}/${id}/asistencia`, { asistio });
   }
 
   private toParams(filtros: AudienciaFiltros): HttpParams {

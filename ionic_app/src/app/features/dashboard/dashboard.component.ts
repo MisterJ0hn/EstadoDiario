@@ -157,11 +157,8 @@ const SPLIT_LINE = { lineStyle: { color: COLOR.eje, width: 1, type: 'solid' } };
                 <p class="text-3xl font-semibold text-neutral-800 mt-1">
                   {{ miles(d.kpis.audiencias_no_asistidas) }}
                 </p>
-                <!-- El texto dice lo que el número ES hoy. Cuando el PJUD (o el
-                     estudio) entregue la asistencia, cambia el filtro del
-                     backend y esta línea. -->
                 <p class="text-xs text-neutral-400 mt-1">
-                  Por ahora, todas las audiencias cargadas
+                  Audiencias pasadas sin marcar "Asistí"
                 </p>
               </div>
             </div>

@@ -14,7 +14,7 @@ El filtrado, el conteo y la agregación se resuelven en SQL.
 """
 
 import math
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy import func, nulls_last, or_
@@ -99,6 +99,36 @@ class AudienciaRepository:
         return encontradas
 
     # ── Audiencias ────────────────────────────────────────
+
+    def get_by_id(self, audiencia_id: int) -> Optional[Audiencia]:
+        """Una audiencia por id, sin filtro de visibilidad (dentro del estudio
+        todos ven todo). El aislamiento entre estudios lo da la base por cliente.
+        """
+        return self.db.query(Audiencia).filter(Audiencia.id == audiencia_id).first()
+
+    def marcar_asistencia(
+        self, audiencia_id: int, asistio: bool, usuario_id: int
+    ) -> Optional[Audiencia]:
+        """Marca o desmarca que el estudio asistió a la audiencia.
+
+        Toggle simple: al marcar se anota quién y cuándo; al desmarcar esa
+        auditoría se limpia, para que no quede un rastro que contradiga el
+        estado. Devuelve `None` si la audiencia no existe.
+        """
+        audiencia = self.get_by_id(audiencia_id)
+        if audiencia is None:
+            return None
+
+        audiencia.asistio = asistio
+        if asistio:
+            audiencia.asistencia_usuario_id = usuario_id
+            audiencia.asistencia_marcada_en = datetime.now(timezone.utc)
+        else:
+            audiencia.asistencia_usuario_id = None
+            audiencia.asistencia_marcada_en = None
+
+        self.db.flush()
+        return audiencia
 
     @staticmethod
     def _aplicar_filtros(

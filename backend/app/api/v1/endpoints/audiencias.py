@@ -1,8 +1,8 @@
 """Endpoints del módulo Audiencias.
 
-Consulta + carga + sincronización con Google Calendar. No hay acciones sobre
-una audiencia (leído, pendiente, agenda): la fija el tribunal y el sistema solo
-la informa.
+Consulta + carga + sincronización con Google Calendar. La única acción sobre una
+audiencia es marcar asistencia (`POST /{id}/asistencia`): la fecha y la sala las
+fija el tribunal, pero quién asistió lo sabe el estudio y el PJUD no lo informa.
 
 El default del listado es "de hoy en adelante": el módulo se llama "Próximas
 audiencias" y esa es la pregunta que responde. Para ver el histórico hay que
@@ -17,7 +17,7 @@ import os
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR
@@ -34,6 +34,7 @@ from app.schemas.audiencia import (
     AudienciaResumenResponse,
     AudienciaUploadResponse,
     ConteoMateriaAudiencia,
+    MarcarAsistenciaRequest,
     SincronizarGoogleResponse,
 )
 from app.services.audiencia_calendar_service import AudienciaCalendarService
@@ -327,3 +328,27 @@ def sincronizar_google(
         mensaje=f"{resultado['sincronizadas']} audiencias publicadas en Google Calendar",
         **resultado,
     )
+
+
+@router.post(
+    "/{audiencia_id}/asistencia",
+    response_model=AudienciaResponse,
+    summary="Marcar o desmarcar la asistencia a una audiencia",
+)
+def marcar_asistencia(
+    audiencia_id: int,
+    body: MarcarAsistenciaRequest,
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Toggle simple: `asistio=true` deja la audiencia como asistida y anota
+    quién la marcó; `false` lo deshace. Cualquier usuario del estudio puede
+    hacerlo —dentro de un estudio todos ven y gestionan todo—. Alimenta el KPI
+    "audiencias no asistidas" del dashboard (pasadas sin marca)."""
+    repo = AudienciaRepository(db)
+    audiencia = repo.marcar_asistencia(audiencia_id, body.asistio, current_user.id)
+    if audiencia is None:
+        raise HTTPException(status_code=404, detail="Audiencia no encontrada")
+    db.commit()
+    db.refresh(audiencia)
+    return AudienciaResponse.from_model(audiencia)

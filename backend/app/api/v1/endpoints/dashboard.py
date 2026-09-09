@@ -182,7 +182,7 @@ def obtener_dashboard(
         # Excel, así que acotarla a "los últimos 30 días" no significaría nada.
         causas_activas=repo.contar_causas_cartera(VIGENTES),
         causas_finalizadas=repo.contar_causas_cartera(FINALIZADAS),
-        audiencias_no_asistidas=repo.contar_audiencias_no_asistidas(),
+        audiencias_no_asistidas=repo.contar_audiencias_no_asistidas(hasta),
         pendientes=repo.contar_pendientes(),
         resueltos_periodo=repo.contar_resueltos(desde, hasta),
         recibidos_periodo=repo.contar_recibidos(desde, hasta),

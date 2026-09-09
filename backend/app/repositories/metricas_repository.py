@@ -410,21 +410,22 @@ class MetricasRepository:
         )
         return [(self._a_fecha(f), m, int(n or 0)) for f, m, n in filas]
 
-    def contar_audiencias_no_asistidas(self) -> int:
-        """Por ahora, **todas** las audiencias cargadas.
+    def contar_audiencias_no_asistidas(self, hoy: date) -> int:
+        """Audiencias **ya ocurridas** (fecha < hoy) sin marca de asistencia.
 
-        El PJUD no informa si el abogado asistió y la tabla no tiene el campo,
-        así que este número todavía no significa lo que dice su etiqueta: es el
-        total de audiencias del estudio, sin ventana de fechas.
-
-        Está así a pedido explícito, mientras el estudio decide cómo se va a
-        marcar la inasistencia. Cuando exista ese dato, lo único que cambia es
-        el filtro de esta consulta — la tarjeta, el schema y el frontend ya
-        están puestos. No se inventa una heurística mientras tanto ("pasó la
-        fecha y nadie la tocó" contaría como inasistencia toda audiencia vieja).
+        La marca la pone el estudio desde la UI (`audiencia.asistio`); el PJUD
+        no informa asistencia. Solo las pasadas: una audiencia futura sin marca
+        no es una inasistencia, todavía no ocurre. `hoy` llega desde el endpoint
+        ya calculado en la zona horaria del sistema.
         """
         return (
-            self._q_audiencias().with_entities(func.count(Audiencia.id)).scalar()
+            self._q_audiencias()
+            .filter(
+                Audiencia.fecha_audiencia < hoy,
+                Audiencia.asistio.is_(False),
+            )
+            .with_entities(func.count(Audiencia.id))
+            .scalar()
         ) or 0
 
     # ── Cartera de causas ────────────────────────────────────────────────

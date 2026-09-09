@@ -24,9 +24,9 @@ export interface DashboardKpis {
   causas_activas: number;
   causas_finalizadas: number;
   /**
-   * Por ahora, TODAS las audiencias cargadas: el PJUD no informa asistencia y
-   * la tabla no tiene el campo. Cuando exista, cambia el filtro del backend y
-   * esta tarjeta ya está puesta.
+   * Audiencias ya ocurridas (fecha < hoy) sin marca de asistencia. La marca la
+   * pone el estudio desde el listado de audiencias (`asistio`); el PJUD no
+   * informa asistencia.
    */
   audiencias_no_asistidas: number;
   pendientes: number;

@@ -115,6 +115,13 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     ("usuario", "pjud_rut", "VARCHAR(20)"),
     ("usuario", "pjud_clave", "VARCHAR(500)"),
     ("usuario", "pjud_metodo_login", "INTEGER DEFAULT 1"),
+    # Marca de asistencia a una audiencia, más su auditoría (quién y cuándo).
+    # FALSE en todo lo ya cargado: una audiencia sin marca cuenta como
+    # inasistencia en el KPI del dashboard, y ese es el estado correcto para el
+    # histórico que nadie alcanzó a marcar.
+    ("audiencia", "asistio", "BOOLEAN DEFAULT FALSE"),
+    ("audiencia", "asistencia_usuario_id", "INTEGER"),
+    ("audiencia", "asistencia_marcada_en", "TIMESTAMPTZ"),
 ]
 
 # Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`

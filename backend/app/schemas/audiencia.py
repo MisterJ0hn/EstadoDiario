@@ -1,8 +1,9 @@
 """Schemas del módulo Audiencias (consulta, carga y calendario).
 
-Como el módulo Movimientos, no hay schemas de acciones (leído / pendiente /
-agenda): una audiencia la fija el tribunal, el sistema solo la informa. Lo que
-sí tiene y Movimientos no es la publicación en Google Calendar.
+La única acción sobre una audiencia es la marca de asistencia
+(`MarcarAsistenciaRequest`): la audiencia la fija el tribunal, pero quién asistió
+lo sabe el estudio y el PJUD no lo informa. Lo que sí tiene y Movimientos no es
+la publicación en Google Calendar.
 """
 
 from datetime import date, datetime, time
@@ -32,6 +33,9 @@ class AudienciaResponse(BaseModel):
     # Estado de la publicación en el Google Calendar del dueño.
     en_google_calendar: bool = False
     google_sync_error: str | None = None
+    # Marca manual del estudio: alguien asistió a esta audiencia.
+    asistio: bool = False
+    asistencia_marcada_en: datetime | None = None
     # Datos del archivo del que vino la fila.
     rut: str | None = None
     fecha_archivo: date | None = None
@@ -60,10 +64,22 @@ class AudienciaResponse(BaseModel):
             jurisdiccion_id=a.jurisdiccion_id,
             en_google_calendar=a.google_event_id is not None,
             google_sync_error=a.google_sync_error,
+            asistio=bool(a.asistio),
+            asistencia_marcada_en=a.asistencia_marcada_en,
             rut=origen.rut if origen else None,
             fecha_archivo=origen.fecha if origen else None,
             nombre_archivo=origen.nombre_archivo if origen else None,
         )
+
+
+class MarcarAsistenciaRequest(BaseModel):
+    """Body de `POST /audiencias/{id}/asistencia`.
+
+    Toggle simple: `true` marca que alguien del estudio asistió, `false` lo
+    deshace y limpia la auditoría.
+    """
+
+    asistio: bool
 
 
 class AudienciaListResponse(BaseModel):

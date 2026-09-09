@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timezone
 from typing import Optional
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -103,6 +104,20 @@ class Audiencia(BaseTenant):
     # NULL no deduplica.
     clave_natural: Mapped[str] = mapped_column(String(40), nullable=False)
 
+    # ── Asistencia ──
+    # Marca manual del estudio: alguien asistió a esta audiencia. El PJUD no
+    # informa asistencia, así que la pone el usuario desde la UI. FALSE por
+    # defecto y en todo lo ya cargado: sin marca se cuenta como inasistencia en
+    # el KPI del dashboard (audiencias pasadas sin asistir). Los dos campos de
+    # al lado son auditoría —quién la marcó y cuándo—, se limpian al desmarcar.
+    asistio: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    asistencia_usuario_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("usuario.id")
+    )
+    asistencia_marcada_en: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+
     # ── Google Calendar ──
     # Misma estrategia best-effort que EstadoDiarioAgenda: si la sincronización
     # falla, la audiencia igual queda guardada y el error queda acá.
@@ -122,4 +137,5 @@ class Audiencia(BaseTenant):
     # Relationships
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="audiencias")
     usuario = relationship("Usuario", foreign_keys=[usuario_id])
+    asistencia_usuario = relationship("Usuario", foreign_keys=[asistencia_usuario_id])
     jurisdiccion = relationship("Jurisdiccion")

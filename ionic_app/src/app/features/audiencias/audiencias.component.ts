@@ -36,8 +36,9 @@ function claveDia(d: Date): string {
 /**
  * Próximas audiencias: las que el tribunal ya fijó, de hoy en adelante.
  *
- * SOLO CONSULTA, igual que Movimientos: no hay leído / pendiente / agendar
- * porque la audiencia la fija el tribunal, no el estudio.
+ * Casi solo consulta: la fecha y la sala las fija el tribunal. La única acción
+ * es marcar asistencia (`alternarAsistencia`), que alimenta el KPI "audiencias
+ * no asistidas" del dashboard (pasadas sin marca).
  *
  * Dos decisiones de presentación:
  *  - Se agrupa por día en vez de mostrar una tabla plana. Una agenda se lee por
@@ -207,6 +208,7 @@ function claveDia(d: Date): string {
                       <th>RIT / RUC</th>
                       <th>Tribunal</th>
                       <th>Sala</th>
+                      <th class="w-28 text-center">Asistencia</th>
                       <th class="w-10" title="Publicada en Google Calendar">GCal</th>
                     </tr>
                   </thead>
@@ -235,6 +237,29 @@ function claveDia(d: Date): string {
                         <td class="whitespace-nowrap">{{ a.rol || a.ruc || '-' }}</td>
                         <td class="max-w-[220px] truncate" [title]="a.tribunal || ''">{{ a.tribunal || '-' }}</td>
                         <td class="whitespace-nowrap">{{ a.sala || '-' }}</td>
+                        <td class="text-center">
+                          <button
+                            type="button"
+                            (click)="$event.stopPropagation(); alternarAsistencia(a)"
+                            [disabled]="marcandoAsistenciaId() === a.id"
+                            class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold transition-colors disabled:opacity-50"
+                            [class]="a.asistio
+                              ? 'bg-accent-100 text-accent-700 hover:bg-accent-200'
+                              : 'border border-neutral-300 text-neutral-500 hover:bg-neutral-100'"
+                            [title]="a.asistio
+                              ? 'Asististe a esta audiencia — clic para deshacer'
+                              : 'Marcar que asististe a esta audiencia'"
+                          >
+                            @if (a.asistio) {
+                              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                              </svg>
+                              Asistí
+                            } @else {
+                              Marcar asistí
+                            }
+                          </button>
+                        </td>
                         <td class="text-center">
                           @if (a.en_google_calendar) {
                             <span class="text-accent-600" title="Publicada en Google Calendar">&#10003;</span>
@@ -308,6 +333,8 @@ export class AudienciasComponent implements OnInit {
 
   loading = signal(true);
   sincronizando = signal(false);
+  /** Id de la audiencia cuya asistencia se está guardando, para deshabilitar su botón. */
+  marcandoAsistenciaId = signal<number | null>(null);
   currentPage = signal(1);
   totalPages = signal(1);
   total = signal(0);
@@ -332,7 +359,7 @@ export class AudienciasComponent implements OnInit {
   filtroOrigenId: number | undefined;
 
   /** Columnas visibles, para el colspan de las filas de detalle. */
-  colspan = computed(() => (this.materiaActiva() === null ? 9 : 8));
+  colspan = computed(() => (this.materiaActiva() === null ? 10 : 9));
 
   /** Agrupación por día: una agenda se lee por jornada, no fila por fila. */
   grupos = computed<GrupoDia[]>(() => {
@@ -416,6 +443,32 @@ export class AudienciasComponent implements OnInit {
 
   alternarDetalle(id: number): void {
     this.detalleAbiertoId.set(this.detalleAbiertoId() === id ? null : id);
+  }
+
+  /**
+   * Marca / desmarca la asistencia a una audiencia. Toggle simple: sin marca se
+   * cuenta como inasistencia en el dashboard (audiencias pasadas sin asistir).
+   * Se actualiza la fila en el sitio, sin recargar todo el listado.
+   */
+  alternarAsistencia(a: Audiencia): void {
+    if (this.marcandoAsistenciaId() !== null) return;
+    const asistio = !a.asistio;
+    this.marcandoAsistenciaId.set(a.id);
+    this.service.marcarAsistencia(a.id, asistio).subscribe({
+      next: (actualizada) => {
+        this.audiencias.update((lista) =>
+          lista.map((x) => (x.id === actualizada.id ? actualizada : x)),
+        );
+        this.marcandoAsistenciaId.set(null);
+        this.notification.success(
+          asistio ? 'Audiencia marcada como asistida' : 'Se quitó la marca de asistencia',
+        );
+      },
+      error: () => {
+        this.marcandoAsistenciaId.set(null);
+        this.notification.error('No se pudo actualizar la asistencia');
+      },
+    });
   }
 
   alternarPasadas(): void {
