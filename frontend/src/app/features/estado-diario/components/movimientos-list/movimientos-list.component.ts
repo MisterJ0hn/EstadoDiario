@@ -4,6 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
+import {
+  EstadoFiltrosMovimientos,
+  MovimientosFiltrosStore,
+} from '../../services/movimientos-filtros.store';
 import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
@@ -220,6 +224,7 @@ function fmtFechaChip(iso: string): string {
 })
 export class MovimientosListComponent implements OnInit {
   private service = inject(EstadoDiarioService);
+  private filtrosStore = inject(MovimientosFiltrosStore);
   private notification = inject(NotificationService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -275,17 +280,55 @@ export class MovimientosListComponent implements OnInit {
       return;
     }
 
-    const queryTab = this.route.snapshot.queryParamMap.get('tab');
-    this.activeTab.set(this.normalizeTab(queryTab) ?? this.normalizeTab(filter) ?? 'no-leidos');
+    const queryTab = this.normalizeTab(this.route.snapshot.queryParamMap.get('tab'));
 
     // Sin las de corte: esas causas se movieron a su propia tabla y filtrar
     // por ellas acá no devolvería nada.
     this.service.getJurisdicciones(true).subscribe({
-      next: (res) => this.jurisdicciones.set(res.jurisdicciones),
+      next: (res) => {
+        this.jurisdicciones.set(res.jurisdicciones);
+        // El chip de jurisdicción muestra el nombre, que recién llega acá.
+        this.sincronizarChips();
+      },
     });
 
+    const guardado = this.filtrosStore.get();
+    if (guardado) {
+      // Se vuelve de una causa (o de otra pantalla): se recupera el filtro con
+      // el que se salió, no se cae a "No Leídos" sin filtro.
+      this.restaurarFiltros(guardado);
+      if (queryTab) this.activeTab.set(queryTab); // un enlace con ?tab= manda
+    } else {
+      this.activeTab.set(queryTab ?? this.normalizeTab(filter) ?? 'no-leidos');
+    }
+
+    this.sincronizarChips();
     this.loadData();
     this.loadCounts();
+    this.persistirFiltros();
+  }
+
+  /** Vuelca a los campos el filtro guardado de la sesión. */
+  private restaurarFiltros(s: EstadoFiltrosMovimientos): void {
+    this.activeTab.set(s.tab);
+    this.filterJurisdiccion = s.jurisdiccion;
+    this.filterFechaDesde = s.fechaDesde;
+    this.filterFechaHasta = s.fechaHasta;
+    this.filterRut = s.rut;
+    this.currentPage.set(s.page);
+  }
+
+  /** Guarda el filtro aplicado para que sobreviva a entrar y salir de una causa. */
+  private persistirFiltros(): void {
+    if (this.isOrigen()) return;
+    this.filtrosStore.set({
+      tab: this.activeTab(),
+      jurisdiccion: this.filterJurisdiccion,
+      fechaDesde: this.filterFechaDesde,
+      fechaHasta: this.filterFechaHasta,
+      rut: this.filterRut,
+      page: this.currentPage(),
+    });
   }
 
   private normalizeTab(value: string | null): Tab | null {
@@ -303,6 +346,7 @@ export class MovimientosListComponent implements OnInit {
       replaceUrl: true,
     });
     this.loadData();
+    this.persistirFiltros();
   }
 
   loadData(): void {
@@ -384,6 +428,7 @@ export class MovimientosListComponent implements OnInit {
   onFilter(): void {
     this.currentPage.set(1);
     this.sincronizarChips();
+    this.persistirFiltros();
     this.loadData();
     this.loadCounts();
   }
@@ -453,6 +498,7 @@ export class MovimientosListComponent implements OnInit {
 
   goToPage(page: number): void {
     this.currentPage.set(page);
+    this.persistirFiltros();
     this.loadData();
   }
 
