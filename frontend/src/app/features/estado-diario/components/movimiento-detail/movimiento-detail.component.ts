@@ -42,21 +42,41 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
             @if (pjudDisponible()) {
               <!-- Mismo botón que Mis Causas: solo se pinta si la causa
                    resultó Civil (lo único que expone la API del PJUD). -->
-              PJUD: 
-              <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())" />
+              PJUD:
+              <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())"
+                              (estadoPjud)="onEstadoPjud($event)" />
             }
             @if (!movimiento()!.leido) {
-              <!-- Sin confirmación: marca resuelto de inmediato. -->
-              <button (click)="onMarcarLeido()" class="btn-success" [disabled]="marcandoLeido()">
-                {{ marcandoLeido() ? 'Guardando...' : 'Marcar como Resuelto' }}
-              </button>
-              <!-- Marcar pendiente y agendar son una sola acción: el modal de
-                   recordatorio deja el registro pendiente con el nivel elegido ahí. -->
-              <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning">Marcar como Pendiente</button>
+              <!-- Mismo menú de acciones que la lista de Estado Diario. -->
+              <div class="relative inline-flex items-center gap-1 align-middle">
+                <button (click)="toggleMenu($event)" class="btn-outline btn-sm" title="Acciones">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                @if (menuAbierto()) {
+                  <!-- Backdrop invisible para cerrar el menú al hacer click afuera -->
+                  <div class="fixed inset-0 z-10" (click)="cerrarMenu()"></div>
+                  <div class="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-neutral-200 bg-white shadow-lg py-1">
+                    <!-- Sin confirmación: es la acción que se usa todo el día,
+                         preguntar cada vez solo agrega un click de más. -->
+                    <button (click)="onMarcarLeido()"
+                            class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                      Resuelto
+                    </button>
+                    <!-- "Pendiente" abre el modal de recordatorio: marcar pendiente
+                         y agendar son una sola acción. -->
+                    <button (click)="onPendiente()"
+                            class="block w-full text-left px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+                      Pendiente
+                    </button>
+                  </div>
+                }
+              </div>
             } @else {
               <!-- Deshace el "resuelto": vuelve el registro a No Leído. -->
-              <button (click)="onMarcarNoLeido()" class="btn-outline" [disabled]="marcandoLeido()">
-                {{ marcandoLeido() ? 'Guardando...' : 'No resuelto' }}
+              <button (click)="onMarcarNoLeido()" class="btn-outline btn-sm" [disabled]="marcandoLeido()">
+                No resuelto
               </button>
             }
           </div>
@@ -234,7 +254,8 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
         (guardado)="onRecordatorioGuardado()"
       />
 
-      <app-pjud-movimientos-modal [causa]="pjudModal()" (cerrado)="pjudModal.set(null)" />
+      <app-pjud-movimientos-modal [causa]="pjudModal()" (cerrado)="pjudModal.set(null)"
+                                   (estadoPjud)="onEstadoPjud($event)" />
     </div>
   `,
 })
@@ -261,6 +282,9 @@ export class MovimientoDetailComponent implements OnInit {
 
   /** id del registro para el que se abre el modal "Marcar como pendiente"; null = cerrado */
   recordatorioMovimientoId = signal<number | null>(null);
+
+  /** Menú de acciones (Resuelto / Pendiente) del encabezado, igual que en la lista. */
+  menuAbierto = signal(false);
 
   marcandoLeido = signal(false);
 
@@ -303,6 +327,15 @@ export class MovimientoDetailComponent implements OnInit {
     });
   }
 
+  /** El botón (polling propio) o el modal (Reintentar/Actualizar) avisan que
+   *  cambió el estado de sincronización de la causa: se refleja en el botón
+   *  sin esperar a resolverla de nuevo por rol/tribunal. */
+  onEstadoPjud(ev: { causaId: number; estado: string }): void {
+    const actual = this.pjudCausa();
+    if (!actual || actual.id !== ev.causaId) return;
+    this.pjudCausa.set({ ...actual, pjud_estado: ev.estado });
+  }
+
   private loadAgendas(id: number): void {
     this.service.getAgendas(id).subscribe({
       next: (res) => this.agendas.set(res.agendas),
@@ -319,8 +352,27 @@ export class MovimientoDetailComponent implements OnInit {
     return 'badge-orange';
   }
 
+  toggleMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    this.menuAbierto.set(!this.menuAbierto());
+  }
+
+  cerrarMenu(): void {
+    this.menuAbierto.set(false);
+  }
+
+  /**
+   * "Pendiente" abre el modal de recordatorio: ahí se elige el nivel de urgencia,
+   * que queda guardado tanto en el registro como en el recordatorio.
+   */
+  onPendiente(): void {
+    this.cerrarMenu();
+    this.recordatorioMovimientoId.set(this.movimiento()!.id);
+  }
+
   /** Sin confirmación: marca resuelto de inmediato al apretar el botón. */
   onMarcarLeido(): void {
+    this.cerrarMenu();
     const id = this.movimiento()!.id;
     this.marcandoLeido.set(true);
     this.service.marcarLeido(id).subscribe({

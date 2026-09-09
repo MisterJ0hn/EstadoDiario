@@ -97,10 +97,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                       {{ d.detalle_estado }}
                     </p>
                   }
-                  <button (click)="reintentar()" [disabled]="cargando()"
-                          class="btn-primary btn-sm mt-1 disabled:opacity-50">
-                    {{ cargando() ? 'Consultando...' : 'Reintentar' }}
-                  </button>
+                  
                 </div>
               }
 
@@ -593,6 +590,12 @@ export class PjudMovimientosModalComponent {
   }
 
   @Output() cerrado = new EventEmitter<void>();
+  /** Cada vez que se consulta al PJUD (abrir, Reintentar, Actualizar, cambiar
+   *  cuaderno) se avisa el estado resultante: el botón que abrió este modal
+   *  vive en otra pantalla y no se entera solo de que acá se disparó un
+   *  scrape nuevo. Así su ícono y la columna "Ult. Sync. Pjud" se actualizan
+   *  sin esperar a que se recargue toda la lista. */
+  @Output() estadoPjud = new EventEmitter<{ causaId: number; estado: PjudMovimientosResponse['estado'] }>();
 
   cargando = signal(false);
   error = signal<string | null>(null);
@@ -617,6 +620,7 @@ export class PjudMovimientosModalComponent {
           this.cuadernoSel.set(res.cuaderno_consultado_id);
         }
         this.cargando.set(false);
+        this.estadoPjud.emit({ causaId, estado: res.estado });
       },
       error: (err) => {
         this.cargando.set(false);

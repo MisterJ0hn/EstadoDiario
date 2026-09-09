@@ -1,6 +1,6 @@
 import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, inject, signal } from '@angular/core';
 
-import { Causa } from '@core/models/causa.model';
+import { Causa, PjudMovimientosResponse } from '@core/models/causa.model';
 import { PjudBotonVariante, pjudBotonEstado, pjudBotonTitulo } from '@core/utils/pjud-estado';
 import { CausaService } from '../../services/causa.service';
 
@@ -35,9 +35,12 @@ const MARTILLO_PJUD_PNG =
  * El ícono no espera a que el padre vuelva a pedir la lista:
  * - Al hacer clic en una causa `nuevo`, pasa a `sincronizando` al toque (antes
  *   de que responda nada), porque abrir el modal es lo que dispara el scrape.
- * - Mientras está `sincronizando` (por ese clic, o porque ya venía así desde
- *   el padre), se pregunta por Ajax cada 5 segundos si terminó. Al quedar
- *   `listo` o `error` se pinta de inmediato y se deja de preguntar.
+ * - Mientras está `sincronizando` (por ese clic, porque ya venía así desde el
+ *   padre, o porque el modal de detalle disparó un Reintentar/Actualizar y
+ *   avisó por `(estadoPjud)`), se pregunta por Ajax cada 5 segundos si
+ *   terminó. Al quedar `listo` o `error` se pinta de inmediato, se deja de
+ *   preguntar y se avisa por `(estadoPjud)` para que quien lo use actualice
+ *   lo que tenga (p.ej. la columna "Ult. Sync. Pjud") sin recargar la lista.
  */
 @Component({
   selector: 'app-pjud-boton',
@@ -74,6 +77,11 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
 
   @Input() causa: Causa | null = null;
   @Output() abrir = new EventEmitter<void>();
+  /** Se dispara cuando este componente, por su cuenta, se entera de que una
+   *  sincronización terminó (`listo`/`error`/`sin_credenciales`). Quien lo use
+   *  puede refrescar con esto lo que tenga de esa causa (p.ej. la columna
+   *  "Ult. Sync. Pjud") sin esperar a recargar toda la lista. */
+  @Output() estadoPjud = new EventEmitter<{ causaId: number; estado: PjudMovimientosResponse['estado'] }>();
 
   readonly martillo = MARTILLO_PJUD_PNG;
 
@@ -82,22 +90,32 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
   private estadoLocal = signal<PjudBotonVariante | null>(null);
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private causaIdPolling: number | null = null;
+  /** Último `pjud_estado` visto en `causa`, para distinguir un cambio real
+   *  (p.ej. el modal de detalle disparó un Reintentar/Actualizar) de que el
+   *  padre simplemente pasó un objeto nuevo con el mismo valor. `undefined`
+   *  = todavía no se miró ninguno. */
+  private ultimoPjudEstado: string | null | undefined = undefined;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (!('causa' in changes)) return;
 
-    // Cambió de causa (no solo se refrescó el objeto de la misma fila): se
-    // olvida cualquier estado y polling que fueran de la anterior.
-    if (this.causa?.id !== this.causaIdPolling && this.pollTimer) {
+    const causaId = this.causa?.id ?? null;
+    if (causaId !== this.causaIdPolling && this.pollTimer) {
       this.detenerPolling();
-      this.estadoLocal.set(null);
     }
 
-    // Si ya viene "sincronizando" desde el padre (p.ej. al recargar la lista
-    // mientras el PJUD sigue scrapeando), hay que seguir preguntando por su
-    // cuenta: nada más la va a refrescar.
-    if (this.causa && !this.estadoLocal() && pjudBotonEstado(this.causa.pjud_estado) === 'sincronizando') {
-      this.iniciarPolling(this.causa.id);
+    const nuevoEstado = this.causa?.pjud_estado ?? null;
+    if (nuevoEstado === this.ultimoPjudEstado) return;
+    this.ultimoPjudEstado = nuevoEstado;
+
+    // El estado que trae el padre cambió de verdad: manda ese (típicamente
+    // porque el modal de detalle disparó un Reintentar/Actualizar), no lo que
+    // supiera este botón por su propio polling.
+    this.estadoLocal.set(null);
+    if (causaId != null && pjudBotonEstado(nuevoEstado) === 'sincronizando') {
+      this.iniciarPolling(causaId);
+    } else {
+      this.detenerPolling();
     }
   }
 
@@ -146,6 +164,7 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
         if (res.estado === 'sincronizando') return;
         this.estadoLocal.set(pjudBotonEstado(res.estado));
         this.detenerPolling();
+        this.estadoPjud.emit({ causaId, estado: res.estado });
       },
       // Error de red al consultar: no se sabe nada nuevo, se sigue intentando
       // en el próximo tick en vez de mostrar una falla que no es tal.

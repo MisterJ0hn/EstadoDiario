@@ -269,7 +269,8 @@ import { CausaService } from './services/causa.service';
                         {{ c.pjud_fecha_sincronizacion ? fmtFecha(c.pjud_fecha_sincronizacion) : '-' }}
                       </td>
                       <td class="whitespace-nowrap">
-                        <app-pjud-boton [causa]="c" (abrir)="verMovimientosPjud(c)" />
+                        <app-pjud-boton [causa]="c" (abrir)="verMovimientosPjud(c)"
+                                        (estadoPjud)="onEstadoPjud($event)" />
                       </td>
                     }
                   </tr>
@@ -308,7 +309,8 @@ import { CausaService } from './services/causa.service';
       }
     </div>
 
-    <app-pjud-movimientos-modal [causa]="causaPjud()" (cerrado)="causaPjud.set(null)" />
+    <app-pjud-movimientos-modal [causa]="causaPjud()" (cerrado)="causaPjud.set(null)"
+                                 (estadoPjud)="onEstadoPjud($event)" />
   `,
 })
 export class CausasComponent implements OnInit {
@@ -407,6 +409,24 @@ export class CausasComponent implements OnInit {
 
   verMovimientosPjud(c: Causa): void {
     this.causaPjud.set(c);
+  }
+
+  /** El botón (polling propio) o el modal (Reintentar/Actualizar) avisan que
+   *  cambió el estado de sincronización de una causa: se refleja en su fila
+   *  —ícono y, si quedó `listo`, la columna "Ult. Sync. Pjud"— sin esperar a
+   *  recargar toda la lista. */
+  onEstadoPjud(ev: { causaId: number; estado: string }): void {
+    this.causas.update((lista) =>
+      lista.map((c) =>
+        c.id === ev.causaId
+          ? {
+              ...c,
+              pjud_estado: ev.estado,
+              ...(ev.estado === 'listo' ? { pjud_fecha_sincronizacion: new Date().toISOString() } : {}),
+            }
+          : c,
+      ),
+    );
   }
 
   /** ISO (yyyy-MM-dd) a dd-MM-yyyy sin pasar por Date, que desplaza el día. */

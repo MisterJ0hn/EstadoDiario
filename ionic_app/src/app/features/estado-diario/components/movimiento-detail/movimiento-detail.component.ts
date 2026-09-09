@@ -43,20 +43,35 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
               <!-- Mismo botón que Mis Causas: solo se pinta si la causa
                    resultó Civil (lo único que expone la API del PJUD). -->
               PJUD: 
-              <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())" />
+              <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())"
+                              (estadoPjud)="onEstadoPjud($event)" />
             }
             @if (!movimiento()!.leido) {
-              <!-- Sin confirmación: marca resuelto de inmediato. -->
-              <button (click)="onMarcarLeido()" class="btn-success" [disabled]="marcandoLeido()">
-                {{ marcandoLeido() ? 'Guardando...' : 'Marcar como Resuelto' }}
-              </button>
-              <!-- Marcar pendiente y agendar son una sola acción: el modal de
-                   recordatorio deja el registro pendiente con el nivel elegido ahí. -->
-              <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning">Marcar como Pendiente</button>
+              <!-- Mismos botones que la lista de Estado Diario: solo icono, con
+                   title y aria-label para descubrir y anunciar la acción. -->
+              <div class="inline-flex items-center gap-2 align-middle">
+                <!-- Sin confirmación: marca resuelto de inmediato. -->
+                <button (click)="onMarcarLeido()" class="btn-success btn-sm" [disabled]="marcandoLeido()"
+                        title="Marcar como resuelto" aria-label="Marcar como resuelto">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+                <!-- "Pendiente" abre el modal de recordatorio: marcar pendiente y
+                     agendar son una sola acción. De ahí el reloj. -->
+                <button (click)="recordatorioMovimientoId.set(movimiento()!.id)" class="btn-warning btn-sm"
+                        title="Marcar como pendiente" aria-label="Marcar como pendiente">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+              </div>
             } @else {
               <!-- Deshace el "resuelto": vuelve el registro a No Leído. -->
-              <button (click)="onMarcarNoLeido()" class="btn-outline" [disabled]="marcandoLeido()">
-                {{ marcandoLeido() ? 'Guardando...' : 'No resuelto' }}
+              <button (click)="onMarcarNoLeido()" class="btn-outline btn-sm" [disabled]="marcandoLeido()"
+                      title="Volver a No Leído" aria-label="Volver a No Leído">
+                No resuelto
               </button>
             }
           </div>
@@ -234,7 +249,8 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
         (guardado)="onRecordatorioGuardado()"
       />
 
-      <app-pjud-movimientos-modal [causa]="pjudModal()" (cerrado)="pjudModal.set(null)" />
+      <app-pjud-movimientos-modal [causa]="pjudModal()" (cerrado)="pjudModal.set(null)"
+                                   (estadoPjud)="onEstadoPjud($event)" />
     </div>
   `,
 })
@@ -301,6 +317,15 @@ export class MovimientoDetailComponent implements OnInit {
       next: (res) => this.pjudCausa.set(res.causa),
       error: () => this.pjudCausa.set(null),
     });
+  }
+
+  /** El botón (polling propio) o el modal (Reintentar/Actualizar) avisan que
+   *  cambió el estado de sincronización de la causa: se refleja en el botón
+   *  sin esperar a resolverla de nuevo por rol/tribunal. */
+  onEstadoPjud(ev: { causaId: number; estado: string }): void {
+    const actual = this.pjudCausa();
+    if (!actual || actual.id !== ev.causaId) return;
+    this.pjudCausa.set({ ...actual, pjud_estado: ev.estado });
   }
 
   private loadAgendas(id: number): void {
