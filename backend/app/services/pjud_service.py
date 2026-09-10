@@ -507,7 +507,10 @@ class PjudService:
           - la sección de trámites se llama `movimientos` (no `historia`);
           - hay `materias`, `plazos` y `diligencias` en vez de `escritos_resolver`
             y `exhortos`;
-          - Familia no expone cuadernos: siempre se consulta el 1.
+          - Familia no expone cuadernos: siempre se consulta el 1;
+          - NO se resuelve el tribunal contra un catálogo: la búsqueda privada de
+            Familia filtra solo por Rit/Rol/Año, así que `corte` y `tribunal` se
+            mandan en 0 (van en el cuerpo solo por formar parte de la clave).
         """
         if (causa.materia or "").strip().lower() != "familia":
             raise PjudApiError(
@@ -515,9 +518,8 @@ class PjudService:
             )
 
         tipo, rol, anio = self.parsear_rol_civil(causa.rol)
-        corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "familia")
         cuerpo_causa = {
-            "corte": corte_id, "tribunal": tribunal_id,
+            "corte": 0, "tribunal": 0,
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
@@ -527,9 +529,7 @@ class PjudService:
             and credenciales_pjud.get("clave")
         )
 
-        diag: list[str] = [
-            f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"
-        ]
+        diag: list[str] = [f"tipo={tipo} rol={rol} anio={anio}"]
         if not puede_sincronizar:
             diag.append("sin clave del OJV cargada")
 

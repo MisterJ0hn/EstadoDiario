@@ -9,12 +9,6 @@ import pytest
 
 from app.services.pjud_service import PjudApiError, PjudNoEncontrado, PjudService
 
-_CATALOGO = [
-    {"id": 11, "nombre": "C.A. de Valparaíso", "tribunales": [
-        {"id": 234, "nombre": "1° Juzgado Civil de Valparaíso"},
-    ]},
-]
-
 _CREDS = {"rut": "12345678-9", "clave": "secreta", "metodo_login": 1}
 
 
@@ -27,9 +21,6 @@ class TestObtenerDetalleFamilia:
         monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
         monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
         servicio = PjudService()
-        monkeypatch.setattr(
-            servicio, "_obtener_catalogo", lambda competencia="familia": _CATALOGO
-        )
         self.llamadas: list[str] = []
 
         def fake_request(metodo, ruta, **kwargs):
@@ -78,8 +69,8 @@ class TestObtenerDetalleFamilia:
         assert cuerpos and cuerpos[0]["rut"] == "12345678-9"
         assert cuerpos[0]["clave"] == "secreta"
         assert cuerpos[0]["metodo_login"] == 1
-        # corte/tribunal se resuelven del catálogo de Familia.
-        assert cuerpos[0]["corte"] == 11 and cuerpos[0]["tribunal"] == 234
+        # Familia no resuelve tribunal contra catálogo: corte/tribunal van en 0.
+        assert cuerpos[0]["corte"] == 0 and cuerpos[0]["tribunal"] == 0
 
     def test_sync_con_error_devuelve_estado_error_y_no_reintenta(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
