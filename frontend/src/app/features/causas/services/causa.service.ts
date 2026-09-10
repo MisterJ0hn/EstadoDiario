@@ -8,6 +8,7 @@ import {
   CausaFiltros,
   CausaListResponse,
   CausaResumenResponse,
+  PjudFamiliaMovimientosResponse,
   PjudMovimientosResponse,
   PjudPorRolResponse,
 } from '@core/models/causa.model';
@@ -79,9 +80,10 @@ export class CausaService {
     return this.http.get<{ disponible: boolean }>(`${this.apiUrl}/pjud/disponible`);
   }
 
-  /** Resuelve la Causa Civil de la cartera por rol y tribunal, para ofrecer el
-   *  botón "Detalle PJUD" en pantallas que no tienen el id de la Causa
-   *  (Estado Diario, Movimientos). `causa: null` si no calza o no es Civil. */
+  /** Resuelve la Causa Civil o de Familia de la cartera por rol y tribunal,
+   *  para ofrecer el botón "Detalle PJUD" en pantallas que no tienen el id de
+   *  la Causa (Estado Diario, Movimientos). `causa: null` si no calza o no es
+   *  Civil ni de Familia. */
   pjudPorRol(rol: string, tribunal: string): Observable<PjudPorRolResponse> {
     const params = new HttpParams().set('rol', rol).set('tribunal', tribunal);
     return this.http.get<PjudPorRolResponse>(`${this.apiUrl}/pjud/por-rol`, { params });
@@ -101,6 +103,19 @@ export class CausaService {
     if (cuaderno != null) params = params.set('cuaderno', String(cuaderno));
     return this.http.get<PjudMovimientosResponse>(
       `${this.apiUrl}/${causaId}/pjud/movimientos`,
+      { params },
+    );
+  }
+
+  /** Detalle EN VIVO de una causa de **Familia**, consultado directo al PJUD.
+   *  Misma semántica que `pjudMovimientos` (Civil) pero la respuesta tiene otra
+   *  forma (`movimientos`, `materias`, `plazos`, `diligencias`; sin cuadernos).
+   *  `forzar` pide además que el PJUD sincronice antes de responder. */
+  pjudFamilia(causaId: number, forzar = false): Observable<PjudFamiliaMovimientosResponse> {
+    let params = new HttpParams();
+    if (forzar) params = params.set('forzar', 'true');
+    return this.http.get<PjudFamiliaMovimientosResponse>(
+      `${this.apiUrl}/${causaId}/pjud/familia`,
       { params },
     );
   }

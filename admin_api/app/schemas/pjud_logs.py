@@ -13,6 +13,9 @@ class PjudLlamadoResponse(BaseModel):
     cliente_nombre: str | None = None
     rol: str | None = None
     tribunal: str | None = None
+    # Servicio de api-pjud consultado: 'Civil' | 'Familia'. Nulo en las filas
+    # anteriores a que existiera el detalle de Familia.
+    materia: str | None = None
     # true = el usuario apretó "Actualizar desde el PJUD".
     forzar: bool = False
     # 'listo' | 'sincronizando' | 'error'.

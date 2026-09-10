@@ -17,6 +17,9 @@ export interface PjudLlamado {
   cliente_nombre: string | null;
   rol: string | null;
   tribunal: string | null;
+  /** Servicio de api-pjud consultado: 'Civil' | 'Familia'. Nulo en las filas
+   *  anteriores a que existiera el detalle de Familia. */
+  materia: string | null;
   /** true = el usuario apretó "Actualizar desde el PJUD". */
   forzar: boolean;
   resultado: ResultadoPjud;

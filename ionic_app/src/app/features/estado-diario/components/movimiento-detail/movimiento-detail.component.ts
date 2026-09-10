@@ -7,6 +7,7 @@ import { Movimiento, Agenda } from '@core/models/estado-diario.model';
 import { Causa } from '@core/models/causa.model';
 import { PjudBotonComponent } from '@features/causas/components/pjud-boton/pjud-boton.component';
 import { PjudMovimientosModalComponent } from '@features/causas/components/pjud-movimientos-modal/pjud-movimientos-modal.component';
+import { PjudFamiliaModalComponent } from '@features/causas/components/pjud-familia-modal/pjud-familia-modal.component';
 import { CausaService } from '@features/causas/services/causa.service';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 
@@ -15,7 +16,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
   standalone: true,
   imports: [
     CommonModule, RecordatorioModalComponent,
-    PjudBotonComponent, PjudMovimientosModalComponent,
+    PjudBotonComponent, PjudMovimientosModalComponent, PjudFamiliaModalComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -41,8 +42,9 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
           <div class="flex items-center gap-2">
             @if (pjudDisponible()) {
               <!-- Mismo botón que Mis Causas: solo se pinta si la causa
-                   resultó Civil (lo único que expone la API del PJUD). -->
-              PJUD: 
+                   resultó Civil o de Familia (las materias que expone la API
+                   del PJUD). -->
+              PJUD:
               <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())"
                               (estadoPjud)="onEstadoPjud($event)" />
             }
@@ -249,8 +251,13 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
         (guardado)="onRecordatorioGuardado()"
       />
 
-      <app-pjud-movimientos-modal [causa]="pjudModal()" (cerrado)="pjudModal.set(null)"
-                                   (estadoPjud)="onEstadoPjud($event)" />
+      <!-- Un modal por materia (Civil / Familia): ver CausasComponent. -->
+      <app-pjud-movimientos-modal
+          [causa]="pjudModal()?.materia === 'Familia' ? null : pjudModal()"
+          (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+      <app-pjud-familia-modal
+          [causa]="pjudModal()?.materia === 'Familia' ? pjudModal() : null"
+          (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
     </div>
   `,
 })
@@ -268,9 +275,10 @@ export class MovimientoDetailComponent implements OnInit {
   /** Si api-pjud.codifica.cl está configurada; sin esto el botón "Detalle
    *  PJUD" no tiene sentido y no se muestra (mismo criterio que Mis Causas). */
   pjudDisponible = signal(false);
-  /** La Causa Civil de la cartera que calza con el rol/tribunal de este
-   *  registro, resuelta por `/causas/pjud/por-rol`; null = no hay cartera
-   *  cargada, no calza ninguna, o no es Civil (ahí no se muestra el botón). */
+  /** La Causa Civil o de Familia de la cartera que calza con el rol/tribunal de
+   *  este registro, resuelta por `/causas/pjud/por-rol`; null = no hay cartera
+   *  cargada, no calza ninguna, o no es Civil ni de Familia (ahí no se muestra
+   *  el botón). */
   pjudCausa = signal<Causa | null>(null);
   /** Causa para la que está abierto el modal de detalle PJUD; null = cerrado. */
   pjudModal = signal<Causa | null>(null);
@@ -305,9 +313,9 @@ export class MovimientoDetailComponent implements OnInit {
     });
   }
 
-  /** Busca la Causa Civil que corresponde a este registro por rol/tribunal,
-   *  para el botón "Detalle PJUD". Sin rol o tribunal, o si no calza ninguna,
-   *  simplemente no se ofrece el botón. */
+  /** Busca la Causa Civil o de Familia que corresponde a este registro por
+   *  rol/tribunal, para el botón "Detalle PJUD". Sin rol o tribunal, o si no
+   *  calza ninguna, simplemente no se ofrece el botón. */
   private resolverPjud(m: Movimiento): void {
     if (!m.rol || !m.tribunal) {
       this.pjudCausa.set(null);

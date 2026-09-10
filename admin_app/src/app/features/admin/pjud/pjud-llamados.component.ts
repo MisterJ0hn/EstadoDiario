@@ -41,7 +41,7 @@ import { PjudLogService } from './pjud-log.service';
       <div>
         <h1 class="text-2xl font-bold text-neutral-800">Consultas a la API del PJUD</h1>
         <p class="text-neutral-500 mt-1">
-          Cada vez que un estudio abre "Detalle PJUD" de una causa Civil.
+          Cada vez que un estudio abre "Detalle PJUD" de una causa Civil o de Familia.
           @if (resumenTexto()) {
             <span class="text-neutral-600">· últimos 7 días: {{ resumenTexto() }}</span>
           }
@@ -135,6 +135,7 @@ import { PjudLogService } from './pjud-log.service';
                   <tr>
                     <th scope="col">Fecha</th>
                     <th scope="col">Cliente</th>
+                    <th scope="col">Materia</th>
                     <th scope="col">Rol</th>
                     <th scope="col">Tribunal</th>
                     <th scope="col">Resultado</th>
@@ -152,6 +153,7 @@ import { PjudLogService } from './pjud-log.service';
                       <td class="whitespace-nowrap">
                         {{ r.cliente_nombre || '—' }}
                       </td>
+                      <td class="whitespace-nowrap">{{ r.materia || '—' }}</td>
                       <td class="whitespace-nowrap">
                         {{ r.rol || '—' }}
                         @if (r.forzar) {
@@ -174,7 +176,7 @@ import { PjudLogService } from './pjud-log.service';
                     </tr>
                     @if (expandida() === r.id) {
                       <tr>
-                        <td colspan="8" class="bg-neutral-50 !whitespace-normal">
+                        <td colspan="9" class="bg-neutral-50 !whitespace-normal">
                           <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 py-1 text-sm">
                             @if (r.mensaje) {
                               <dt class="text-neutral-500">Mensaje</dt>

@@ -33,7 +33,12 @@ from app.schemas.causa import (
     CausaResumenResponse,
     ConteoMateria,
 )
-from app.schemas.pjud import PjudDisponibleResponse, PjudMovimientosResponse, PjudPorRolResponse
+from app.schemas.pjud import (
+    PjudDisponibleResponse,
+    PjudFamiliaMovimientosResponse,
+    PjudMovimientosResponse,
+    PjudPorRolResponse,
+)
 from app.services.causa_import_service import CausaImportService, parse_nombre_archivo
 from app.services.pjud_service import PjudApiError, PjudNoEncontrado, PjudService
 
@@ -275,15 +280,15 @@ def listar(
 
     # Último estado conocido de "Detalle PJUD" por causa (del log de llamados,
     # NO en vivo al proveedor): pinta el icono del botón sin el costo de
-    # golpear a api-pjud una vez por fila. Solo aplica a las Civiles, que son
-    # las únicas con ese botón.
+    # golpear a api-pjud una vez por fila. Solo aplica a Civil y Familia, que
+    # son las materias con ese botón.
     if settings.pjud_api_activo:
-        civiles_ids = [
+        pjud_ids = [
             r.id for r, c in zip(causas_resp, items)
-            if (c.materia or "").strip().lower() == "civil"
+            if (c.materia or "").strip().lower() in ("civil", "familia")
         ]
         ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
-            cliente_id=tenant.cliente_id, causa_ids=civiles_ids,
+            cliente_id=tenant.cliente_id, causa_ids=pjud_ids,
         )
         for r in causas_resp:
             llamado = ultimos_pjud.get(r.id)
@@ -317,7 +322,7 @@ def pjud_disponible(current_user: Usuario = Depends(get_usuario_actual)):
 @router.get(
     "/pjud/por-rol",
     response_model=PjudPorRolResponse,
-    summary="Resuelve la Causa Civil de la cartera por rol y tribunal",
+    summary="Resuelve la Causa Civil o de Familia de la cartera por rol y tribunal",
 )
 def pjud_por_rol(
     rol: str = Query(...),
@@ -329,11 +334,11 @@ def pjud_por_rol(
 ):
     """Para ofrecer el botón "Detalle PJUD" desde pantallas que muestran una
     causa por su rol/tribunal pero no conocen su id en la tabla `Causa`
-    (Estado Diario, Movimientos): resuelve la Causa Civil de la cartera
-    vigente que calza, con su `pjud_estado` ya resuelto (mismo icono que en
-    Mis Causas). `causa: null` si no calza ninguna o no es Civil: ahí la
-    pantalla que llama simplemente no muestra el botón."""
-    causa = CausaRepository(db).find_civil_por_rol_tribunal(rol, tribunal)
+    (Estado Diario, Movimientos): resuelve la Causa Civil o de Familia de la
+    cartera vigente que calza, con su `pjud_estado` ya resuelto (mismo icono
+    que en Mis Causas). `causa: null` si no calza ninguna o no es Civil ni de
+    Familia: ahí la pantalla que llama simplemente no muestra el botón."""
+    causa = CausaRepository(db).find_pjud_por_rol_tribunal(rol, tribunal)
     if not causa:
         return PjudPorRolResponse(causa=None)
 
@@ -457,6 +462,77 @@ def pjud_movimientos(
             causa_id=causa_id,
             rol=causa.rol,
             tribunal=causa.tribunal,
+            materia="Civil",
+            forzar=forzar,
+            resultado=resultado_log,
+            http_status=http_status,
+            mensaje=mensaje_log,
+            diagnostico=diagnostico_log,
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
+
+
+@router.get(
+    "/{causa_id}/pjud/familia",
+    response_model=PjudFamiliaMovimientosResponse,
+    summary="Detalle de una causa de Familia consultado en vivo al PJUD",
+)
+def pjud_familia(
+    causa_id: int,
+    response: Response,
+    forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Igual que `/pjud/movimientos` pero para causas de materia Familia: el
+    flujo de sincronización asíncrona es el mismo, cambia la forma de la
+    respuesta (ver `PjudFamiliaMovimientosResponse`). Familia no tiene
+    cuadernos, así que no hay parámetro `cuaderno`."""
+    causa = CausaRepository(db).find_by_id(causa_id)
+    if not causa:
+        raise HTTPException(status_code=404, detail="Causa no encontrada")
+
+    credenciales_pjud = {
+        "rut": current_user.pjud_rut,
+        "clave": current_user.pjud_clave,
+        "metodo_login": current_user.pjud_metodo_login,
+    }
+
+    inicio = time.monotonic()
+    resultado_log = "error"
+    http_status = 502
+    mensaje_log: str | None = None
+    diagnostico_log: str | None = None
+    try:
+        resultado = PjudService().obtener_detalle_familia(
+            causa,
+            forzar_sincronizacion=forzar,
+            credenciales_pjud=credenciales_pjud,
+        )
+        estado = resultado.get("estado")
+        diagnostico_log = resultado.pop("diagnostico", None)
+        if estado == "sincronizando":
+            response.status_code = http_status = 202
+        else:
+            # 'sin_credenciales' y 'error' también van 200: el estado va en el
+            # cuerpo y el modal decide qué mostrar.
+            http_status = 200
+        resultado_log = estado or "listo"
+        mensaje_log = resultado.get("mensaje")
+        return PjudFamiliaMovimientosResponse(**resultado)
+    except PjudApiError as e:
+        mensaje_log = str(e)
+        raise HTTPException(status_code=502, detail=mensaje_log)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra,
+            tenant=tenant,
+            causa_id=causa_id,
+            rol=causa.rol,
+            tribunal=causa.tribunal,
+            materia="Familia",
             forzar=forzar,
             resultado=resultado_log,
             http_status=http_status,
@@ -467,7 +543,8 @@ def pjud_movimientos(
 
 
 def _registrar_llamado_pjud(db_maestra, *, tenant, causa_id, rol, tribunal, forzar,
-                            resultado, http_status, mensaje, diagnostico, duracion_ms) -> None:
+                            resultado, http_status, mensaje, diagnostico, duracion_ms,
+                            materia=None) -> None:
     """Anota la consulta en la base principal. Nunca revienta hacia afuera: un
     fallo del log no puede impedir que el estudio vea su causa."""
     try:
@@ -478,6 +555,7 @@ def _registrar_llamado_pjud(db_maestra, *, tenant, causa_id, rol, tribunal, forz
             causa_id=causa_id,
             rol=rol,
             tribunal=tribunal,
+            materia=materia,
             forzar=forzar,
             resultado=resultado,
             http_status=http_status,

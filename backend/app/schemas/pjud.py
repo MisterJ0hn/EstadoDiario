@@ -176,6 +176,113 @@ class PjudMovimientosResponse(BaseModel):
     exhortos: list[PjudExhortoItem] = []
 
 
+# ── Familia ────────────────────────────────────────────────────
+# El detalle de Familia comparte con Civil la cabecera y el manejo de
+# documentos, pero la respuesta de movimientos es distinta: la sección se llama
+# `movimientos` (no `historia`), no hay `escritos_resolver` ni `exhortos`, y
+# suma `materias`, `plazos` y `diligencias`. Familia tampoco expone cuadernos.
+
+
+class PjudFamiliaCausaDetalle(BaseModel):
+    identificador: str
+    estado: str
+    rit: str | None = None
+    caratula: str | None = None
+    fecha_ingreso: str | None = None
+    ruc: str | None = None
+    proceso: str | None = None
+    forma_inicio: str | None = None
+    est_adm: str | None = None
+    etapa: str | None = None
+    estado_proceso: str | None = None
+    tribunal: str | None = None
+    fecha_ultima_sincronizacion: str | None = None
+    anexos_causa: list[PjudAnexoCausaItem] = []
+    certificado_envio: PjudDocumentoRef | None = None
+    ebook: PjudDocumentoRef | None = None
+
+
+class PjudFamiliaAnexoItem(BaseModel):
+    folio: int | None = None
+    doc: str | None = None
+    fecha: str | None = None
+    nombre_documento: str | None = None
+    observacion: str | None = None
+
+
+class PjudFamiliaMovimientoItem(BaseModel):
+    folio_texto: str | None = None
+    etapa: str | None = None
+    estado: str | None = None
+    tramite: str | None = None
+    descripcion_tramite: str | None = None
+    fecha_tramite: str | None = None
+    anexo: list[PjudFamiliaAnexoItem] = []
+    documentos: list[PjudDocumentoTramite] = []
+
+
+class PjudFamiliaLitiganteItem(BaseModel):
+    sujeto: str | None = None
+    rut: str | None = None
+    persona: str | None = None
+    razon_social: str | None = None
+
+
+class PjudMateriaItem(BaseModel):
+    codigo: str | None = None
+    glosa_de_materia: str | None = None
+    estado: str | None = None
+    fecha_termino: str | None = None
+
+
+class PjudPlazoItem(BaseModel):
+    tipo_plazo: str | None = None
+    ambito_afectado: str | None = None
+    fecha_inicio: str | None = None
+    fecha_termino: str | None = None
+    duracion: str | None = None
+    estado: str | None = None
+    tramite: str | None = None
+    fecha_suspension: str | None = None
+    fecha_reactivacion: str | None = None
+
+
+class PjudFamiliaNotificacionItem(BaseModel):
+    estado_fecha_notif: str | None = None
+    tipo_notif: str | None = None
+    ente_notif: str | None = None
+    rit: str | None = None
+    ruc: str | None = None
+    fecha_tramite: str | None = None
+    tipo_parte: str | None = None
+    nombre: str | None = None
+    tramite: str | None = None
+    certificacion: str | None = None
+
+
+class PjudDiligenciaItem(BaseModel):
+    doc_solicitud: str | None = None
+    doc_respuesta: str | None = None
+    estado_diligencia: str | None = None
+    tipo_diligencia: str | None = None
+    fecha_tramite: str | None = None
+
+
+class PjudFamiliaMovimientosResponse(BaseModel):
+    # Mismos estados y semántica que `PjudMovimientosResponse` (ver ahí).
+    estado: Literal["listo", "sincronizando", "error", "sin_credenciales"] = "listo"
+    mensaje: str | None = None
+    ultimo_error: str | None = None
+    detalle_estado: str | None = None
+    causa: PjudFamiliaCausaDetalle | None = None
+    movimientos: list[PjudFamiliaMovimientoItem] = []
+    litigantes: list[PjudFamiliaLitiganteItem] = []
+    notificaciones: list[PjudFamiliaNotificacionItem] = []
+    materias: list[PjudMateriaItem] = []
+    plazos: list[PjudPlazoItem] = []
+    diligencias: list[PjudDiligenciaItem] = []
+
+
 class PjudErrorResponse(BaseModel):
     exito: bool = False
     mensaje: str
@@ -186,10 +293,11 @@ class PjudDisponibleResponse(BaseModel):
 
 
 class PjudPorRolResponse(BaseModel):
-    """Resuelve, por rol y tribunal, la Causa Civil de la cartera vigente que
-    corresponde: es lo que ofrece el botón "Detalle PJUD" en pantallas que no
-    tienen el id de la Causa (Estado Diario, Movimientos) y solo conocen su
-    rol y tribunal. `causa` viene en `null` si no hay cartera cargada, no
-    calza ninguna, o la que calza no es Civil."""
+    """Resuelve, por rol y tribunal, la Causa Civil o de Familia de la cartera
+    vigente que corresponde: es lo que ofrece el botón "Detalle PJUD" en
+    pantallas que no tienen el id de la Causa (Estado Diario, Movimientos) y
+    solo conocen su rol y tribunal. `causa` viene en `null` si no hay cartera
+    cargada, no calza ninguna, o la que calza no es Civil ni de Familia (las
+    dos materias que expone la API del PJUD)."""
 
     causa: CausaResponse | None = None

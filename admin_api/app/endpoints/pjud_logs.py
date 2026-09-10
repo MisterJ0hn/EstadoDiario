@@ -79,6 +79,7 @@ def listar_llamados(
             cliente_nombre=nombres.get(i.cliente_id) if i.cliente_id else None,
             rol=i.rol,
             tribunal=i.tribunal,
+            materia=i.materia,
             forzar=i.forzar,
             resultado=i.resultado,
             http_status=i.http_status,

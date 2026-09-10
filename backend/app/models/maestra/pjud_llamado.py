@@ -48,6 +48,9 @@ class PjudLlamado(BaseMaestra):
     causa_id: Mapped[Optional[int]] = mapped_column(Integer)
     rol: Mapped[Optional[str]] = mapped_column(String(50))
     tribunal: Mapped[Optional[str]] = mapped_column(String(255))
+    # 'Civil' o 'Familia': qué servicio de api-pjud se consultó. Nula en las
+    # filas anteriores a que el detalle de Familia existiera (todas eran Civil).
+    materia: Mapped[Optional[str]] = mapped_column(String(20))
 
     # `true` cuando el usuario apretó "Actualizar desde el PJUD".
     forzar: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

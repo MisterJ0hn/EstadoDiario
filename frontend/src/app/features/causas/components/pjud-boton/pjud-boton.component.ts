@@ -1,4 +1,5 @@
 import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, inject, signal } from '@angular/core';
+import { Observable } from 'rxjs';
 
 import { Causa, PjudMovimientosResponse } from '@core/models/causa.model';
 import { PjudBotonVariante, pjudBotonEstado, pjudBotonTitulo } from '@core/utils/pjud-estado';
@@ -27,8 +28,9 @@ const MARTILLO_PJUD_PNG =
  * - sincronizando: el mismo icono, verde y girando.
  * - error: el mismo icono, rojo y tachado.
  *
- * No pinta nada si `causa` es null o no es Civil (lo único que expone la API
- * del PJUD). Se usa tanto en Mis Causas (que ya tiene la `Causa` completa)
+ * No pinta nada si `causa` es null o no es Civil ni de Familia (las materias
+ * que expone la API del PJUD). Se usa tanto en Mis Causas (que ya tiene la
+ * `Causa` completa)
  * como en pantallas que la resuelven por rol/tribunal (Estado Diario,
  * Movimientos): mismo botón, mismos íconos, en un solo lugar.
  *
@@ -46,7 +48,7 @@ const MARTILLO_PJUD_PNG =
   selector: 'app-pjud-boton',
   standalone: true,
   template: `
-    @if (causa && causa.materia === 'Civil') {
+    @if (causa && (causa.materia === 'Civil' || causa.materia === 'Familia')) {
       <button type="button" class="btn-outline btn-sm !px-2" (click)="onClick()"
               [class.text-warning-500]="variante() === 'nuevo'"
               [class.text-accent-600]="variante() === 'sincronizando'"
@@ -159,7 +161,11 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
    *  sea "sincronizando" es terminal — incluido "sin_credenciales", que si no
    *  se corta acá dejaría preguntando para siempre a quien no cargó su clave. */
   private consultarEstado(causaId: number): void {
-    this.causaService.pjudMovimientos(causaId).subscribe({
+    const consulta$: Observable<Pick<PjudMovimientosResponse, 'estado'>> =
+      this.causa?.materia === 'Familia'
+        ? this.causaService.pjudFamilia(causaId)
+        : this.causaService.pjudMovimientos(causaId);
+    consulta$.subscribe({
       next: (res) => {
         if (res.estado === 'sincronizando') return;
         this.estadoLocal.set(pjudBotonEstado(res.estado));

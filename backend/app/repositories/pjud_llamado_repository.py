@@ -34,6 +34,7 @@ class PjudLlamadoRepository:
         mensaje: Optional[str],
         diagnostico: Optional[str],
         duracion_ms: Optional[int],
+        materia: Optional[str] = None,
     ) -> PjudLlamado:
         fila = PjudLlamado(
             cliente_id=cliente_id,
@@ -42,6 +43,7 @@ class PjudLlamadoRepository:
             causa_id=causa_id,
             rol=rol,
             tribunal=tribunal,
+            materia=materia,
             forzar=forzar,
             resultado=resultado,
             http_status=http_status,

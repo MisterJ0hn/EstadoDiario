@@ -11,6 +11,7 @@ import {
 } from '@shared/components/filtros-panel/filtros-panel.component';
 import { PjudBotonComponent } from './components/pjud-boton/pjud-boton.component';
 import { PjudMovimientosModalComponent } from './components/pjud-movimientos-modal/pjud-movimientos-modal.component';
+import { PjudFamiliaModalComponent } from './components/pjud-familia-modal/pjud-familia-modal.component';
 import { CausaService } from './services/causa.service';
 
 /**
@@ -24,7 +25,7 @@ import { CausaService } from './services/causa.service';
 @Component({
   selector: 'app-causas',
   standalone: true,
-  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudBotonComponent, PjudMovimientosModalComponent],
+  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudBotonComponent, PjudMovimientosModalComponent, PjudFamiliaModalComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-4">
@@ -309,8 +310,16 @@ import { CausaService } from './services/causa.service';
       }
     </div>
 
-    <app-pjud-movimientos-modal [causa]="causaPjud()" (cerrado)="causaPjud.set(null)"
-                                 (estadoPjud)="onEstadoPjud($event)" />
+    <!-- Un modal por materia: Civil y Familia consultan servicios distintos de
+         api-pjud y la ficha tiene otra forma. causaPjud() guarda la causa
+         abierta; su materia decide cuál se muestra. -->
+
+    <app-pjud-movimientos-modal
+        [causa]="causaPjud()?.materia === 'Familia' ? null : causaPjud()"
+        (cerrado)="causaPjud.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+    <app-pjud-familia-modal
+        [causa]="causaPjud()?.materia === 'Familia' ? causaPjud() : null"
+        (cerrado)="causaPjud.set(null)" (estadoPjud)="onEstadoPjud($event)" />
   `,
 })
 export class CausasComponent implements OnInit {

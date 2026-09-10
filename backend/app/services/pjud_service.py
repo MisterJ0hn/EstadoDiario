@@ -116,15 +116,17 @@ class PjudService:
     usuario sería maltratar una API que no es nuestra.
     """
 
-    # Reentrante a propósito: `_obtener_catalogo_civil` toma el lock y por
-    # dentro `_request` llama a `_obtener_token`, que lo vuelve a tomar. Con un
-    # Lock normal eso es un deadlock y la consulta se cuelga hasta que el proxy
-    # la corta con un 502.
+    # Reentrante a propósito: `_obtener_catalogo` toma el lock y por dentro
+    # `_request` llama a `_obtener_token`, que lo vuelve a tomar. Con un Lock
+    # normal eso es un deadlock y la consulta se cuelga hasta que el proxy la
+    # corta con un 502.
     _lock = threading.RLock()
     _token: Optional[str] = None
     _token_expira: float = 0.0
-    _catalogo_civil: Optional[list[dict]] = None
-    _catalogo_obtenido_en: float = 0.0
+    # Catálogo de tribunales cacheado por competencia ("civil" | "familia"):
+    # cada una tiene su propio árbol de cortes/tribunales en el proveedor.
+    _catalogo: dict[str, list[dict]] = {}
+    _catalogo_ts: dict[str, float] = {}
 
     def __init__(self) -> None:
         if not settings.pjud_api_activo:
@@ -238,38 +240,45 @@ class PjudService:
                 pass
         return 300.0
 
-    # ── Catálogo de tribunales civiles ──────────────────────────
+    # ── Catálogo de tribunales (por competencia) ────────────────
 
-    def _obtener_catalogo_civil(self) -> list[dict]:
+    def _obtener_catalogo(self, competencia: str) -> list[dict]:
         with self._lock:
+            obtenido_en = PjudService._catalogo_ts.get(competencia, 0.0)
             vigente = (
-                PjudService._catalogo_civil is not None
-                and time.monotonic() - PjudService._catalogo_obtenido_en < _CATALOGO_TTL_SEGUNDOS
+                competencia in PjudService._catalogo
+                and time.monotonic() - obtenido_en < _CATALOGO_TTL_SEGUNDOS
             )
             if not vigente:
                 data = self._request(
-                    "GET", "/catalogo/tribunales", params={"competencia": "civil"},
+                    "GET", "/catalogo/tribunales", params={"competencia": competencia},
                 )
-                PjudService._catalogo_civil = data.get("cortes", [])
-                PjudService._catalogo_obtenido_en = time.monotonic()
-            return PjudService._catalogo_civil or []
+                PjudService._catalogo[competencia] = data.get("cortes", [])
+                PjudService._catalogo_ts[competencia] = time.monotonic()
+            return PjudService._catalogo.get(competencia) or []
 
-    def resolver_tribunal(self, nombre_tribunal: str) -> tuple[int, int]:
-        """`(corte_id, tribunal_id)` del catálogo que calza con ese nombre."""
+    def resolver_tribunal(
+        self, nombre_tribunal: str, competencia: str = "civil"
+    ) -> tuple[int, int]:
+        """`(corte_id, tribunal_id)` del catálogo de esa competencia que calza
+        con ese nombre."""
         objetivo = _normalizar(nombre_tribunal)
-        for corte in self._obtener_catalogo_civil():
+        for corte in self._obtener_catalogo(competencia):
             for tribunal in corte.get("tribunales", []):
                 if _normalizar(tribunal["nombre"]) == objetivo:
                     return corte["id"], tribunal["id"]
         raise PjudApiError(
-            f"El tribunal «{nombre_tribunal}» no está en el catálogo civil del PJUD."
+            f"El tribunal «{nombre_tribunal}» no está en el catálogo {competencia} del PJUD."
         )
 
-    # ── Rol Civil (`C-10825-2026`) ───────────────────────────────
+    # ── Rol / RIT (`C-10825-2026`) ───────────────────────────────
 
     @staticmethod
     def parsear_rol_civil(rol: Optional[str]) -> tuple[str, int, int]:
-        """`(tipo, rol, año)` a partir del Rol tal como lo trae el Excel."""
+        """`(tipo, rol, año)` a partir del Rol tal como lo trae el Excel.
+
+        El RIT de una causa de Familia tiene el mismo formato tipo-rol-año, así
+        que este parseo también sirve para el detalle de Familia."""
         match = _RE_ROL_CIVIL.match(rol or "")
         if not match:
             raise PjudApiError(
@@ -280,10 +289,12 @@ class PjudService:
 
     # ── Flujo completo ───────────────────────────────────────────
 
-    def _sincronizar(self, cuerpo_causa: dict, credenciales: dict) -> str:
-        """Encola el scrape en el proveedor. `/sincronizar_civil` INICIA SESIÓN
-        en el OJV como la persona, así que el cuerpo lleva además su rut, clave
-        y método de login (1 = Clave del Poder Judicial, 2 = ClaveÚnica).
+    def _sincronizar(
+        self, cuerpo_causa: dict, credenciales: dict, competencia: str = "civil"
+    ) -> str:
+        """Encola el scrape en el proveedor. `/sincronizar_<competencia>` INICIA
+        SESIÓN en el OJV como la persona, así que el cuerpo lleva además su rut,
+        clave y método de login (1 = Clave del Poder Judicial, 2 = ClaveÚnica).
 
         Best-effort: un 409 (ya en curso) o cualquier otra falla acá no corta la
         pantalla. Devuelve una nota corta de qué pasó, para el log de
@@ -294,17 +305,18 @@ class PjudService:
             "clave": credenciales["clave"],
             "metodo_login": credenciales.get("metodo_login") or 1,
         }
+        ruta = f"/sincronizar_{competencia}"
         try:
-            self._request("POST", "/sincronizar_civil", json=cuerpo)
-            return "sincronizar_civil: 200 (encolado)"
+            self._request("POST", ruta, json=cuerpo)
+            return f"sincronizar_{competencia}: 200 (encolado)"
         except PjudConflicto:
             # Ya hay un job en curso, o se pidió otro antes del intervalo mínimo
             # del proveedor (30 min). Si esto se repite en cada intento y la
             # causa nunca queda lista, el job del proveedor está pegado o falló.
-            return "sincronizar_civil: 409 (ya en curso / muy pronto)"
+            return f"sincronizar_{competencia}: 409 (ya en curso / muy pronto)"
         except PjudApiError as e:
-            logger.warning("PJUD: sincronizar_civil falló, se sigue igual: %s", e)
-            return f"sincronizar_civil: error ({e})"
+            logger.warning("PJUD: %s falló, se sigue igual: %s", ruta, e)
+            return f"sincronizar_{competencia}: error ({e})"
 
     def obtener_detalle(
         self,
@@ -474,6 +486,169 @@ class PjudService:
                 )
 
         return resultado
+
+    # ── Familia ─────────────────────────────────────────────────
+
+    def obtener_detalle_familia(
+        self,
+        causa,
+        forzar_sincronizacion: bool = False,
+        credenciales_pjud: Optional[dict] = None,
+    ) -> dict:
+        """Detalle completo de una `Causa` de materia Familia desde el PJUD.
+
+        Mismo flujo asíncrono que `obtener_detalle` (Civil): la primera consulta
+        encola el scrape (`/sincronizar_familia`) y devuelve `sincronizando`;
+        `error` si el scrape del proveedor terminó mal; `sin_credenciales` si
+        hay que sincronizar y la persona no cargó su clave del OJV; `listo`
+        cuando está todo.
+
+        Cambia respecto a Civil:
+          - la sección de trámites se llama `movimientos` (no `historia`);
+          - hay `materias`, `plazos` y `diligencias` en vez de `escritos_resolver`
+            y `exhortos`;
+          - Familia no expone cuadernos: siempre se consulta el 1.
+        """
+        if (causa.materia or "").strip().lower() != "familia":
+            raise PjudApiError(
+                "El detalle de Familia solo está disponible para causas de esa materia."
+            )
+
+        tipo, rol, anio = self.parsear_rol_civil(causa.rol)
+        corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "familia")
+        cuerpo_causa = {
+            "corte": corte_id, "tribunal": tribunal_id,
+            "tipo": tipo, "rol": rol, "anio": anio,
+        }
+
+        puede_sincronizar = bool(
+            credenciales_pjud
+            and credenciales_pjud.get("rut")
+            and credenciales_pjud.get("clave")
+        )
+
+        diag: list[str] = [
+            f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"
+        ]
+        if not puede_sincronizar:
+            diag.append("sin clave del OJV cargada")
+
+        if forzar_sincronizacion and puede_sincronizar:
+            diag.append(
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "familia")
+            )
+
+        detalle_estado: Optional[str] = None
+        ultimo_error: Optional[str] = None
+        try:
+            data = self._request("POST", "/consultar_familia", json=cuerpo_causa)
+            # El proveedor devuelve la causa bajo `causa`; se tolera también que
+            # venga en la raíz por si el envoltorio cambia.
+            detalle = data.get("causa", data)
+            estado_raw = detalle.get("estado")
+            detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
+            ultimo_error = (detalle.get("ultimo_error") or "").strip() or None
+            diag.append(
+                f"consultar_familia: 200 estado={estado_raw!r} "
+                f"detalle_estado={detalle_estado!r} "
+                f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
+                f"ultimo_error={ultimo_error!r}"
+            )
+        except PjudNoEncontrado:
+            detalle = None
+            diag.append("consultar_familia: 404 (api-pjud no tiene la causa)")
+
+        estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
+
+        if estado_norm in _ESTADOS_ERROR:
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": detalle_estado,
+                "ultimo_error": ultimo_error,
+                "diagnostico": " · ".join(diag),
+            }
+
+        # A diferencia de Civil, no se mira `cuadernos`: Familia no los expone.
+        esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+
+        if esta_sincronizando and not puede_sincronizar:
+            return {
+                "estado": "sin_credenciales",
+                "mensaje": _MENSAJE_SIN_CREDENCIALES,
+                "detalle_estado": detalle_estado,
+                "diagnostico": " · ".join(diag),
+            }
+
+        if esta_sincronizando and not forzar_sincronizacion:
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "familia"))
+
+        identificador = (detalle or {}).get("identificador")
+        causa_out = detalle if identificador else None
+        if causa_out is not None and "ruc" not in causa_out and "Ruc" in causa_out:
+            # El proveedor manda `Ruc` con mayúscula; el schema espera `ruc`.
+            causa_out["ruc"] = causa_out.get("Ruc")
+
+        resultado: dict = {
+            "estado": "sincronizando" if esta_sincronizando else "listo",
+            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "detalle_estado": detalle_estado,
+            "ultimo_error": ultimo_error,
+            "diagnostico": " · ".join(diag),
+            "causa": causa_out,
+            "movimientos": [],
+            "litigantes": [],
+            "notificaciones": [],
+            "materias": [],
+            "plazos": [],
+            "diligencias": [],
+        }
+
+        if identificador:
+            try:
+                mov = self._request(
+                    "POST", "/consultar_movimientos_familia",
+                    json={"identificador": identificador, "cuadeno": 1},
+                )
+            except PjudApiError as e:
+                # Durante la sincronización los movimientos pueden no estar
+                # listos: se devuelve la cabecera y las secciones vacías.
+                if not esta_sincronizando:
+                    raise
+                diag.append(f"movimientos: no disponibles aún ({e})")
+                resultado["diagnostico"] = " · ".join(diag)
+            else:
+                movimientos = mov.get("movimientos") or []
+                self._normalizar_documentos_familia(movimientos, identificador)
+                diag.append(f"movimientos: {len(movimientos)} trámites")
+                resultado.update(
+                    diagnostico=" · ".join(diag),
+                    movimientos=movimientos,
+                    litigantes=mov.get("litigantes") or [],
+                    notificaciones=mov.get("notificaciones") or [],
+                    materias=mov.get("materias") or [],
+                    plazos=mov.get("plazos") or [],
+                    diligencias=mov.get("diligencias") or [],
+                )
+
+        return resultado
+
+    def _normalizar_documentos_familia(
+        self, movimientos: list[dict], identificador: str
+    ) -> None:
+        """Como `_normalizar_documentos` pero para la forma de Familia: `doc` es
+        una lista de `{"doc": url}` (sin la clave `doc2`; el certificado se
+        reconoce por el sufijo `_doc2` en el nombre del archivo) y los anexos
+        traen `{folio, doc, fecha, nombre_documento, observacion}`. Familia no
+        tiene cuadernos, así que la URL relativa se arma contra el cuaderno 1."""
+        for item in movimientos:
+            item["documentos"] = [
+                {"url": url, "tipo": tipo}
+                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
+                if (url := self._url_documento(crudo, identificador, 1))
+            ]
+            for anexo in item.get("anexo") or []:
+                anexo["doc"] = self._url_documento(anexo.get("doc"), identificador, 1)
 
     @staticmethod
     def _elegir_cuaderno(cuadernos: list[dict], cuaderno_id: Optional[int]) -> dict:

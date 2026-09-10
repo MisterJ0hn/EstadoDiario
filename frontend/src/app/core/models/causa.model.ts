@@ -36,7 +36,8 @@ export interface Causa {
   proxima_audiencia?: string | null;
   /** Último resultado conocido de "Detalle PJUD" (`listo` | `sincronizando` |
    *  `error` | `sin_credenciales`), del log de llamados — no en vivo al
-   *  proveedor. Null/undefined = nunca se consultó. Solo viene en Civiles. */
+   *  proveedor. Null/undefined = nunca se consultó. Solo viene en causas
+   *  Civiles y de Familia. */
   pjud_estado?: string | null;
   /** Fecha/hora de ese último llamado (cualquiera sea su resultado). */
   pjud_fecha_sincronizacion?: string | null;
@@ -289,12 +290,119 @@ export interface PjudMovimientosResponse {
 }
 
 /**
- * Resuelve, por rol y tribunal, la Causa Civil de la cartera vigente que
- * corresponde: lo usan pantallas que muestran una causa por su rol/tribunal
- * pero no conocen su id en la tabla Causa (Estado Diario, Movimientos), para
- * poder ofrecer el mismo botón "Detalle PJUD" que Mis Causas.
- * `causa: null` = no hay cartera cargada, no calza ninguna, o no es Civil.
+ * Resuelve, por rol y tribunal, la Causa Civil o de Familia de la cartera
+ * vigente que corresponde: lo usan pantallas que muestran una causa por su
+ * rol/tribunal pero no conocen su id en la tabla Causa (Estado Diario,
+ * Movimientos), para poder ofrecer el mismo botón "Detalle PJUD" que Mis Causas.
+ * `causa: null` = no hay cartera cargada, no calza ninguna, o no es Civil ni de
+ * Familia.
  */
 export interface PjudPorRolResponse {
   causa: Causa | null;
+}
+
+/**
+ * Detalle EN VIVO de una causa de **Familia** (api-pjud). Comparte con Civil la
+ * cabecera y el manejo de documentos, pero la sección de trámites se llama
+ * `movimientos` (no `historia`), no hay `escritos_resolver` ni `exhortos`, y
+ * suma `materias`, `plazos` y `diligencias`. Familia tampoco tiene cuadernos.
+ * Mismo flujo asíncrono (`estado: 'sincronizando'` en la primera consulta).
+ */
+export interface PjudFamiliaCausaDetalle {
+  identificador: string;
+  estado: string;
+  rit: string | null;
+  caratula: string | null;
+  fecha_ingreso: string | null;
+  ruc: string | null;
+  proceso: string | null;
+  forma_inicio: string | null;
+  est_adm: string | null;
+  etapa: string | null;
+  estado_proceso: string | null;
+  tribunal: string | null;
+  fecha_ultima_sincronizacion: string | null;
+  anexos_causa: PjudAnexoCausaItem[];
+  certificado_envio: PjudDocumentoRef | null;
+  ebook: PjudDocumentoRef | null;
+}
+
+export interface PjudFamiliaAnexoItem {
+  folio: number | null;
+  doc: string | null;
+  fecha: string | null;
+  nombre_documento: string | null;
+  observacion: string | null;
+}
+
+export interface PjudFamiliaMovimientoItem {
+  folio_texto: string | null;
+  etapa: string | null;
+  estado: string | null;
+  tramite: string | null;
+  descripcion_tramite: string | null;
+  fecha_tramite: string | null;
+  anexo: PjudFamiliaAnexoItem[];
+  documentos: PjudDocumentoTramite[];
+}
+
+export interface PjudFamiliaLitiganteItem {
+  sujeto: string | null;
+  rut: string | null;
+  persona: string | null;
+  razon_social: string | null;
+}
+
+export interface PjudMateriaItem {
+  codigo: string | null;
+  glosa_de_materia: string | null;
+  estado: string | null;
+  fecha_termino: string | null;
+}
+
+export interface PjudPlazoItem {
+  tipo_plazo: string | null;
+  ambito_afectado: string | null;
+  fecha_inicio: string | null;
+  fecha_termino: string | null;
+  duracion: string | null;
+  estado: string | null;
+  tramite: string | null;
+  fecha_suspension: string | null;
+  fecha_reactivacion: string | null;
+}
+
+export interface PjudFamiliaNotificacionItem {
+  estado_fecha_notif: string | null;
+  tipo_notif: string | null;
+  ente_notif: string | null;
+  rit: string | null;
+  ruc: string | null;
+  fecha_tramite: string | null;
+  tipo_parte: string | null;
+  nombre: string | null;
+  tramite: string | null;
+  certificacion: string | null;
+}
+
+export interface PjudDiligenciaItem {
+  doc_solicitud: string | null;
+  doc_respuesta: string | null;
+  estado_diligencia: string | null;
+  tipo_diligencia: string | null;
+  fecha_tramite: string | null;
+}
+
+export interface PjudFamiliaMovimientosResponse {
+  estado: 'listo' | 'sincronizando' | 'error' | 'sin_credenciales';
+  mensaje: string | null;
+  detalle_estado: string | null;
+  ultimo_error: string | null;
+  causa: PjudFamiliaCausaDetalle | null;
+  movimientos: PjudFamiliaMovimientoItem[];
+  litigantes: PjudFamiliaLitiganteItem[];
+  notificaciones: PjudFamiliaNotificacionItem[];
+  materias: PjudMateriaItem[];
+  plazos: PjudPlazoItem[];
+  diligencias: PjudDiligenciaItem[];
 }

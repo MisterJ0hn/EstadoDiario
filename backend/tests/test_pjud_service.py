@@ -56,8 +56,8 @@ class TestNormalizar:
 
 class TestResolverTribunal:
     """`resolver_tribunal` no llama a la red directamente: usa
-    `_obtener_catalogo_civil`, que sí lo hace. Se reemplaza por un catálogo
-    fijo para probar solo el calce de nombres."""
+    `_obtener_catalogo`, que sí lo hace. Se reemplaza por un catálogo fijo para
+    probar solo el calce de nombres."""
 
     CATALOGO = [
         {
@@ -78,7 +78,9 @@ class TestResolverTribunal:
             "app.services.pjud_service.settings.PJUD_API_PASSWORD", "x"
         )
         servicio = PjudService()
-        monkeypatch.setattr(servicio, "_obtener_catalogo_civil", lambda: self.CATALOGO)
+        monkeypatch.setattr(
+            servicio, "_obtener_catalogo", lambda competencia="civil": self.CATALOGO
+        )
         return servicio
 
     def test_calza_por_nombre_exacto(self, monkeypatch):
@@ -120,7 +122,7 @@ class TestObtenerDetalle:
         monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
         monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
         servicio = PjudService()
-        monkeypatch.setattr(servicio, "_obtener_catalogo_civil", lambda: [
+        monkeypatch.setattr(servicio, "_obtener_catalogo", lambda competencia="civil": [
             {"id": 91, "nombre": "C.A. de San Miguel", "tribunales": [
                 {"id": 364, "nombre": "1° Juzgado Civil de Puente Alto"},
             ]},
