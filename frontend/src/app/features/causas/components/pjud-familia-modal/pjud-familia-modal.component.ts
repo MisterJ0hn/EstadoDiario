@@ -126,9 +126,9 @@ type TabFamilia =
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
                     <p><span class="pjud-k">ROL:</span> {{ c.rit || causa.rol }}</p>
+                    <p class="font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
                     <p><span class="pjud-k">F. Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
-                    <p class="md:text-right font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
-
+                    
                     <p><span class="pjud-k">RUC:</span> {{ c.ruc || '-' }}</p>
                     <p><span class="pjud-k">Proc.:</span> {{ c.proceso || '-' }}</p>
                     <p><span class="pjud-k">Forma Inicio:</span> {{ c.forma_inicio || '-' }}</p>
@@ -173,6 +173,7 @@ type TabFamilia =
                           <tbody>
                             @for (a of c.anexos_causa; track $index) {
                               <tr>
+                                <td>{{a.folio}}</td>
                                 <td class="text-center">
                                   @if (a.doc) {
                                     <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: a.doc }" />
@@ -192,8 +193,8 @@ type TabFamilia =
                 <!-- ── Pestañas ──── -->
                 <div class="border-b border-neutral-200">
                   <nav class="tabs-nav">
-                    <button class="tab-link" [class.tab-link-activo]="tab() === 'historia'" (click)="tab.set('historia')">
-                      Historia <span class="tab-contador">{{ d.movimientos.length }}</span>
+                    <button class="tab-link" [class.tab-link-activo]="tab() === 'movimiento'" (click)="tab.set('movimiento')">
+                      Movimientos <span class="tab-contador">{{ d.movimientos.length }}</span>
                     </button>
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'litigantes'" (click)="tab.set('litigantes')">
                       Litigantes <span class="tab-contador">{{ d.litigantes.length }}</span>
@@ -214,8 +215,8 @@ type TabFamilia =
                 </div>
 
                 <div class="pt-1">
-                  <!-- Historia -->
-                  @if (tab() === 'historia') {
+                  <!-- Movimiento -->
+                  @if (tab() === 'movimiento') {
                     @if (d.movimientos.length === 0) {
                       <p class="text-sm text-neutral-500">
                         {{ d.estado === 'sincronizando'

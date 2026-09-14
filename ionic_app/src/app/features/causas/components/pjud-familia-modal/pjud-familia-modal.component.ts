@@ -10,7 +10,7 @@ import {
 import { CausaService } from '../../services/causa.service';
 
 type TabFamilia =
-  | 'historia'
+  | 'movimiento'
   | 'litigantes'
   | 'notificaciones'
   | 'materias'
@@ -126,9 +126,9 @@ type TabFamilia =
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
                     <p><span class="pjud-k">ROL:</span> {{ c.rit || causa.rol }}</p>
+                    <p class="font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
                     <p><span class="pjud-k">F. Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
-                    <p class="md:text-right font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
-
+                    
                     <p><span class="pjud-k">RUC:</span> {{ c.ruc || '-' }}</p>
                     <p><span class="pjud-k">Proc.:</span> {{ c.proceso || '-' }}</p>
                     <p><span class="pjud-k">Forma Inicio:</span> {{ c.forma_inicio || '-' }}</p>
@@ -152,16 +152,17 @@ type TabFamilia =
                           </button>
                         </span>
                       }
-                      @if (c.certificado_envio?.url) {
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
-                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
-                        </span>
-                      }
                       @if (c.ebook?.url) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
                           <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
                         </span>
                       }
+                      @if (c.certificado_envio?.url) {
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
+                        </span>
+                      }
+                     
                     </div>
                   }
 
@@ -173,6 +174,7 @@ type TabFamilia =
                           <tbody>
                             @for (a of c.anexos_causa; track $index) {
                               <tr>
+                                <td>{{a.folio}}</td>
                                 <td class="text-center">
                                   @if (a.doc) {
                                     <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: a.doc }" />
@@ -192,14 +194,11 @@ type TabFamilia =
                 <!-- ── Pestañas ──── -->
                 <div class="border-b border-neutral-200">
                   <nav class="tabs-nav">
-                    <button class="tab-link" [class.tab-link-activo]="tab() === 'historia'" (click)="tab.set('historia')">
-                      Historia <span class="tab-contador">{{ d.movimientos.length }}</span>
+                    <button class="tab-link" [class.tab-link-activo]="tab() === 'movimiento'" (click)="tab.set('movimiento')">
+                      Movimientos <span class="tab-contador">{{ d.movimientos.length }}</span>
                     </button>
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'litigantes'" (click)="tab.set('litigantes')">
                       Litigantes <span class="tab-contador">{{ d.litigantes.length }}</span>
-                    </button>
-                    <button class="tab-link" [class.tab-link-activo]="tab() === 'notificaciones'" (click)="tab.set('notificaciones')">
-                      Notificaciones <span class="tab-contador">{{ d.notificaciones.length }}</span>
                     </button>
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'materias'" (click)="tab.set('materias')">
                       Materias <span class="tab-contador">{{ d.materias.length }}</span>
@@ -207,6 +206,9 @@ type TabFamilia =
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'plazos'" (click)="tab.set('plazos')">
                       Plazos <span class="tab-contador">{{ d.plazos.length }}</span>
                     </button>
+                    <button class="tab-link" [class.tab-link-activo]="tab() === 'notificaciones'" (click)="tab.set('notificaciones')">
+                      Notificaciones <span class="tab-contador">{{ d.notificaciones.length }}</span>
+                    </button>                                        
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'diligencias'" (click)="tab.set('diligencias')">
                       Diligencias <span class="tab-contador">{{ d.diligencias.length }}</span>
                     </button>
@@ -214,8 +216,8 @@ type TabFamilia =
                 </div>
 
                 <div class="pt-1">
-                  <!-- Historia -->
-                  @if (tab() === 'historia') {
+                  <!-- Movimiento -->
+                  @if (tab() === 'movimiento') {
                     @if (d.movimientos.length === 0) {
                       <p class="text-sm text-neutral-500">
                         {{ d.estado === 'sincronizando'
@@ -227,7 +229,7 @@ type TabFamilia =
                         <table class="pjud-table">
                           <thead>
                             <tr>
-                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th><th>Estado</th>
+                              <th>Folio</th><th>Doc.</th><th>Anexos</th><th>Etapa</th><th>Estado</th>
                               <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th>
                             </tr>
                           </thead>
@@ -330,7 +332,7 @@ type TabFamilia =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Código</th><th>Glosa</th><th>Estado</th><th>Fec. Término</th></tr></thead>
+                          <thead><tr><th>Código</th><th>Glosa de Materia</th><th>Estado</th><th>Fecha Término</th></tr></thead>
                           <tbody>
                             @for (m of d.materias; track $index) {
                               <tr>

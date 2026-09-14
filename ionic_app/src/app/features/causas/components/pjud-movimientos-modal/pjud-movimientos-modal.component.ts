@@ -140,7 +140,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
                     <p><span class="pjud-k">ROL:</span> {{ c.rol || causa.rol }}</p>
                     <p><span class="pjud-k">F. Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
-                    <p class="md:text-right md:col-span-1 font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
+                    <p class="md:col-span-1 font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
 
                     <p><span class="pjud-k">Est. Adm.:</span> {{ c.est_adm || '-' }}</p>
                     <p><span class="pjud-k">Proc.:</span> {{ c.proceso || '-' }}</p>

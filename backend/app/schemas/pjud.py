@@ -27,6 +27,7 @@ class PjudDocumentoRef(BaseModel):
 
 
 class PjudAnexoCausaItem(BaseModel):
+    folio: str | None = None
     fecha: str | None = None
     referencia: str | None = None
     nombre_doc: str | None = None
