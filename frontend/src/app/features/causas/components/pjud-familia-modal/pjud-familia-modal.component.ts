@@ -10,7 +10,7 @@ import {
 import { CausaService } from '../../services/causa.service';
 
 type TabFamilia =
-  | 'historia'
+  | 'movimiento'
   | 'litigantes'
   | 'notificaciones'
   | 'materias'
@@ -498,7 +498,7 @@ export class PjudFamiliaModalComponent {
   set causa(c: Causa | null) {
     this._causa = c;
     if (c !== null) {
-      this.tab.set('historia');
+      this.tab.set('movimiento');
       this.verAnexos.set(false);
       this.anexosTramite.set(null);
       this.docError.set(null);
@@ -517,7 +517,7 @@ export class PjudFamiliaModalComponent {
   cargando = signal(false);
   error = signal<string | null>(null);
   datos = signal<PjudFamiliaMovimientosResponse | null>(null);
-  tab = signal<TabFamilia>('historia');
+  tab = signal<TabFamilia>('movimiento');
   verAnexos = signal(false);
   anexosTramite = signal<PjudFamiliaAnexoItem[] | null>(null);
   docError = signal<string | null>(null);
