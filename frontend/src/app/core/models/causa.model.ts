@@ -154,6 +154,7 @@ export interface PjudDocumentoRef {
 }
 
 export interface PjudAnexoCausaItem {
+  folio: string | null;
   fecha: string | null;
   referencia: string | null;
   nombre_doc: string | null;
