@@ -179,7 +179,7 @@ type TabFamilia =
                     <div class="border-t border-neutral-200 px-4 py-2">
                       <div class="overflow-x-auto rounded border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Doc.</th><th>Fecha</th><th>Referencia</th></tr></thead>
+                          <thead><tr><th>Folio</th><th>Doc.</th><th>Fecha</th><th>Referencia</th></tr></thead>
                           <tbody>
                             @for (a of c.anexos_causa; track $index) {
                               <tr>
