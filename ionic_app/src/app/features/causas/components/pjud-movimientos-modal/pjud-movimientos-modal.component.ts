@@ -150,16 +150,20 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                     <p><span class="pjud-k">Etapa:</span> {{ c.etapa || '-' }}</p>
                     <p><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
 
-                    @if (c.causa_origen?.rol || c.causa_origen?.tribunal) {
-                    <div class="flex flex-col items-start gap-2 rounded-lg bg-danger-600 px-4 py-3 text-white">
-                      <p class="md:col-span-3">
+                    
+                  </div>
+                  @if (c.causa_origen?.rol || c.causa_origen?.tribunal) {
+                  <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
+                    <span class="inline-flex items-center gap-1.5">
                         <span class="pjud-k">Causa Origen:</span>
                         {{ c.causa_origen?.rol || '-' }}  
-                      </p>
-                      <p> <span class="pjud-k">Tribunal:</span> {{ c.causa_origen?.tribunal || '-' }}</p>
-                    </div>
-                    }
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                      <span class="pjud-k">Tribunal:</span> {{ c.causa_origen?.tribunal || '-' }}
+                    </span>
                   </div>
+                  }
+                  
 
                   <!-- Documentos de la causa -->
                   @if (c.texto_demanda?.url || c.certificado_envio?.url || c.ebook?.url || c.anexos_causa.length > 0) {
