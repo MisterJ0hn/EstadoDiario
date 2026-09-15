@@ -452,6 +452,7 @@ class PjudService:
             "notificaciones": [],
             "escritos_resolver": [],
             "exhortos": [],
+            "piezas_exhorto": [],
         }
 
         if cuadernos and identificador:
@@ -472,6 +473,8 @@ class PjudService:
             else:
                 historia = movimientos.get("historia") or []
                 self._normalizar_documentos(historia, identificador, cuaderno["id"])
+                piezas_exhorto = movimientos.get("piezas_exhorto") or []
+                self._normalizar_piezas_exhorto(piezas_exhorto, identificador, cuaderno["id"])
                 diag.append(
                     f"movimientos: cuaderno {cuaderno['id']}, {len(historia)} trámites"
                 )
@@ -483,6 +486,7 @@ class PjudService:
                     notificaciones=movimientos.get("notificaciones") or [],
                     escritos_resolver=movimientos.get("escritos_resolver") or [],
                     exhortos=movimientos.get("exhortos") or [],
+                    piezas_exhorto=piezas_exhorto,
                 )
 
         return resultado
@@ -680,6 +684,15 @@ class PjudService:
                 anexo["doc"] = self._url_documento(
                     anexo.get("doc"), identificador, cuaderno_id
                 )
+
+    def _normalizar_piezas_exhorto(
+        self, piezas: list[dict], identificador: str, cuaderno_id: int
+    ) -> None:
+        """Resuelve el `doc` de cada pieza (un único string, no una lista como
+        en `historia`) a URL absoluta, con el mismo criterio que
+        `_url_documento`."""
+        for pieza in piezas:
+            pieza["doc"] = self._url_documento(pieza.get("doc"), identificador, cuaderno_id)
 
     @staticmethod
     def _docs_de_tramite(doc) -> list[tuple[str, str]]:

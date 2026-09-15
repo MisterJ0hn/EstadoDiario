@@ -168,6 +168,13 @@ export interface PjudInformacionReceptorItem {
   estado: string | null;
 }
 
+/** Causa Civil de la que proviene esta (p.ej. un cuaderno de ejecución
+ *  incidental). Se pinta en la cabecera. */
+export interface PjudCausaOrigen {
+  rol: string | null;
+  tribunal: string | null;
+}
+
 export interface PjudCausaDetalle {
   identificador: string;
   estado: string;
@@ -181,6 +188,7 @@ export interface PjudCausaDetalle {
   proceso: string | null;
   ubicacion: string | null;
   fecha_ultima_sincronizacion: string | null;
+  causa_origen: PjudCausaOrigen | null;
   texto_demanda: PjudDocumentoRef | null;
   certificado_envio: PjudDocumentoRef | null;
   ebook: PjudDocumentoRef | null;
@@ -265,6 +273,24 @@ export interface PjudExhortoItem {
   estado_exhorto: string | null;
 }
 
+/**
+ * Una fila de `piezas_exhorto`: solo viene cuando la causa ES un exhorto
+ * (tipo de rol "E"), a diferencia de la pestaña `exhortos` (causas Civiles
+ * comunes que tienen exhortos asociados). `folio` y `foja` pueden venir
+ * vacíos o con letras. La forma de `anexo` no está confirmada todavía.
+ */
+export interface PjudPiezaExhortoItem {
+  folio: string | null;
+  doc: string | null;
+  cuaderno: string | null;
+  anexo: Record<string, unknown>[];
+  etapa: string | null;
+  tramite: string | null;
+  descripcion_tramite: string | null;
+  fecha_tramite: string | null;
+  foja: string | null;
+}
+
 export interface PjudMovimientosResponse {
   /**
    * `sincronizando` = el PJUD todavía está scrapeando; `causa` y las secciones
@@ -288,6 +314,9 @@ export interface PjudMovimientosResponse {
   notificaciones: PjudNotificacionItem[];
   escritos_resolver: PjudEscritoResolverItem[];
   exhortos: PjudExhortoItem[];
+  /** Solo viene poblado cuando la causa es un Exhorto (tipo de rol "E"); se
+   *  usa para mostrar la pestaña únicamente en ese caso. */
+  piezas_exhorto: PjudPiezaExhortoItem[];
 }
 
 /**
@@ -336,6 +365,26 @@ export interface PjudFamiliaAnexoItem {
   observacion: string | null;
 }
 
+/** Georeferencia de un movimiento (p.ej. una diligencia con ubicación). Si
+ *  existe, el modal muestra un ícono de mundo que abre un popup con tres
+ *  pestañas: mapa, imágenes (carrusel si hay más de una) y videos. `videos`
+ *  todavía no tiene un ejemplo real del proveedor. */
+export interface PjudGeoreferenciaMapa {
+  latitud: string | null;
+  longitud: string | null;
+  corrector: string | null;
+}
+
+export interface PjudGeoreferenciaImagen {
+  img: string | null;
+}
+
+export interface PjudGeoreferencia {
+  mapa: PjudGeoreferenciaMapa | null;
+  imagenes: PjudGeoreferenciaImagen[];
+  videos: Record<string, unknown>[];
+}
+
 export interface PjudFamiliaMovimientoItem {
   folio_texto: string | null;
   etapa: string | null;
@@ -345,6 +394,7 @@ export interface PjudFamiliaMovimientoItem {
   fecha_tramite: string | null;
   anexo: PjudFamiliaAnexoItem[];
   documentos: PjudDocumentoTramite[];
+  georeferencia: PjudGeoreferencia | null;
 }
 
 export interface PjudFamiliaLitiganteItem {

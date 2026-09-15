@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { Causa, PjudHistoriaAnexoItem, PjudMovimientosResponse } from '@core/models/causa.model';
 import { CausaService } from '../../services/causa.service';
 
-type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exhortos';
+type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exhortos' | 'piezas_exhorto';
 
 /**
  * "Detalle Causa Civil": la ficha del PJUD de una causa Civil, consultada EN
@@ -149,6 +149,13 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                     <p><span class="pjud-k">Estado Proc.:</span> {{ c.estado_proceso || '-' }}</p>
                     <p><span class="pjud-k">Etapa:</span> {{ c.etapa || '-' }}</p>
                     <p><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
+
+                    @if (c.causa_origen?.rol || c.causa_origen?.tribunal) {
+                      <p class="md:col-span-3">
+                        <span class="pjud-k">Causa Origen:</span>
+                        {{ c.causa_origen?.rol || '-' }} — {{ c.causa_origen?.tribunal || '-' }}
+                      </p>
+                    }
                   </div>
 
                   <!-- Documentos de la causa -->
@@ -276,6 +283,11 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'exhortos'" (click)="tab.set('exhortos')">
                       Exhortos <span class="tab-contador">{{ d.exhortos.length }}</span>
                     </button>
+                    @if (d.piezas_exhorto.length > 0) {
+                      <button class="tab-link" [class.tab-link-activo]="tab() === 'piezas_exhorto'" (click)="tab.set('piezas_exhorto')">
+                        Piezas Exhorto <span class="tab-contador">{{ d.piezas_exhorto.length }}</span>
+                      </button>
+                    }
                   </nav>
                 </div>
 
@@ -478,6 +490,46 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                         </table>
                       </div>
                     }
+                  }
+
+                  <!-- Piezas Exhorto: solo cuando la causa ES un exhorto -->
+                  @if (tab() === 'piezas_exhorto') {
+                    <div class="overflow-x-auto rounded-lg border border-neutral-200">
+                      <table class="pjud-table">
+                        <thead>
+                          <tr>
+                            <th>Folio</th><th>Doc.</th><th>Cuaderno</th><th>Anexo</th>
+                            <th>Etapa</th><th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th><th>Foja</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (p of d.piezas_exhorto; track $index) {
+                            <tr>
+                              <td class="text-center">{{ p.folio || '-' }}</td>
+                              <td class="text-center">
+                                @if (p.doc) {
+                                  <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: p.doc }" />
+                                } @else { <span>-</span> }
+                              </td>
+                              <td class="text-center">{{ p.cuaderno || '-' }}</td>
+                              <td class="text-center">
+                                @if (p.anexo.length > 0) {
+                                  <span class="inline-flex items-center gap-1 text-amber-500">
+                                    <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                                    <span class="text-xs font-semibold text-neutral-500">{{ p.anexo.length }}</span>
+                                  </span>
+                                } @else { <span>-</span> }
+                              </td>
+                              <td class="whitespace-normal">{{ p.etapa || '-' }}</td>
+                              <td class="whitespace-normal">{{ p.tramite || '-' }}</td>
+                              <td class="whitespace-normal">{{ p.descripcion_tramite || '-' }}</td>
+                              <td>{{ p.fecha_tramite || '-' }}</td>
+                              <td class="text-center">{{ p.foja || '-' }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
                   }
                 </div>
 

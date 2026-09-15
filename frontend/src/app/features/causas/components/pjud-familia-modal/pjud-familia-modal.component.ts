@@ -1,11 +1,13 @@
 import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
 import { CommonModule, NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 import {
   Causa,
   PjudFamiliaAnexoItem,
   PjudFamiliaMovimientosResponse,
+  PjudGeoreferencia,
 } from '@core/models/causa.model';
 import { CausaService } from '../../services/causa.service';
 
@@ -52,6 +54,14 @@ type TabFamilia =
     <ng-template #iconoCarpeta>
       <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
         <path d="M3 6a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" />
+      </svg>
+    </ng-template>
+
+    <!-- Ícono reutilizable: mundo (abre el popup de georeferencia). -->
+    <ng-template #iconoGlobo>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="h-5 w-5" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path stroke-linecap="round" d="M3 12h18M12 3c2.5 2.7 4 6.2 4 9s-1.5 6.3-4 9c-2.5-2.7-4-6.2-4-9s1.5-6.3 4-9Z" />
       </svg>
     </ng-template>
 
@@ -228,7 +238,7 @@ type TabFamilia =
                         <table class="pjud-table">
                           <thead>
                             <tr>
-                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th><th>Estado</th>
+                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Georef.</th><th>Etapa</th><th>Estado</th>
                               <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th>
                             </tr>
                           </thead>
@@ -252,6 +262,15 @@ type TabFamilia =
                                             title="Ver anexos del trámite">
                                       <ng-container *ngTemplateOutlet="iconoCarpeta" />
                                       <span class="text-xs font-semibold text-neutral-500">{{ h.anexo.length }}</span>
+                                    </button>
+                                  } @else { <span>-</span> }
+                                </td>
+                                <td class="text-center">
+                                  @if (h.georeferencia) {
+                                    <button type="button" (click)="abrirGeoreferencia(h.georeferencia)"
+                                            class="inline-flex items-center text-sky-500 hover:text-sky-600"
+                                            title="Ver georeferencia">
+                                      <ng-container *ngTemplateOutlet="iconoGlobo" />
                                     </button>
                                   } @else { <span>-</span> }
                                 </td>
@@ -474,6 +493,80 @@ type TabFamilia =
           </div>
         </div>
       }
+
+      <!-- ── Georeferencia de un movimiento ────────────────────────
+           Popup con tres pestañas: mapa (situado según latitud/longitud),
+           imágenes (carrusel si hay más de una) y videos (por ahora siempre
+           vacío: el proveedor todavía no manda ejemplos de esa sección). -->
+      @if (georef(); as g) {
+        <div class="modal-backdrop !z-[60]" (click)="cerrarGeoreferencia()">
+          <div class="modal-content !z-[70] !max-w-2xl" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold text-primary-700">Georeferencia</h3>
+              <button (click)="cerrarGeoreferencia()"
+                      class="text-neutral-400 hover:text-neutral-600 text-xl leading-none">&times;</button>
+            </div>
+            <div class="modal-body space-y-3">
+              <div class="border-b border-neutral-200">
+                <nav class="tabs-nav">
+                  <button class="tab-link" [class.tab-link-activo]="georefTab() === 'mapa'" (click)="georefTab.set('mapa')">
+                    Mapa
+                  </button>
+                  <button class="tab-link" [class.tab-link-activo]="georefTab() === 'imagenes'" (click)="georefTab.set('imagenes')">
+                    Imágenes <span class="tab-contador">{{ g.imagenes.length }}</span>
+                  </button>
+                  <button class="tab-link" [class.tab-link-activo]="georefTab() === 'videos'" (click)="georefTab.set('videos')">
+                    Videos <span class="tab-contador">{{ g.videos.length }}</span>
+                  </button>
+                </nav>
+              </div>
+
+              @if (georefTab() === 'mapa') {
+                @if (g.mapa?.latitud && g.mapa?.longitud) {
+                  <div class="overflow-hidden rounded-lg border border-neutral-200">
+                    <iframe class="h-80 w-full" style="border:0" [src]="mapaSrc(g.mapa!.latitud!, g.mapa!.longitud!)"
+                            loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+                  </div>
+                  <p class="text-xs text-neutral-500 space-x-2">
+                    <span id="latitud"><span class="pjud-k">Latitud:</span> {{ g.mapa?.latitud }}</span>
+                    <span id="longitud"><span class="pjud-k">Longitud:</span> {{ g.mapa?.longitud }}</span>
+                    @if (g.mapa?.corrector) {
+                      <span id="corrector"><span class="pjud-k">Corrector:</span> {{ g.mapa?.corrector }}</span>
+                    }
+                  </p>
+                } @else {
+                  <p class="text-sm text-neutral-500">Sin coordenadas registradas.</p>
+                }
+              }
+
+              @if (georefTab() === 'imagenes') {
+                @if (g.imagenes.length === 0) {
+                  <p class="text-sm text-neutral-500">Sin imágenes registradas.</p>
+                } @else {
+                  <div class="flex flex-col items-center gap-2">
+                    <img [src]="g.imagenes[imagenIdx()].img" alt="Imagen de georeferencia"
+                         class="max-h-80 w-full rounded-lg border border-neutral-200 object-contain" />
+                    @if (g.imagenes.length > 1) {
+                      <div class="flex items-center gap-3">
+                        <button type="button" class="btn-secondary btn-sm" (click)="imagenAnterior(g.imagenes.length)">‹ Anterior</button>
+                        <span class="text-xs text-neutral-500">{{ imagenIdx() + 1 }} / {{ g.imagenes.length }}</span>
+                        <button type="button" class="btn-secondary btn-sm" (click)="imagenSiguiente(g.imagenes.length)">Siguiente ›</button>
+                      </div>
+                    }
+                  </div>
+                }
+              }
+
+              @if (georefTab() === 'videos') {
+                <p class="text-sm text-neutral-500">Sin videos registrados.</p>
+              }
+            </div>
+            <div class="modal-footer">
+              <button (click)="cerrarGeoreferencia()" class="btn-primary">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      }
     }
   `,
   styles: [`
@@ -491,6 +584,7 @@ type TabFamilia =
 })
 export class PjudFamiliaModalComponent {
   private service = inject(CausaService);
+  private sanitizer = inject(DomSanitizer);
 
   private _causa: Causa | null = null;
 
@@ -502,6 +596,9 @@ export class PjudFamiliaModalComponent {
       this.verAnexos.set(false);
       this.anexosTramite.set(null);
       this.docError.set(null);
+      this.georef.set(null);
+      this.georefTab.set('mapa');
+      this.imagenIdx.set(0);
       this.cargar(c.id, false);
     }
   }
@@ -521,6 +618,11 @@ export class PjudFamiliaModalComponent {
   verAnexos = signal(false);
   anexosTramite = signal<PjudFamiliaAnexoItem[] | null>(null);
   docError = signal<string | null>(null);
+
+  /** Georeferencia del movimiento que se está mirando en el popup; `null` = cerrado. */
+  georef = signal<PjudGeoreferencia | null>(null);
+  georefTab = signal<'mapa' | 'imagenes' | 'videos'>('mapa');
+  imagenIdx = signal(0);
 
   private cargar(causaId: number, forzar: boolean): void {
     this.cargando.set(true);
@@ -551,6 +653,31 @@ export class PjudFamiliaModalComponent {
   abrirAnexosTramite(anexos: PjudFamiliaAnexoItem[]): void {
     this.docError.set(null);
     this.anexosTramite.set(anexos);
+  }
+
+  abrirGeoreferencia(g: PjudGeoreferencia): void {
+    this.georefTab.set('mapa');
+    this.imagenIdx.set(0);
+    this.georef.set(g);
+  }
+
+  cerrarGeoreferencia(): void {
+    this.georef.set(null);
+  }
+
+  /** Embed de Google Maps sin API key, situado en la latitud/longitud del
+   *  movimiento. Se marca como segura porque la arma este mismo componente. */
+  mapaSrc(latitud: string, longitud: string): SafeResourceUrl {
+    const url = `https://www.google.com/maps?q=${encodeURIComponent(latitud)},${encodeURIComponent(longitud)}&z=15&output=embed`;
+    return this.sanitizer.bypassSecurityTrustResourceUrl(url);
+  }
+
+  imagenSiguiente(total: number): void {
+    this.imagenIdx.set((this.imagenIdx() + 1) % total);
+  }
+
+  imagenAnterior(total: number): void {
+    this.imagenIdx.set((this.imagenIdx() - 1 + total) % total);
   }
 
   /**

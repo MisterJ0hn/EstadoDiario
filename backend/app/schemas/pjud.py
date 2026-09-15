@@ -46,6 +46,14 @@ class PjudCuaderno(BaseModel):
     nombre: str
 
 
+class PjudCausaOrigen(BaseModel):
+    """Causa Civil de la que proviene esta (p.ej. un cuaderno de ejecución
+    incidental). Se pinta en la cabecera junto al resto de los datos."""
+
+    rol: str | None = None
+    tribunal: str | None = None
+
+
 class PjudCausaDetalle(BaseModel):
     identificador: str
     estado: str
@@ -59,6 +67,7 @@ class PjudCausaDetalle(BaseModel):
     proceso: str | None = None
     ubicacion: str | None = None
     fecha_ultima_sincronizacion: str | None = None
+    causa_origen: PjudCausaOrigen | None = None
     texto_demanda: PjudDocumentoRef | None = None
     certificado_envio: PjudDocumentoRef | None = None
     ebook: PjudDocumentoRef | None = None
@@ -151,6 +160,24 @@ class PjudExhortoItem(BaseModel):
     estado_exhorto: str | None = None
 
 
+class PjudPiezaExhortoItem(BaseModel):
+    """Una fila de `piezas_exhorto`: solo aparece cuando la causa ES un
+    exhorto (tipo de rol "E"), no cuando tiene exhortos asociados (eso es la
+    pestaña `exhortos`). `folio` y `foja` pueden venir vacíos o con letras, así
+    que van como texto. La forma de `anexo` todavía no está confirmada contra
+    la API real; se deja como lista de objetos sueltos."""
+
+    folio: str | None = None
+    doc: str | None = None
+    cuaderno: str | None = None
+    anexo: list[dict] = []
+    etapa: str | None = None
+    tramite: str | None = None
+    descripcion_tramite: str | None = None
+    fecha_tramite: str | None = None
+    foja: str | None = None
+
+
 class PjudMovimientosResponse(BaseModel):
     # `sincronizando` = api-pjud está scrapeando la causa por primera vez.
     # `causa` y las secciones vienen con lo que el proveedor ya haya expuesto
@@ -175,6 +202,9 @@ class PjudMovimientosResponse(BaseModel):
     notificaciones: list[PjudNotificacionItem] = []
     escritos_resolver: list[PjudEscritoResolverItem] = []
     exhortos: list[PjudExhortoItem] = []
+    # Solo se puebla cuando la causa es un Exhorto (tipo de rol "E"); el
+    # frontend usa que venga vacío para no mostrar la pestaña.
+    piezas_exhorto: list[PjudPiezaExhortoItem] = []
 
 
 # ── Familia ────────────────────────────────────────────────────
@@ -211,6 +241,26 @@ class PjudFamiliaAnexoItem(BaseModel):
     observacion: str | None = None
 
 
+class PjudGeoreferenciaMapa(BaseModel):
+    latitud: str | None = None
+    longitud: str | None = None
+    corrector: str | None = None
+
+
+class PjudGeoreferenciaImagen(BaseModel):
+    img: str | None = None
+
+
+class PjudGeoreferencia(BaseModel):
+    """Georeferencia de un movimiento (p.ej. una diligencia con ubicación).
+    `videos` todavía no tiene un ejemplo real del proveedor: se deja como
+    lista de objetos sueltos hasta poder confirmar su forma."""
+
+    mapa: PjudGeoreferenciaMapa | None = None
+    imagenes: list[PjudGeoreferenciaImagen] = []
+    videos: list[dict] = []
+
+
 class PjudFamiliaMovimientoItem(BaseModel):
     folio_texto: str | None = None
     etapa: str | None = None
@@ -220,6 +270,7 @@ class PjudFamiliaMovimientoItem(BaseModel):
     fecha_tramite: str | None = None
     anexo: list[PjudFamiliaAnexoItem] = []
     documentos: list[PjudDocumentoTramite] = []
+    georeferencia: PjudGeoreferencia | None = None
 
 
 class PjudFamiliaLitiganteItem(BaseModel):
