@@ -238,8 +238,8 @@ type TabFamilia =
                         <table class="pjud-table">
                           <thead>
                             <tr>
-                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Georef.</th><th>Etapa</th><th>Estado</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th>
+                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th><th>Estado</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th><th>Georef.</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -265,6 +265,12 @@ type TabFamilia =
                                     </button>
                                   } @else { <span>-</span> }
                                 </td>
+                                
+                                <td class="whitespace-normal">{{ h.etapa || '-' }}</td>
+                                <td class="whitespace-normal">{{ h.estado || '-' }}</td>
+                                <td class="whitespace-normal">{{ h.tramite || '-' }}</td>
+                                <td class="whitespace-normal">{{ h.descripcion_tramite || '-' }}</td>
+                                <td>{{ h.fecha_tramite || '-' }}</td>
                                 <td class="text-center">
                                   @if (h.georeferencia) {
                                     <button type="button" (click)="abrirGeoreferencia(h.georeferencia)"
@@ -274,11 +280,6 @@ type TabFamilia =
                                     </button>
                                   } @else { <span>-</span> }
                                 </td>
-                                <td class="whitespace-normal">{{ h.etapa || '-' }}</td>
-                                <td class="whitespace-normal">{{ h.estado || '-' }}</td>
-                                <td class="whitespace-normal">{{ h.tramite || '-' }}</td>
-                                <td class="whitespace-normal">{{ h.descripcion_tramite || '-' }}</td>
-                                <td>{{ h.fecha_tramite || '-' }}</td>
                               </tr>
                             }
                           </tbody>
