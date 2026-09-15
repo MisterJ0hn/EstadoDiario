@@ -151,10 +151,13 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                     <p><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
 
                     @if (c.causa_origen?.rol || c.causa_origen?.tribunal) {
+                    <div class="flex flex-col items-start gap-2 rounded-lg bg-danger-600 px-4 py-3 text-white">
                       <p class="md:col-span-3">
                         <span class="pjud-k">Causa Origen:</span>
-                        {{ c.causa_origen?.rol || '-' }} — {{ c.causa_origen?.tribunal || '-' }}
+                        {{ c.causa_origen?.rol || '-' }}  
                       </p>
+                      <p> <span class="pjud-k">Tribunal:</span> {{ c.causa_origen?.tribunal || '-' }}</p>
+                    </div>
                     }
                   </div>
 
