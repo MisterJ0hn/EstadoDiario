@@ -223,6 +223,7 @@ export interface PjudMovimientoItem {
   /** Documentos del trámite (el proveedor manda 0, 1 o 2). Ya resueltos por el
    *  backend a partir del `doc` (que llega como lista). */
   documentos: PjudDocumentoTramite[];
+  georeferencia: PjudGeoreferencia | null;
 }
 
 export interface PjudLitiganteItem {

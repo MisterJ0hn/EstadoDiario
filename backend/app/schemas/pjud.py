@@ -93,6 +93,27 @@ class PjudDocumentoTramite(BaseModel):
     tipo: Literal["principal", "certificado"] = "principal"
 
 
+class PjudGeoreferenciaMapa(BaseModel):
+    latitud: str | None = None
+    longitud: str | None = None
+    corrector: str | None = None
+
+
+class PjudGeoreferenciaImagen(BaseModel):
+    img: str | None = None
+
+
+class PjudGeoreferencia(BaseModel):
+    """Georeferencia de un movimiento (p.ej. una diligencia con ubicación).
+    Compartida por Civil (`historia`) y Familia (`movimientos`). `videos`
+    todavía no tiene un ejemplo real del proveedor: se deja como lista de
+    objetos sueltos hasta poder confirmar su forma."""
+
+    mapa: PjudGeoreferenciaMapa | None = None
+    imagenes: list[PjudGeoreferenciaImagen] = []
+    videos: list[dict] = []
+
+
 class PjudMovimientoItem(BaseModel):
     """Una fila de `historia`: un trámite del cuaderno.
 
@@ -110,6 +131,7 @@ class PjudMovimientoItem(BaseModel):
     foja: int | None = None
     anexo: list[PjudHistoriaAnexoItem] = []
     documentos: list[PjudDocumentoTramite] = []
+    georeferencia: PjudGeoreferencia | None = None
 
 
 class PjudLitiganteItem(BaseModel):
@@ -239,26 +261,6 @@ class PjudFamiliaAnexoItem(BaseModel):
     fecha: str | None = None
     nombre_documento: str | None = None
     observacion: str | None = None
-
-
-class PjudGeoreferenciaMapa(BaseModel):
-    latitud: str | None = None
-    longitud: str | None = None
-    corrector: str | None = None
-
-
-class PjudGeoreferenciaImagen(BaseModel):
-    img: str | None = None
-
-
-class PjudGeoreferencia(BaseModel):
-    """Georeferencia de un movimiento (p.ej. una diligencia con ubicación).
-    `videos` todavía no tiene un ejemplo real del proveedor: se deja como
-    lista de objetos sueltos hasta poder confirmar su forma."""
-
-    mapa: PjudGeoreferenciaMapa | None = None
-    imagenes: list[PjudGeoreferenciaImagen] = []
-    videos: list[dict] = []
 
 
 class PjudFamiliaMovimientoItem(BaseModel):
