@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnDestroy, Output, inject, signal } from '@angular/core';
 import { CommonModule, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -15,6 +15,10 @@ import { CausaService } from '../../services/causa.service';
 
 type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exhortos' | 'piezas_exhorto';
 
+/** Cada cuánto se pregunta, mientras el PJUD sincroniza, si ya terminó (mismo
+ *  intervalo que usa `PjudBotonComponent` para su propio polling). */
+const INTERVALO_POLL_MS = 5000;
+
 /**
  * "Detalle Causa Civil": la ficha del PJUD de una causa Civil, consultada EN
  * VIVO a api-pjud.codifica.cl (no al Excel de Movimientos que sube el estudio).
@@ -27,11 +31,12 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
  * Solo aplica a causas Civiles: es lo único que esa API expone hoy. El padre
  * controla la apertura pasando la causa; null = cerrado.
  *
- * El scrape del proveedor es asíncrono: la primera consulta de una causa vuelve
- * con `estado: 'sincronizando'` y hay que reintentar a los pocos minutos. El
- * modal muestra ese aviso con un botón "Reintentar" en vez de un error, y por
- * debajo va pintando los datos parciales (cabecera, historia) a medida que el
- * proveedor los expone.
+ * El scrape del proveedor es asíncrono: la primera consulta de una causa (o un
+ * Actualizar/Reintentar) puede volver con `estado: 'sincronizando'`. Mientras
+ * el popup siga abierto en ese estado, se pregunta solo por Ajax cada
+ * `INTERVALO_POLL_MS` si ya terminó, y el popup se refresca solo con el
+ * resultado —sin que el usuario tenga que volver a apretar nada— hasta que
+ * quede `listo` o `error`.
  */
 @Component({
   selector: 'app-pjud-movimientos-modal',
@@ -103,7 +108,7 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                 <div class="alert-info flex-col items-start gap-2">
                   <p class="font-medium">El Poder Judicial está sincronizando esta causa</p>
                   <p>
-                    {{ d.mensaje || 'La primera consulta puede tardar varios minutos. Vuelve a intentar en un rato.' }}
+                    {{ d.mensaje || 'Puede tardar varios minutos. Esta ventana se actualiza sola en cuanto el Poder Judicial responda.' }}
                   </p>
                   @if (d.detalle_estado) {
                     <p class="inline-flex items-center gap-2 rounded-md bg-primary-100 px-2.5 py-1 text-sm font-medium text-primary-800">
@@ -748,14 +753,16 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
     .pjud-table tbody tr:hover { @apply bg-primary-50/40; }
   `],
 })
-export class PjudMovimientosModalComponent {
+export class PjudMovimientosModalComponent implements OnDestroy {
   private service = inject(CausaService);
   private sanitizer = inject(DomSanitizer);
 
   private _causa: Causa | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   @Input()
   set causa(c: Causa | null) {
+    this.detenerPolling();
     this._causa = c;
     if (c !== null) {
       this.tab.set('historia');
@@ -776,6 +783,10 @@ export class PjudMovimientosModalComponent {
   }
   get causa(): Causa | null {
     return this._causa;
+  }
+
+  ngOnDestroy(): void {
+    this.detenerPolling();
   }
 
   @Output() cerrado = new EventEmitter<void>();
@@ -811,6 +822,7 @@ export class PjudMovimientosModalComponent {
   origenError = signal<string | null>(null);
 
   private cargar(causaId: number, forzar: boolean, cuaderno?: number): void {
+    this.detenerPolling();
     this.cargando.set(true);
     this.error.set(null);
     this.service.pjudMovimientos(causaId, forzar, cuaderno).subscribe({
@@ -821,6 +833,9 @@ export class PjudMovimientosModalComponent {
         }
         this.cargando.set(false);
         this.estadoPjud.emit({ causaId, estado: res.estado });
+        if (res.estado === 'sincronizando') {
+          this.iniciarPolling(causaId, cuaderno);
+        }
       },
       error: (err) => {
         this.cargando.set(false);
@@ -830,6 +845,35 @@ export class PjudMovimientosModalComponent {
         );
       },
     });
+  }
+
+  /** Mientras el popup siga abierto y el PJUD siga sincronizando, pregunta
+   *  cada `INTERVALO_POLL_MS` (sin `forzar`, solo consulta el estado) y
+   *  refresca el popup solo con lo que vuelva; se detiene sola al salir de
+   *  'sincronizando', o antes si el usuario cierra el modal, cambia de
+   *  cuaderno o dispara otra consulta (Actualizar/Reintentar). */
+  private iniciarPolling(causaId: number, cuaderno?: number): void {
+    this.detenerPolling();
+    this.pollTimer = setInterval(() => {
+      this.service.pjudMovimientos(causaId, false, cuaderno).subscribe({
+        next: (res) => {
+          this.datos.set(res);
+          if (res.estado === 'listo' && res.cuaderno_consultado_id != null) {
+            this.cuadernoSel.set(res.cuaderno_consultado_id);
+          }
+          this.estadoPjud.emit({ causaId, estado: res.estado });
+          if (res.estado !== 'sincronizando') this.detenerPolling();
+        },
+        // Error de red en un tick: no se sabe nada nuevo, se sigue
+        // preguntando en el próximo intervalo.
+        error: () => {},
+      });
+    }, INTERVALO_POLL_MS);
+  }
+
+  private detenerPolling(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
   }
 
   reintentar(): void {
