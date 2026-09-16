@@ -510,7 +510,7 @@ const INTERVALO_POLL_MS = 5000;
                                     <button type="button" (click)="abrirRolDestino(x.rol_destino)"
                                             class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
                                             title="Ver rol destino">
-                                      <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                                      {{x.rol_destino.nombre}}
                                       <span class="text-xs font-semibold text-neutral-500">{{ x.rol_destino.length }}</span>
                                     </button>
                                   } @else { <span>-</span> }
@@ -656,8 +656,8 @@ const INTERVALO_POLL_MS = 5000;
             </div>
             <div class="modal-body">
               <table class="pjud-table">
-                  <thead><tr><th>Doc.</th><th>Fecha</th><th>Referencia</th><th>Trámite</th></tr></thead>
-                  <tbody>
+                <thead><tr><th>Doc.</th><th>Fecha</th><th>Referencia</th><th>Trámite</th></tr></thead>
+                <tbody>
                   @for (rd of destinos; track $index) {
                     @for (rol of rd.roles; track $index) {
                     
