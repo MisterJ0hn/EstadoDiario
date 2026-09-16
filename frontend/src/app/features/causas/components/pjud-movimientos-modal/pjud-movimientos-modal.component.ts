@@ -506,8 +506,8 @@ const INTERVALO_POLL_MS = 5000;
                                     <button type="button" (click)="abrirRolDestino(x.rol_destino)"
                                             class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
                                             title="Ver rol destino">
-                                      {{x.rol_destino[0].nombre}}
-                                      <span class="text-xs font-semibold text-neutral-500">{{ x.rol_destino.length }}</span>
+                                      {{ nombresRolDestino(x.rol_destino) || 'Rol destino' }}
+                                      
                                     </button>
                                   } @else { <span>-</span> }
                                 </td>
@@ -917,6 +917,13 @@ export class PjudMovimientosModalComponent implements OnDestroy {
 
   cambiarCuaderno(id: number): void {
     if (this.causa) this.cargar(this.causa.id, false, id);
+  }
+
+  /** Nombre(s) de los roles destino de un exhorto para mostrar en la fila
+   *  (p.ej. "E-2417-2025"); si son varios (un mismo exhorto puede tener más
+   *  de un rol destino) los junta en vez de mostrar solo el primero. */
+  nombresRolDestino(destinos: PjudExhortoRolDestinoItem[]): string {
+    return destinos.map((d) => d.nombre).filter((n): n is string => !!n).join(', ');
   }
 
   /** Abre el modal secundario con el detalle del Rol Destino de un exhorto
