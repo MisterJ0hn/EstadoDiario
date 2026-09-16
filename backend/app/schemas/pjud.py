@@ -154,7 +154,9 @@ class PjudNotificacionItem(BaseModel):
 
 class PjudEscritoResolverItem(BaseModel):
     doc: str | None = None
-    anexo: str | None = None
+    # Actualización 16-09-2026: antes era una URL suelta; ahora es un array
+    # como el anexo de Historia (mismo orden en que lo entrega el PJUD).
+    anexo: list[PjudHistoriaAnexoItem] = []
     tipo_escrito: str | None = None
     solicitante: str | None = None
     fecha_ingreso: str | None = None

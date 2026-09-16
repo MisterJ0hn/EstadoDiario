@@ -352,7 +352,7 @@ const INTERVALO_POLL_MS = 5000;
                           <thead>
                             <tr>
                               <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th><th>Foja</th><th>Georef.</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th><th>Foja</th><th>Georeferencia</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -471,8 +471,13 @@ const INTERVALO_POLL_MS = 5000;
                                   } @else { <span>-</span> }
                                 </td>
                                 <td class="text-center">
-                                  @if (e.anexo) {
-                                    <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: e.anexo }" />
+                                  @if (e.anexo.length > 0) {
+                                    <button type="button" (click)="abrirAnexosTramite(e.anexo)"
+                                            class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
+                                            title="Ver anexos del escrito">
+                                      <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                                      <span class="text-xs font-semibold text-neutral-500">{{ e.anexo.length }}</span>
+                                    </button>
                                   } @else { <span>-</span> }
                                 </td>
                                 <td>{{ e.fecha_ingreso || '-' }}</td>

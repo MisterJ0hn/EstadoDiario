@@ -246,7 +246,9 @@ export interface PjudNotificacionItem {
 
 export interface PjudEscritoResolverItem {
   doc: string | null;
-  anexo: string | null;
+  /** Actualización 16-09-2026: antes era una URL suelta; ahora es un array
+   *  como el anexo de Historia (mismo orden en que lo entrega el PJUD). */
+  anexo: PjudHistoriaAnexoItem[];
   tipo_escrito: string | null;
   solicitante: string | null;
   fecha_ingreso: string | null;
