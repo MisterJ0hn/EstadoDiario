@@ -7,6 +7,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import {
   Causa,
   PjudCausaOrigen,
+  PjudExhortoRolDestinoItem,
   PjudGeoreferencia,
   PjudHistoriaAnexoItem,
   PjudMovimientosResponse,
@@ -500,10 +501,13 @@ const INTERVALO_POLL_MS = 5000;
                               <tr>
                                 <td>{{ x.rol_origen || '-' }}</td>
                                 <td>{{ x.tipo_exhorto || 'Exhorto' }}</td>
-                                <td>
+                                <td class="text-center">
                                   @if (x.rol_destino.length > 0) {
-                                    <button type="button" (click)="toggleExhorto($index)" class="pjud-link">
-                                      {{ exhortoAbierto() === $index ? 'ocultar' : 'ver detalle' }}
+                                    <button type="button" (click)="abrirRolDestino(x.rol_destino)"
+                                            class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
+                                            title="Ver rol destino">
+                                      <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                                      <span class="text-xs font-semibold text-neutral-500">{{ x.rol_destino.length }}</span>
                                     </button>
                                   } @else { <span>-</span> }
                                 </td>
@@ -516,31 +520,6 @@ const INTERVALO_POLL_MS = 5000;
                                   } @else { <span>-</span> }
                                 </td>
                               </tr>
-                              @if (exhortoAbierto() === $index) {
-                                <tr>
-                                  <td colspan="7" class="bg-neutral-50 whitespace-normal">
-                                    @for (rd of x.rol_destino; track $index) {
-                                      <div class="mb-3 last:mb-0">
-                                        <p class="font-semibold text-neutral-700">{{ rd.nombre || 'Rol destino' }}</p>
-                                        <ul class="mt-1 space-y-1">
-                                          @for (rol of rd.roles; track $index) {
-                                            <li class="flex items-center justify-between gap-3">
-                                              <span class="text-neutral-600">
-                                                {{ rol.tramite || 'Trámite' }}
-                                                @if (rol.referencia) { <span>— {{ rol.referencia }}</span> }
-                                                @if (rol.fecha) { <span class="text-neutral-400">({{ rol.fecha }})</span> }
-                                              </span>
-                                              @if (rol.doc) {
-                                                <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: rol.doc }" />
-                                              }
-                                            </li>
-                                          }
-                                        </ul>
-                                      </div>
-                                    }
-                                  </td>
-                                </tr>
-                              }
                             }
                           </tbody>
                         </table>
@@ -653,6 +632,50 @@ const INTERVALO_POLL_MS = 5000;
             </div>
             <div class="modal-footer">
               <button (click)="anexosTramite.set(null)" class="btn-primary">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- ── Rol Destino de un Exhorto ──────────────────────────────
+           Mismo mecanismo que "Anexos del trámite": la celda "Rol Destino"
+           muestra una carpeta con el conteo y este modal (por encima del
+           principal) despliega el detalle agrupado por rol destino, con sus
+           trámites (Trámite, Referencia, Fecha, Doc.). -->
+      @if (rolDestinoAbierto(); as destinos) {
+        <div class="modal-backdrop !z-[60]" (click)="cerrarRolDestino()">
+          <div class="modal-content !z-[70] !max-w-2xl" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold text-primary-700">Rol Destino</h3>
+              <button (click)="cerrarRolDestino()"
+                      class="text-neutral-400 hover:text-neutral-600 text-xl leading-none">&times;</button>
+            </div>
+            <div class="modal-body">
+              @for (rd of destinos; track $index) {
+                <div class="mb-3 last:mb-0">
+                  <p class="font-semibold text-neutral-700">{{ rd.nombre || 'Rol destino' }}</p>
+                  <ul class="mt-1 space-y-1">
+                    @for (rol of rd.roles; track $index) {
+                      <li class="flex items-center justify-between gap-3">
+                        <span class="text-neutral-600">
+                          {{ rol.tramite || 'Trámite' }}
+                          @if (rol.referencia) { <span>— {{ rol.referencia }}</span> }
+                          @if (rol.fecha) { <span class="text-neutral-400">({{ rol.fecha }})</span> }
+                        </span>
+                        @if (rol.doc) {
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: rol.doc }" />
+                        }
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+              @if (docError()) {
+                <p class="mt-2 text-sm text-danger-600">{{ docError() }}</p>
+              }
+            </div>
+            <div class="modal-footer">
+              <button (click)="cerrarRolDestino()" class="btn-primary">Cerrar</button>
             </div>
           </div>
         </div>
@@ -774,8 +797,8 @@ export class PjudMovimientosModalComponent implements OnDestroy {
       this.cuadernoSel.set(null);
       this.verAnexos.set(false);
       this.verReceptor.set(false);
-      this.exhortoAbierto.set(null);
       this.anexosTramite.set(null);
+      this.rolDestinoAbierto.set(null);
       this.docError.set(null);
       this.georef.set(null);
       this.georefTab.set('mapa');
@@ -809,10 +832,12 @@ export class PjudMovimientosModalComponent implements OnDestroy {
   cuadernoSel = signal<number | null>(null);
   verAnexos = signal(false);
   verReceptor = signal(false);
-  exhortoAbierto = signal<number | null>(null);
   /** Array `anexo` del trámite de la Historia que se está mirando en el modal
    *  secundario; `null` = cerrado. */
   anexosTramite = signal<PjudHistoriaAnexoItem[] | null>(null);
+  /** Rol Destino de un exhorto que se está mirando en el modal secundario;
+   *  `null` = cerrado. */
+  rolDestinoAbierto = signal<PjudExhortoRolDestinoItem[] | null>(null);
   docError = signal<string | null>(null);
 
   /** Georeferencia del movimiento que se está mirando en el popup; `null` = cerrado. */
@@ -893,8 +918,15 @@ export class PjudMovimientosModalComponent implements OnDestroy {
     if (this.causa) this.cargar(this.causa.id, false, id);
   }
 
-  toggleExhorto(i: number): void {
-    this.exhortoAbierto.set(this.exhortoAbierto() === i ? null : i);
+  /** Abre el modal secundario con el detalle del Rol Destino de un exhorto
+   *  (agrupado por rol destino, cada uno con sus trámites). */
+  abrirRolDestino(destinos: PjudExhortoRolDestinoItem[]): void {
+    this.docError.set(null);
+    this.rolDestinoAbierto.set(destinos);
+  }
+
+  cerrarRolDestino(): void {
+    this.rolDestinoAbierto.set(null);
   }
 
   /** Un documento se pinta azul (certificado) si el backend lo marcó así
