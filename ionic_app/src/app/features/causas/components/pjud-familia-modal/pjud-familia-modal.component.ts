@@ -240,7 +240,7 @@ type TabFamilia =
                           <thead>
                             <tr>
                               <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th><th>Estado</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Georeferencia</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Georreferencia</th>
                             </tr>
                           </thead>
                           <tbody>

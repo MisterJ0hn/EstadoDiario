@@ -352,7 +352,7 @@ const INTERVALO_POLL_MS = 5000;
                           <thead>
                             <tr>
                               <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th><th>Foja</th><th>Georeferencia</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th><th>Foja</th><th>Georreferencia</th>
                             </tr>
                           </thead>
                           <tbody>
