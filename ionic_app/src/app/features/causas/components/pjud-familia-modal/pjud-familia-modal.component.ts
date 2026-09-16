@@ -239,8 +239,8 @@ type TabFamilia =
                         <table class="pjud-table">
                           <thead>
                             <tr>
-                              <th>Folio</th><th>Doc.</th><th>Anexos</th><th>Etapa</th><th>Estado</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Fec. Trámite</th><th>Georef.</th>
+                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th><th>Estado</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Georeferencia</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -319,7 +319,7 @@ type TabFamilia =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Est./Fecha</th><th>Tipo</th><th>Ente</th><th>RIT</th><th>RUC</th><th>Fec. Trámite</th><th>Tipo Parte</th><th>Nombre</th><th>Trámite</th><th>Certificación</th></tr></thead>
+                          <thead><tr><th>Estado y Fecha Notif.</th><th>Tipo Notif.</th><th>Ente Notif.</th><th>RIT</th><th>RUC</th><th>Fecha Trámite</th><th>Tipo Parte</th><th>Nombre</th><th>Trámite</th><th>Certificación</th></tr></thead>
                           <tbody>
                             @for (n of d.notificaciones; track $index) {
                               <tr>
@@ -352,7 +352,7 @@ type TabFamilia =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Código</th><th>Glosa de Materia</th><th>Estado</th><th>Fecha Término</th></tr></thead>
+                          <thead><tr><th>Código</th><th>Glosa</th><th>Estado</th><th>Fec. Término</th></tr></thead>
                           <tbody>
                             @for (m of d.materias; track $index) {
                               <tr>
@@ -375,7 +375,7 @@ type TabFamilia =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Tipo</th><th>Ámbito Afectado</th><th>Inicio</th><th>Término</th><th>Duración</th><th>Estado</th><th>Trámite</th><th>Suspensión</th><th>Reactivación</th></tr></thead>
+                          <thead><tr><th>Tipo Plazo</th><th>Ámbito Afectado</th><th>Fecha Inicio</th><th>Fecha Término</th><th>Duración</th><th>Estado</th><th>Trámite</th><th>Fecha Suspensión</th><th>Fecha Reactivación</th></tr></thead>
                           <tbody>
                             @for (p of d.plazos; track $index) {
                               <tr>
@@ -403,7 +403,7 @@ type TabFamilia =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Solicitud</th><th>Respuesta</th><th>Estado</th><th>Tipo</th><th>Fec. Trámite</th></tr></thead>
+                          <thead><tr><th>Doc. Solicitud</th><th>Doc. Respuesta</th><th>Estado Diligencia</th><th>Tipo Diligencia</th><th>Fecha Trámite</th></tr></thead>
                           <tbody>
                             @for (x of d.diligencias; track $index) {
                               <tr>

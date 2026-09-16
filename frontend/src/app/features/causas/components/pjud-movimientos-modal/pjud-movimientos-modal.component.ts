@@ -6,6 +6,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 import {
   Causa,
+  PjudCausaOrigen,
   PjudGeoreferencia,
   PjudHistoriaAnexoItem,
   PjudMovimientosResponse,
@@ -35,7 +36,9 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
 @Component({
   selector: 'app-pjud-movimientos-modal',
   standalone: true,
-  imports: [CommonModule, NgTemplateOutlet, FormsModule, RouterLink],
+  // Se importa a sí mismo: el popup de la Causa Origen reutiliza este mismo
+  // componente (recursivo), ver el bloque "Detalle de la Causa Origen" abajo.
+  imports: [CommonModule, NgTemplateOutlet, FormsModule, RouterLink, PjudMovimientosModalComponent],
   template: `
     <!-- Ícono reutilizable: abre un PDF del PJUD en una pestaña nueva, en el
          visor del navegador (sin descargarlo). El backend lo baja del proveedor
@@ -168,12 +171,28 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                   <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
                     <span class="inline-flex items-center gap-1.5">
                         <span class="pjud-k">Causa Origen:</span>
-                        {{ c.causa_origen?.rol || '-' }}  
+                        {{ c.causa_origen?.rol || '-' }}
                     </span>
                     <span class="inline-flex items-center gap-1.5">
                       <span class="pjud-k">Tribunal:</span> {{ c.causa_origen?.tribunal || '-' }}
                     </span>
+                    <button type="button" (click)="abrirCausaOrigen(c.causa_origen!)"
+                            [disabled]="resolviendoOrigen()"
+                            class="inline-flex items-center text-amber-500 hover:text-amber-600 disabled:opacity-50"
+                            title="Ver detalle de la causa origen">
+                      @if (resolviendoOrigen()) {
+                        <svg class="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      } @else {
+                        <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                      }
+                    </button>
                   </div>
+                  @if (origenError()) {
+                    <p class="px-4 pb-2 text-sm text-danger-600">{{ origenError() }}</p>
+                  }
                   }
                   <!-- Documentos de la causa -->
                   @if (c.texto_demanda?.url || c.certificado_envio?.url || c.ebook?.url || c.anexos_causa.length > 0) {
@@ -701,6 +720,16 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
           </div>
         </div>
       }
+
+      <!-- ── Detalle de la Causa Origen (modal anidado) ─────────────
+           De la causa origen solo tenemos rol/tribunal (no su id): se resuelve
+           contra la cartera cargada, mismo mecanismo que el botón "Detalle
+           PJUD" de Estado Diario/Movimientos (@see CausaService.pjudPorRol).
+           Reutiliza este mismo componente para mostrarla, lo que de paso deja
+           seguir bajando si esa causa también tiene su propia causa origen. -->
+      @if (causaOrigenAbierta(); as origenCausa) {
+        <app-pjud-movimientos-modal [causa]="origenCausa" (cerrado)="cerrarCausaOrigen()" />
+      }
     }
   `,
   styles: [`
@@ -738,6 +767,9 @@ export class PjudMovimientosModalComponent {
       this.georef.set(null);
       this.georefTab.set('mapa');
       this.imagenIdx.set(0);
+      this.causaOrigenAbierta.set(null);
+      this.resolviendoOrigen.set(false);
+      this.origenError.set(null);
       this.cargar(c.id, false);
     }
   }
@@ -770,6 +802,12 @@ export class PjudMovimientosModalComponent {
   georef = signal<PjudGeoreferencia | null>(null);
   georefTab = signal<'mapa' | 'imagenes' | 'videos'>('mapa');
   imagenIdx = signal(0);
+
+  /** Causa Origen resuelta contra la cartera cargada, mostrada en el modal
+   *  anidado; `null` = cerrado. */
+  causaOrigenAbierta = signal<Causa | null>(null);
+  resolviendoOrigen = signal(false);
+  origenError = signal<string | null>(null);
 
   private cargar(causaId: number, forzar: boolean, cuaderno?: number): void {
     this.cargando.set(true);
@@ -831,6 +869,33 @@ export class PjudMovimientosModalComponent {
 
   cerrarGeoreferencia(): void {
     this.georef.set(null);
+  }
+
+  /** Resuelve la Causa Origen (solo tenemos su rol/tribunal) contra la
+   *  cartera cargada —mismo mecanismo que el botón "Detalle PJUD" de Estado
+   *  Diario/Movimientos— y, si calza, abre el modal anidado con su detalle. */
+  abrirCausaOrigen(origen: PjudCausaOrigen): void {
+    if (!origen.rol || !origen.tribunal) return;
+    this.origenError.set(null);
+    this.resolviendoOrigen.set(true);
+    this.service.pjudPorRol(origen.rol, origen.tribunal).subscribe({
+      next: (res) => {
+        this.resolviendoOrigen.set(false);
+        if (res.causa) {
+          this.causaOrigenAbierta.set(res.causa);
+        } else {
+          this.origenError.set('La causa origen no está en la cartera cargada.');
+        }
+      },
+      error: () => {
+        this.resolviendoOrigen.set(false);
+        this.origenError.set('No se pudo resolver la causa origen.');
+      },
+    });
+  }
+
+  cerrarCausaOrigen(): void {
+    this.causaOrigenAbierta.set(null);
   }
 
   /** Embed de Google Maps sin API key, situado en la latitud/longitud del
