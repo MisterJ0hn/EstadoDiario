@@ -252,3 +252,88 @@ endpoint consultar_movimientos_civil:
     ]
 
 }
+
+
+consultar_civil:
+{
+    "exito": true,
+    "code": 200,
+    {
+        "identificador": [GUID],
+        "estado": "Sincronizando"|"Completo",
+        "detalle_estado": "Obteniendo historia de cuaderno Principal", // paso actual mientras estado=Sincronizando; null cuando estado=Completo
+        "fecha_ultima_sincronizacion": "2026-08-10",
+        "rol": "C-11247-2026", #ROL
+        "fecha_ingreso":"30/01/2026", #F. Ing.
+        "caratula": "PROMOTORA CMR FALABELLA S", #nO TIENE TITULO EN EL MODAL, PERO ESTA AL LADO DEL F. Ing.
+        "est_adm": "Sin archivar", #Est. Adm.
+        "proceso": "Ejecutivo Obligación de Dar", #Proc.
+        "ubicacion": "Digital", #Ubicación
+        "estado_proceso": "Tramitación", #Estado Proc.
+        "etapa":"1 Notificación demanda y su proveído", #Etapa
+        "tribunal":"1° Juzgado Civil de Valparaíso", #Tribunal
+        # Inicio Actualización 15-09-2026. Existen algunas causas, tienen Causa Origen:, como prueba E-1798-2026 - C-7623-2010 .
+        "causa_origen": {
+            "rol":"C-1964-2026",
+            "tribunal": "4 ° Juzgado de Letras Civil de Antofagasta"
+        },
+        # Fin Actualización
+        "texto_demanda":{
+            "nombre_archivo": "texto_demanda_", # debe ser un nombre IDEMPOTENTE
+            "url": "https://api-pjud.temposoft.cl/public/texto_demanda_.pdf"
+        }
+        "certificado_envio":{
+            "nombre_archivo": "certificado_envio", # debe ser un nombre IDEMPOTENTE
+            "url": "https://api-pjud.temposoft.cl/public/certificado_envio.pdf"
+        }
+        "ebook":{
+            "nombre_archivo": "ebook", # debe ser un nombre IDEMPOTENTE
+            "url": "https://api-pjud.temposoft.cl/public/ebook.pdf"
+        }
+        "anexos_causa": [
+            {
+                "fecha":"30/01/2026",
+                "referencia": "PAGARE",
+                "nombre_doc": "Anexos_causa", #nombre idenpotente
+                "doc":"https://api-pjud.temposoft.cl/public/ANEXO_CAUSA_.pdf"
+            },{
+                "fecha":"30/01/2026",
+                "referencia": "CONTRATO",
+                "nombre_doc": "Anexos_causa", #nombre idenpotente
+                "doc":"https://api-pjud.temposoft.cl/public/ANEXO_CAUSA_.pdf"
+            }
+        ],
+        "informacion_receptor":[
+            {
+                "cuaderno":"Principal",
+                "datos_retiro": "MARIA LORETO PIZARRO QUEZADA",
+                "fecha_retiro": "23/03/2026",
+                "estado":"Resuelta"
+            },
+            {
+                "cuaderno":"Apremio Ejecutivo Obligación de Dar",
+                "datos_retiro": "MARIA LORETO PIZARRO QUEZADA",
+                "fecha_retiro": "23/03/2026",
+                "estado":"Resuelta"
+            }
+        ],
+        # Actualizacion 16-09-2026, los datos de estado_proceso y etapa , cambian por cuaderno. por lo tanto debes agregar estos 2 campos en cuadernos y cada vez que hagamos un cambio de cuaderno en el front , deben cambiar esos 2 datos en la cabecera
+        "cuadernos":[
+            {
+                "id":1,
+                "nombre":"1 - principal",
+                "estado_proceso": "Tramitación", #Estado Proc.
+                "etapa":"1 Notificación demanda y su proveído", #Etapa
+            },
+            {
+                "id":2,
+                "nombre":"2 - Apremio Ejecutivo Obligación de Dar",
+                "estado_proceso": "Tramitación", #Estado Proc.
+                "etapa":"1 Notificación demanda y su proveído", #Etapa
+            }
+        ]
+        # fin Actualizacion 16-09-2026
+        
+    }
+
+}

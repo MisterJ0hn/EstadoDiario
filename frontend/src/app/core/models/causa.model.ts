@@ -146,6 +146,11 @@ export interface CargarCausasResponse {
 export interface PjudCuaderno {
   id: number;
   nombre: string;
+  /** Actualización 16-09-2026: Estado Proc. y Etapa cambian por cuaderno, no
+   *  son fijos de la causa; se pintan en la cabecera según el cuaderno
+   *  seleccionado. */
+  estado_proceso: string | null;
+  etapa: string | null;
 }
 
 export interface PjudDocumentoRef {

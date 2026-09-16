@@ -7,6 +7,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import {
   Causa,
   PjudCausaOrigen,
+  PjudCuaderno,
   PjudExhortoRolDestinoItem,
   PjudGeoreferencia,
   PjudHistoriaAnexoItem,
@@ -168,8 +169,8 @@ const INTERVALO_POLL_MS = 5000;
                     <p><span class="pjud-k">Proc.:</span> {{ c.proceso || '-' }}</p>
                     <p><span class="pjud-k">Ubicación:</span> {{ c.ubicacion || '-' }}</p>
 
-                    <p><span class="pjud-k">Estado Proc.:</span> {{ c.estado_proceso || '-' }}</p>
-                    <p><span class="pjud-k">Etapa:</span> {{ c.etapa || '-' }}</p>
+                    <p><span class="pjud-k">Estado Proc.:</span> {{ cuadernoActual(c.cuadernos)?.estado_proceso || c.estado_proceso || '-' }}</p>
+                    <p><span class="pjud-k">Etapa:</span> {{ cuadernoActual(c.cuadernos)?.etapa || c.etapa || '-' }}</p>
                     <p><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
                     
                   </div>
@@ -917,6 +918,13 @@ export class PjudMovimientosModalComponent implements OnDestroy {
 
   cambiarCuaderno(id: number): void {
     if (this.causa) this.cargar(this.causa.id, false, id);
+  }
+
+  /** Estado Proc. y Etapa cambian por cuaderno (no son fijos de la causa):
+   *  se pinta el del cuaderno seleccionado, con el primero como respaldo
+   *  mientras no haya selección (p.ej. la primera carga). */
+  cuadernoActual(cuadernos: PjudCuaderno[]): PjudCuaderno | undefined {
+    return cuadernos.find((cu) => cu.id === this.cuadernoSel()) ?? cuadernos[0];
   }
 
   /** Nombre(s) de los roles destino de un exhorto para mostrar en la fila

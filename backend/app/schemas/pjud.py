@@ -44,6 +44,11 @@ class PjudInformacionReceptorItem(BaseModel):
 class PjudCuaderno(BaseModel):
     id: int
     nombre: str
+    # Actualización 16-09-2026: Estado Proc. y Etapa cambian por cuaderno, no
+    # son fijos de la causa. El frontend los pinta en la cabecera y los
+    # refresca al cambiar de cuaderno.
+    estado_proceso: str | None = None
+    etapa: str | None = None
 
 
 class PjudCausaOrigen(BaseModel):
