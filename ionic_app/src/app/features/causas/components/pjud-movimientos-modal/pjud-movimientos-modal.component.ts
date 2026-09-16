@@ -175,9 +175,6 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                         <span class="pjud-k">Causa Origen:</span>
                         {{ c.causa_origen?.rol || '-' }}
                     </span>
-                    <span class="inline-flex items-center gap-1.5">
-                      <span class="pjud-k">Tribunal:</span> {{ c.causa_origen?.tribunal || '-' }}
-                    </span>
                     <button type="button" (click)="abrirCausaOrigen(c.causa_origen!)"
                             [disabled]="resolviendoOrigen()"
                             class="inline-flex items-center text-amber-500 hover:text-amber-600 disabled:opacity-50"
@@ -191,6 +188,10 @@ type TabPjud = 'historia' | 'litigantes' | 'notificaciones' | 'escritos' | 'exho
                         <ng-container *ngTemplateOutlet="iconoCarpeta" />
                       }
                     </button>
+                    <span class="inline-flex items-center gap-1.5">
+                      <span class="pjud-k">Tribunal Origen:</span> {{ c.causa_origen?.tribunal || '-' }}
+                    </span>
+                    
                   </div>
                   @if (origenError()) {
                     <p class="px-4 pb-2 text-sm text-danger-600">{{ origenError() }}</p>
