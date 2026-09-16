@@ -651,25 +651,26 @@ const INTERVALO_POLL_MS = 5000;
                       class="text-neutral-400 hover:text-neutral-600 text-xl leading-none">&times;</button>
             </div>
             <div class="modal-body">
-              @for (rd of destinos; track $index) {
-                <div class="mb-3 last:mb-0">
-                  <p class="font-semibold text-neutral-700">{{ rd.nombre || 'Rol destino' }}</p>
-                  <ul class="mt-1 space-y-1">
+              <table class="pjud-table">
+                <thead><tr><th>Doc.</th><th>Fecha</th><th>Referencia</th><th>Trámite</th></tr></thead>
+                <tbody>
+                  @for (rd of destinos; track $index) {
                     @for (rol of rd.roles; track $index) {
-                      <li class="flex items-center justify-between gap-3">
-                        <span class="text-neutral-600">
-                          {{ rol.tramite || 'Trámite' }}
-                          @if (rol.referencia) { <span>— {{ rol.referencia }}</span> }
-                          @if (rol.fecha) { <span class="text-neutral-400">({{ rol.fecha }})</span> }
-                        </span>
-                        @if (rol.doc) {
-                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: rol.doc }" />
-                        }
-                      </li>
+                    
+                      <tr>
+                        <td class="text-center">
+                          @if (rol.doc) {
+                            <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: rol.doc }" />
+                          } @else { <span>-</span> }
+                        </td>
+                        <td>{{ rol.fecha || '-' }}</td>
+                        <td class="whitespace-normal">{{ rol.referencia || '-' }}</td>
+                        <td> {{ rol.tramite || 'Trámite' }}</td>
+                      </tr>
                     }
-                  </ul>
-                </div>
-              }
+                  }
+                </tbody>
+              </table>
               @if (docError()) {
                 <p class="mt-2 text-sm text-danger-600">{{ docError() }}</p>
               }
