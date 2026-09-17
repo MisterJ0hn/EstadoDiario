@@ -241,20 +241,10 @@ class PjudService:
         return 300.0
 
     # ── Catálogo de tribunales (por competencia) ────────────────
-
-    # Ruta del catálogo por competencia. Civil usa `/catalogo/tribunales`;
-    # Familia no tiene catálogo (esa ruta le da HTTP 400 "Error en campo
+    # `/catalogo/tribunales?competencia=<civil|laboral>` sirve para las dos.
+    # Familia no tiene catálogo (esa misma ruta le da HTTP 400 "Error en campo
     # [competencia]" — su búsqueda privada filtra solo por Rit/Rol/Año, ver
-    # `resolver_tribunal`/`obtener_detalle_familia`). "Solicitud Laboral.md"
-    # documenta para Laboral una ruta DISTINTA (`/tribunal`, no
-    # `/catalogo/tribunales`) — sin confirmar en vivo todavía, pero dado que
-    # Familia ya demostró que `/catalogo/tribunales` no sirve para cualquier
-    # competencia, se sigue la ruta que indica la nota en vez de reutilizar la
-    # de Civil a ciegas.
-    _RUTA_CATALOGO_POR_COMPETENCIA = {
-        "laboral": "/tribunal",
-    }
-    _RUTA_CATALOGO_DEFAULT = "/catalogo/tribunales"
+    # `resolver_tribunal`/`obtener_detalle_familia`).
 
     def _obtener_catalogo(self, competencia: str) -> list[dict]:
         with self._lock:
@@ -264,11 +254,8 @@ class PjudService:
                 and time.monotonic() - obtenido_en < _CATALOGO_TTL_SEGUNDOS
             )
             if not vigente:
-                ruta = self._RUTA_CATALOGO_POR_COMPETENCIA.get(
-                    competencia, self._RUTA_CATALOGO_DEFAULT
-                )
                 data = self._request(
-                    "GET", ruta, params={"competencia": competencia},
+                    "GET", "/catalogo/tribunales", params={"competencia": competencia},
                 )
                 PjudService._catalogo[competencia] = data.get("cortes", [])
                 PjudService._catalogo_ts[competencia] = time.monotonic()
@@ -375,7 +362,27 @@ class PjudService:
             raise PjudApiError("El detalle PJUD solo está disponible para causas Civiles.")
 
         tipo, rol, anio = self.parsear_rol_civil(causa.rol)
-        corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "")
+        try:
+            corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "")
+        except PjudApiError as e:
+            # Sin el id numérico del tribunal no hay `/sincronizar_civil` ni
+            # `/consultar_civil` posibles. Se devuelve como error "normal" (con
+            # diagnóstico) en vez de dejar que la excepción suba pelada al
+            # endpoint, que la reportaba con el mensaje genérico de un 404
+            # ("causa no encontrada") y sin diagnóstico.
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": None,
+                "ultimo_error": (
+                    f"No se pudo resolver el tribunal «{causa.tribunal}» contra el "
+                    f"catálogo Civil del PJUD: {e}"
+                ),
+                "diagnostico": (
+                    f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r} "
+                    f"· resolver_tribunal(civil): {e}"
+                ),
+            }
         cuerpo_causa = {
             "corte": corte_id, "tribunal": tribunal_id,
             "tipo": tipo, "rol": rol, "anio": anio,
@@ -767,12 +774,9 @@ class PjudService:
         IDs reales del catálogo del proveedor, como Civil: el árbol de
         tribunales de Laboral es propio, distinto al de Civil.
 
-        NOTA sin confirmar en vivo (ver "Solicitud Laboral.md"): el catálogo se
-        pide a `/tribunal?competencia=laboral` (no `/catalogo/tribunales`, que
-        usa Civil) — ver `_RUTA_CATALOGO_POR_COMPETENCIA`. Familia ya demostró
-        que `/catalogo/tribunales` no sirve para cualquier competencia (le da
-        HTTP 400), así que se sigue la ruta que indica la nota original en vez
-        de reutilizar la de Civil a ciegas; falta confirmarlo contra la API.
+        El catálogo se pide a la misma `/catalogo/tribunales` que usa Civil,
+        solo cambiando `competencia=laboral` (confirmado en vivo el
+        2026-09-17; `resolver_tribunal(..., "laboral")` ya lo hace así).
 
         Cambia además respecto a Civil/Familia:
           - la sección de trámites se llama `movimiento` (no `historia` ni
@@ -789,7 +793,28 @@ class PjudService:
             )
 
         tipo, rol, anio = self.parsear_rol_civil(causa.rol)
-        corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "laboral")
+        diag: list[str] = [f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"]
+        try:
+            corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "laboral")
+        except PjudApiError as e:
+            # No se puede seguir sin el id numérico del tribunal: sin esto no
+            # hay `/sincronizar_laboral` ni `/consultar_laboral` posibles. Se
+            # devuelve como error "normal" (con diagnóstico) en vez de dejar
+            # que la excepción suba pelada al endpoint, que la reportaba como
+            # "causa no encontrada" (el mensaje genérico de un 404) y sin
+            # diagnóstico — confuso para depurar el catálogo de tribunales.
+            diag.append(f"resolver_tribunal(laboral): {e}")
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": None,
+                "ultimo_error": (
+                    f"No se pudo resolver el tribunal «{causa.tribunal}» contra el "
+                    f"catálogo Laboral del PJUD: {e}"
+                ),
+                "diagnostico": " · ".join(diag),
+            }
+        diag[0] = f"corte={corte_id} tribunal={tribunal_id} " + diag[0]
         cuerpo_causa = {
             "corte": corte_id, "tribunal": tribunal_id,
             "tipo": tipo, "rol": rol, "anio": anio,
@@ -801,7 +826,6 @@ class PjudService:
             and credenciales_pjud.get("clave")
         )
 
-        diag: list[str] = [f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"]
         if not puede_sincronizar:
             diag.append("sin clave del OJV cargada")
 
