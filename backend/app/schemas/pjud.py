@@ -344,6 +344,153 @@ class PjudFamiliaMovimientosResponse(BaseModel):
     diligencias: list[PjudDiligenciaItem] = []
 
 
+# ── Laboral ────────────────────────────────────────────────────
+# Comparte con Civil y Familia la cabecera, el manejo de documentos y la
+# georeferencia, pero: la cabecera trae `texto_demanda` (una lista, cada fila
+# con un ícono de estado) y `audio_laboral` en vez de un único documento; la
+# sección de trámites se llama `movimiento` (singular, no `historia` ni
+# `movimientos`); y suma `diligencias`, `liquidacion` y `escritos_pendientes`
+# a litigantes/notificaciones/materias. Como Civil (y a diferencia de
+# Familia), SÍ necesita el `corte`/`tribunal` reales del catálogo del
+# proveedor, porque el árbol de tribunales de Laboral es propio.
+
+
+class PjudTextoDemandaItem(BaseModel):
+    """Una fila de `texto_demanda`: en el OJV el primer `td` trae un ícono de
+    estado (`fa-minus` = 0, `fa-check` = 1) que se captura en `doc_demanda`."""
+
+    doc_demanda: int | None = None
+    doc: str | None = None
+    fecha: str | None = None
+    referencia: str | None = None
+
+
+class PjudAudioLaboralItem(BaseModel):
+    numero: int | None = None
+    audio: str | None = None
+    fecha: str | None = None
+    referencia: str | None = None
+
+
+class PjudLaboralCausaDetalle(BaseModel):
+    identificador: str
+    estado: str
+    rit: str | None = None
+    caratula: str | None = None
+    fecha_ingreso: str | None = None
+    ruc: str | None = None
+    proceso: str | None = None
+    forma_inicio: str | None = None
+    est_adm: str | None = None
+    etapa: str | None = None
+    estado_proceso: str | None = None
+    tribunal: str | None = None
+    fecha_ultima_sincronizacion: str | None = None
+    texto_demanda: list[PjudTextoDemandaItem] = []
+    tramites: str | None = None
+    ebook: PjudDocumentoRef | None = None
+    certificado_envio: PjudDocumentoRef | None = None
+    audio_laboral: list[PjudAudioLaboralItem] = []
+
+
+class PjudLaboralLitiganteItem(BaseModel):
+    """`estado` es el mismo ícono de estado que `PjudTextoDemandaItem.doc_demanda`
+    (`fa-minus` = 0, `fa-check` = 1), acá sobre la fila del litigante."""
+
+    estado: int | None = None
+    defensor: str | None = None
+    sujeto: str | None = None
+    rut: str | None = None
+    persona: str | None = None
+    razon_social: str | None = None
+
+
+class PjudLaboralMovimientoItem(BaseModel):
+    """Una fila de `movimiento`. Trae `folio` (numérico) y `folio_texto` (tal
+    cual lo muestra el OJV, con sufijos de exhorto tipo `[6E]`), igual que la
+    `historia` de Civil.
+
+    `doc` llega igual que en Civil/Familia (lista de 0-2 `{"doc": ...}`) y el
+    servicio la resuelve a `documentos`. La forma de `anexo` no está
+    confirmada contra la API real (el ejemplo del proveedor siempre lo trae
+    vacío), así que queda como lista de objetos sueltos."""
+
+    folio: int | None = None
+    folio_texto: str | None = None
+    documentos: list[PjudDocumentoTramite] = []
+    anexo: list[dict] = []
+    etapa: str | None = None
+    tramite: str | None = None
+    descripcion_tramite: str | None = None
+    fecha_tramite: str | None = None
+    estado: str | None = None
+    georeferencia: PjudGeoreferencia | None = None
+
+
+class PjudLaboralNotificacionItem(BaseModel):
+    estado_notificacion: str | None = None
+    fecha_tramite: str | None = None
+    tipo_part: str | None = None
+    nombre: str | None = None
+    tramite: str | None = None
+    observacion_fallida: str | None = None
+
+
+class PjudLaboralDiligenciaItem(BaseModel):
+    doc_ida: str | None = None
+    doc_vta: str | None = None
+    estado_diligencia: str | None = None
+    rit: str | None = None
+    ruc: str | None = None
+    tipo_diligencia: str | None = None
+    referencia: str | None = None
+    fecha_tramite: str | None = None
+
+
+class PjudLaboralLiquidacionItem(BaseModel):
+    liquidacion: str | None = None
+    rut: str | None = None
+    nombre: str | None = None
+    monto_liquido: str | None = None
+
+
+class PjudLaboralMateriaItem(BaseModel):
+    """Como `PjudMateriaItem` de Familia, pero el proveedor llama a la glosa
+    `glosa_materia` acá (Familia la manda como `glosa_de_materia`)."""
+
+    codigo: str | None = None
+    glosa_materia: str | None = None
+    estado: str | None = None
+    fecha_termino: str | None = None
+
+
+class PjudLaboralEscritoPendienteItem(BaseModel):
+    doc: str | None = None
+    # Forma sin confirmar contra la API real: el ejemplo del proveedor trae
+    # "" en vez de una lista, a diferencia del `anexo` de Historia/Movimiento.
+    anexo: str | None = None
+    fecha_ing: str | None = None
+    referencia: str | None = None
+    solicitante: str | None = None
+    tipo_ingreso: str | None = None
+
+
+class PjudLaboralMovimientosResponse(BaseModel):
+    # Mismos estados y semántica que `PjudMovimientosResponse` (ver ahí).
+    estado: Literal["listo", "sincronizando", "error", "sin_credenciales"] = "listo"
+    mensaje: str | None = None
+    ultimo_error: str | None = None
+    detalle_estado: str | None = None
+    causa: PjudLaboralCausaDetalle | None = None
+    movimiento: list[PjudLaboralMovimientoItem] = []
+    litigantes: list[PjudLaboralLitiganteItem] = []
+    notificaciones: list[PjudLaboralNotificacionItem] = []
+    diligencias: list[PjudLaboralDiligenciaItem] = []
+    liquidacion: list[PjudLaboralLiquidacionItem] = []
+    materias: list[PjudLaboralMateriaItem] = []
+    escritos_pendientes: list[PjudLaboralEscritoPendienteItem] = []
+
+
 class PjudErrorResponse(BaseModel):
     exito: bool = False
     mensaje: str
@@ -354,11 +501,11 @@ class PjudDisponibleResponse(BaseModel):
 
 
 class PjudPorRolResponse(BaseModel):
-    """Resuelve, por rol y tribunal, la Causa Civil o de Familia de la cartera
-    vigente que corresponde: es lo que ofrece el botón "Detalle PJUD" en
-    pantallas que no tienen el id de la Causa (Estado Diario, Movimientos) y
+    """Resuelve, por rol y tribunal, la Causa Civil, Familia o Laboral de la
+    cartera vigente que corresponde: es lo que ofrece el botón "Detalle PJUD"
+    en pantallas que no tienen el id de la Causa (Estado Diario, Movimientos) y
     solo conocen su rol y tribunal. `causa` viene en `null` si no hay cartera
-    cargada, no calza ninguna, o la que calza no es Civil ni de Familia (las
-    dos materias que expone la API del PJUD)."""
+    cargada, no calza ninguna, o la que calza no es de una materia que expone
+    la API del PJUD."""
 
     causa: CausaResponse | None = None

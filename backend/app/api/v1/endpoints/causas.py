@@ -36,6 +36,7 @@ from app.schemas.causa import (
 from app.schemas.pjud import (
     PjudDisponibleResponse,
     PjudFamiliaMovimientosResponse,
+    PjudLaboralMovimientosResponse,
     PjudMovimientosResponse,
     PjudPorRolResponse,
 )
@@ -280,12 +281,12 @@ def listar(
 
     # Último estado conocido de "Detalle PJUD" por causa (del log de llamados,
     # NO en vivo al proveedor): pinta el icono del botón sin el costo de
-    # golpear a api-pjud una vez por fila. Solo aplica a Civil y Familia, que
-    # son las materias con ese botón.
+    # golpear a api-pjud una vez por fila. Solo aplica a Civil, Familia y
+    # Laboral, que son las materias con ese botón.
     if settings.pjud_api_activo:
         pjud_ids = [
             r.id for r, c in zip(causas_resp, items)
-            if (c.materia or "").strip().lower() in ("civil", "familia")
+            if (c.materia or "").strip().lower() in ("civil", "familia", "laboral")
         ]
         ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
             cliente_id=tenant.cliente_id, causa_ids=pjud_ids,
@@ -533,6 +534,76 @@ def pjud_familia(
             rol=causa.rol,
             tribunal=causa.tribunal,
             materia="Familia",
+            forzar=forzar,
+            resultado=resultado_log,
+            http_status=http_status,
+            mensaje=mensaje_log,
+            diagnostico=diagnostico_log,
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
+
+
+@router.get(
+    "/{causa_id}/pjud/laboral",
+    response_model=PjudLaboralMovimientosResponse,
+    summary="Detalle de una causa Laboral consultado en vivo al PJUD",
+)
+def pjud_laboral(
+    causa_id: int,
+    response: Response,
+    forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Igual que `/pjud/familia` pero para causas de materia Laboral: el flujo
+    de sincronización asíncrona es el mismo, cambia la forma de la respuesta
+    (ver `PjudLaboralMovimientosResponse`). Laboral no tiene cuadernos, así que
+    no hay parámetro `cuaderno`."""
+    causa = CausaRepository(db).find_by_id(causa_id)
+    if not causa:
+        raise HTTPException(status_code=404, detail="Causa no encontrada")
+
+    credenciales_pjud = {
+        "rut": current_user.pjud_rut,
+        "clave": current_user.pjud_clave,
+        "metodo_login": current_user.pjud_metodo_login,
+    }
+
+    inicio = time.monotonic()
+    resultado_log = "error"
+    http_status = 502
+    mensaje_log: str | None = None
+    diagnostico_log: str | None = None
+    try:
+        resultado = PjudService().obtener_detalle_laboral(
+            causa,
+            forzar_sincronizacion=forzar,
+            credenciales_pjud=credenciales_pjud,
+        )
+        estado = resultado.get("estado")
+        diagnostico_log = resultado.pop("diagnostico", None)
+        if estado == "sincronizando":
+            response.status_code = http_status = 202
+        else:
+            # 'sin_credenciales' y 'error' también van 200: el estado va en el
+            # cuerpo y el modal decide qué mostrar.
+            http_status = 200
+        resultado_log = estado or "listo"
+        mensaje_log = resultado.get("mensaje")
+        return PjudLaboralMovimientosResponse(**resultado)
+    except PjudApiError as e:
+        mensaje_log = str(e)
+        raise HTTPException(status_code=502, detail=mensaje_log)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra,
+            tenant=tenant,
+            causa_id=causa_id,
+            rol=causa.rol,
+            tribunal=causa.tribunal,
+            materia="Laboral",
             forzar=forzar,
             resultado=resultado_log,
             http_status=http_status,

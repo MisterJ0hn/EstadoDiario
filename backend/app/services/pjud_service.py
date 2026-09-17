@@ -242,6 +242,20 @@ class PjudService:
 
     # ── Catálogo de tribunales (por competencia) ────────────────
 
+    # Ruta del catálogo por competencia. Civil usa `/catalogo/tribunales`;
+    # Familia no tiene catálogo (esa ruta le da HTTP 400 "Error en campo
+    # [competencia]" — su búsqueda privada filtra solo por Rit/Rol/Año, ver
+    # `resolver_tribunal`/`obtener_detalle_familia`). "Solicitud Laboral.md"
+    # documenta para Laboral una ruta DISTINTA (`/tribunal`, no
+    # `/catalogo/tribunales`) — sin confirmar en vivo todavía, pero dado que
+    # Familia ya demostró que `/catalogo/tribunales` no sirve para cualquier
+    # competencia, se sigue la ruta que indica la nota en vez de reutilizar la
+    # de Civil a ciegas.
+    _RUTA_CATALOGO_POR_COMPETENCIA = {
+        "laboral": "/tribunal",
+    }
+    _RUTA_CATALOGO_DEFAULT = "/catalogo/tribunales"
+
     def _obtener_catalogo(self, competencia: str) -> list[dict]:
         with self._lock:
             obtenido_en = PjudService._catalogo_ts.get(competencia, 0.0)
@@ -250,8 +264,11 @@ class PjudService:
                 and time.monotonic() - obtenido_en < _CATALOGO_TTL_SEGUNDOS
             )
             if not vigente:
+                ruta = self._RUTA_CATALOGO_POR_COMPETENCIA.get(
+                    competencia, self._RUTA_CATALOGO_DEFAULT
+                )
                 data = self._request(
-                    "GET", "/catalogo/tribunales", params={"competencia": competencia},
+                    "GET", ruta, params={"competencia": competencia},
                 )
                 PjudService._catalogo[competencia] = data.get("cortes", [])
                 PjudService._catalogo_ts[competencia] = time.monotonic()
@@ -729,6 +746,180 @@ class PjudService:
             f"{self._base_url}/public/{quote(identificador, safe='')}/"
             f"{cuaderno_id}/{quote(doc, safe='')}"
         )
+
+    # ── Laboral ─────────────────────────────────────────────────
+
+    def obtener_detalle_laboral(
+        self,
+        causa,
+        forzar_sincronizacion: bool = False,
+        credenciales_pjud: Optional[dict] = None,
+    ) -> dict:
+        """Detalle completo de una `Causa` de materia Laboral desde el PJUD.
+
+        Mismo flujo asíncrono que Civil/Familia: `sincronizando` mientras el
+        proveedor scrapea, `error` si el scrape terminó mal, `sin_credenciales`
+        si hay que sincronizar y la persona no cargó su clave del OJV, `listo`
+        cuando está todo.
+
+        A diferencia de Familia (que manda `corte`/`tribunal` en 0 porque su
+        búsqueda privada filtra solo por Rit/Rol/Año), Laboral SÍ necesita los
+        IDs reales del catálogo del proveedor, como Civil: el árbol de
+        tribunales de Laboral es propio, distinto al de Civil.
+
+        NOTA sin confirmar en vivo (ver "Solicitud Laboral.md"): el catálogo se
+        pide a `/tribunal?competencia=laboral` (no `/catalogo/tribunales`, que
+        usa Civil) — ver `_RUTA_CATALOGO_POR_COMPETENCIA`. Familia ya demostró
+        que `/catalogo/tribunales` no sirve para cualquier competencia (le da
+        HTTP 400), así que se sigue la ruta que indica la nota original en vez
+        de reutilizar la de Civil a ciegas; falta confirmarlo contra la API.
+
+        Cambia además respecto a Civil/Familia:
+          - la sección de trámites se llama `movimiento` (no `historia` ni
+            `movimientos`);
+          - la cabecera trae `texto_demanda` (lista, con un ícono de estado
+            por fila) y `audio_laboral` en vez de un único documento;
+          - además de litigantes/notificaciones suma `diligencias`,
+            `liquidacion`, `materias` y `escritos_pendientes`;
+          - Laboral no expone cuadernos: siempre se consulta el 1.
+        """
+        if (causa.materia or "").strip().lower() != "laboral":
+            raise PjudApiError(
+                "El detalle de Laboral solo está disponible para causas de esa materia."
+            )
+
+        tipo, rol, anio = self.parsear_rol_civil(causa.rol)
+        corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "laboral")
+        cuerpo_causa = {
+            "corte": corte_id, "tribunal": tribunal_id,
+            "tipo": tipo, "rol": rol, "anio": anio,
+        }
+
+        puede_sincronizar = bool(
+            credenciales_pjud
+            and credenciales_pjud.get("rut")
+            and credenciales_pjud.get("clave")
+        )
+
+        diag: list[str] = [f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"]
+        if not puede_sincronizar:
+            diag.append("sin clave del OJV cargada")
+
+        if forzar_sincronizacion and puede_sincronizar:
+            diag.append(
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "laboral")
+            )
+
+        detalle_estado: Optional[str] = None
+        ultimo_error: Optional[str] = None
+        try:
+            data = self._request("POST", "/consultar_laboral", json=cuerpo_causa)
+            # Igual que Familia: se tolera que la causa venga bajo `causa` o en
+            # la raíz, por si el envoltorio cambia.
+            detalle = data.get("causa", data)
+            estado_raw = detalle.get("estado")
+            detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
+            ultimo_error = (detalle.get("ultimo_error") or "").strip() or None
+            diag.append(
+                f"consultar_laboral: 200 estado={estado_raw!r} "
+                f"detalle_estado={detalle_estado!r} "
+                f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
+                f"ultimo_error={ultimo_error!r}"
+            )
+        except PjudNoEncontrado:
+            detalle = None
+            diag.append("consultar_laboral: 404 (api-pjud no tiene la causa)")
+
+        estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
+
+        if estado_norm in _ESTADOS_ERROR:
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": detalle_estado,
+                "ultimo_error": ultimo_error,
+                "diagnostico": " · ".join(diag),
+            }
+
+        # Como Familia, no se mira `cuadernos`: Laboral no los expone.
+        esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+
+        if esta_sincronizando and not puede_sincronizar:
+            return {
+                "estado": "sin_credenciales",
+                "mensaje": _MENSAJE_SIN_CREDENCIALES,
+                "detalle_estado": detalle_estado,
+                "diagnostico": " · ".join(diag),
+            }
+
+        if esta_sincronizando and not forzar_sincronizacion:
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "laboral"))
+
+        identificador = (detalle or {}).get("identificador")
+        causa_out = detalle if identificador else None
+
+        resultado: dict = {
+            "estado": "sincronizando" if esta_sincronizando else "listo",
+            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "detalle_estado": detalle_estado,
+            "ultimo_error": ultimo_error,
+            "diagnostico": " · ".join(diag),
+            "causa": causa_out,
+            "movimiento": [],
+            "litigantes": [],
+            "notificaciones": [],
+            "diligencias": [],
+            "liquidacion": [],
+            "materias": [],
+            "escritos_pendientes": [],
+        }
+
+        if identificador:
+            try:
+                mov = self._request(
+                    "POST", "/consultar_movimientos_laboral",
+                    json={"identificador": identificador, "cuadeno": 1},
+                )
+            except PjudApiError as e:
+                # Durante la sincronización el movimiento puede no estar listo
+                # todavía: se devuelve la cabecera y las secciones vacías.
+                if not esta_sincronizando:
+                    raise
+                diag.append(f"movimiento: no disponible aún ({e})")
+                resultado["diagnostico"] = " · ".join(diag)
+            else:
+                movimiento = mov.get("movimiento") or []
+                self._normalizar_documentos_laboral(movimiento, identificador)
+                diag.append(f"movimiento: {len(movimiento)} trámites")
+                resultado.update(
+                    diagnostico=" · ".join(diag),
+                    movimiento=movimiento,
+                    litigantes=mov.get("litigantes") or [],
+                    notificaciones=mov.get("notificaciones") or [],
+                    diligencias=mov.get("diligencias") or [],
+                    liquidacion=mov.get("liquidacion") or [],
+                    materias=mov.get("materias") or [],
+                    escritos_pendientes=mov.get("escritos_pendientes") or [],
+                )
+
+        return resultado
+
+    def _normalizar_documentos_laboral(
+        self, movimiento: list[dict], identificador: str
+    ) -> None:
+        """Como `_normalizar_documentos_familia`: `doc` llega como lista de 0-2
+        `{"doc": url}` y se resuelve a `documentos` con `url`/`tipo`. Laboral no
+        tiene cuadernos, así que la URL relativa se arma contra el cuaderno 1.
+
+        (Sin confirmar en vivo: si el ícono "Doc." de un trámite abre un popup
+        del OJV en vez de enlazar directo a un PDF, esta normalización no
+        aplica y hay que revisarla — ver nota en "Solicitud Laboral.md".)"""
+        for item in movimiento:
+            item["documentos"] = [
+                {"url": url, "tipo": tipo}
+                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
+                if (url := self._url_documento(crudo, identificador, 1))
+            ]
 
     # ── Reenvío de un PDF al navegador ───────────────────────────
 

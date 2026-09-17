@@ -37,7 +37,7 @@ export interface Causa {
   /** Último resultado conocido de "Detalle PJUD" (`listo` | `sincronizando` |
    *  `error` | `sin_credenciales`), del log de llamados — no en vivo al
    *  proveedor. Null/undefined = nunca se consultó. Solo viene en causas
-   *  Civiles y de Familia. */
+   *  Civiles, de Familia y Laborales. */
   pjud_estado?: string | null;
   /** Fecha/hora de ese último llamado (cualquiera sea su resultado). */
   pjud_fecha_sincronizacion?: string | null;
@@ -464,4 +464,136 @@ export interface PjudFamiliaMovimientosResponse {
   materias: PjudMateriaItem[];
   plazos: PjudPlazoItem[];
   diligencias: PjudDiligenciaItem[];
+}
+
+/**
+ * Detalle EN VIVO de una causa **Laboral** (api-pjud). Comparte con Civil y
+ * Familia la cabecera, el manejo de documentos y la georeferencia, pero: la
+ * cabecera trae `texto_demanda` (lista, cada fila con un ícono de estado) y
+ * `audio_laboral` en vez de un único documento; la sección de trámites se
+ * llama `movimiento` (singular); y suma `diligencias`, `liquidacion` y
+ * `escritos_pendientes` a litigantes/notificaciones/materias. Laboral tampoco
+ * tiene cuadernos. Mismo flujo asíncrono que Civil/Familia.
+ */
+export interface PjudTextoDemandaItem {
+  /** Ícono de estado del primer `td` en el OJV: `fa-minus` = 0, `fa-check` = 1. */
+  doc_demanda: number | null;
+  doc: string | null;
+  fecha: string | null;
+  referencia: string | null;
+}
+
+export interface PjudAudioLaboralItem {
+  numero: number | null;
+  audio: string | null;
+  fecha: string | null;
+  referencia: string | null;
+}
+
+export interface PjudLaboralCausaDetalle {
+  identificador: string;
+  estado: string;
+  rit: string | null;
+  caratula: string | null;
+  fecha_ingreso: string | null;
+  ruc: string | null;
+  proceso: string | null;
+  forma_inicio: string | null;
+  est_adm: string | null;
+  etapa: string | null;
+  estado_proceso: string | null;
+  tribunal: string | null;
+  fecha_ultima_sincronizacion: string | null;
+  texto_demanda: PjudTextoDemandaItem[];
+  tramites: string | null;
+  ebook: PjudDocumentoRef | null;
+  certificado_envio: PjudDocumentoRef | null;
+  audio_laboral: PjudAudioLaboralItem[];
+}
+
+export interface PjudLaboralLitiganteItem {
+  /** Mismo ícono de estado que `PjudTextoDemandaItem.doc_demanda`, acá sobre
+   *  la fila del litigante. */
+  estado: number | null;
+  defensor: string | null;
+  sujeto: string | null;
+  rut: string | null;
+  persona: string | null;
+  razon_social: string | null;
+}
+
+export interface PjudLaboralMovimientoItem {
+  folio: number | null;
+  folio_texto: string | null;
+  documentos: PjudDocumentoTramite[];
+  /** Forma sin confirmar contra la API real (el proveedor siempre lo trae
+   *  vacío en los ejemplos vistos). */
+  anexo: Record<string, unknown>[];
+  etapa: string | null;
+  tramite: string | null;
+  descripcion_tramite: string | null;
+  fecha_tramite: string | null;
+  estado: string | null;
+  georeferencia: PjudGeoreferencia | null;
+}
+
+export interface PjudLaboralNotificacionItem {
+  estado_notificacion: string | null;
+  fecha_tramite: string | null;
+  tipo_part: string | null;
+  nombre: string | null;
+  tramite: string | null;
+  observacion_fallida: string | null;
+}
+
+export interface PjudLaboralDiligenciaItem {
+  doc_ida: string | null;
+  doc_vta: string | null;
+  estado_diligencia: string | null;
+  rit: string | null;
+  ruc: string | null;
+  tipo_diligencia: string | null;
+  referencia: string | null;
+  fecha_tramite: string | null;
+}
+
+export interface PjudLaboralLiquidacionItem {
+  liquidacion: string | null;
+  rut: string | null;
+  nombre: string | null;
+  monto_liquido: string | null;
+}
+
+export interface PjudLaboralMateriaItem {
+  codigo: string | null;
+  /** El proveedor llama a la glosa `glosa_materia` acá (Familia la manda como
+   *  `glosa_de_materia`). */
+  glosa_materia: string | null;
+  estado: string | null;
+  fecha_termino: string | null;
+}
+
+export interface PjudLaboralEscritoPendienteItem {
+  doc: string | null;
+  /** Forma sin confirmar: el ejemplo del proveedor trae "" en vez de una lista. */
+  anexo: string | null;
+  fecha_ing: string | null;
+  referencia: string | null;
+  solicitante: string | null;
+  tipo_ingreso: string | null;
+}
+
+export interface PjudLaboralMovimientosResponse {
+  estado: 'listo' | 'sincronizando' | 'error' | 'sin_credenciales';
+  mensaje: string | null;
+  detalle_estado: string | null;
+  ultimo_error: string | null;
+  causa: PjudLaboralCausaDetalle | null;
+  movimiento: PjudLaboralMovimientoItem[];
+  litigantes: PjudLaboralLitiganteItem[];
+  notificaciones: PjudLaboralNotificacionItem[];
+  diligencias: PjudLaboralDiligenciaItem[];
+  liquidacion: PjudLaboralLiquidacionItem[];
+  materias: PjudLaboralMateriaItem[];
+  escritos_pendientes: PjudLaboralEscritoPendienteItem[];
 }

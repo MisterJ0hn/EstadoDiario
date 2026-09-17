@@ -9,6 +9,7 @@ import {
   CausaListResponse,
   CausaResumenResponse,
   PjudFamiliaMovimientosResponse,
+  PjudLaboralMovimientosResponse,
   PjudMovimientosResponse,
   PjudPorRolResponse,
 } from '@core/models/causa.model';
@@ -116,6 +117,20 @@ export class CausaService {
     if (forzar) params = params.set('forzar', 'true');
     return this.http.get<PjudFamiliaMovimientosResponse>(
       `${this.apiUrl}/${causaId}/pjud/familia`,
+      { params },
+    );
+  }
+
+  /** Detalle EN VIVO de una causa **Laboral**, consultado directo al PJUD.
+   *  Misma semántica que `pjudMovimientos`/`pjudFamilia` pero la respuesta
+   *  trae otra forma (`movimiento` singular, `diligencias`, `liquidacion`,
+   *  `materias`, `escritos_pendientes`; sin cuadernos).
+   *  `forzar` pide además que el PJUD sincronice antes de responder. */
+  pjudLaboral(causaId: number, forzar = false): Observable<PjudLaboralMovimientosResponse> {
+    let params = new HttpParams();
+    if (forzar) params = params.set('forzar', 'true');
+    return this.http.get<PjudLaboralMovimientosResponse>(
+      `${this.apiUrl}/${causaId}/pjud/laboral`,
       { params },
     );
   }
