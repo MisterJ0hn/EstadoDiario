@@ -8,10 +8,12 @@ Sin filtro de visibilidad: dentro de un estudio todos ven todo.
 """
 
 import logging
+import mimetypes
 import os
 import time
 import uuid
 from datetime import date, timedelta
+from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
@@ -357,18 +359,25 @@ def pjud_por_rol(
 
 @router.get(
     "/pjud/documento",
-    summary="Reenvía un PDF de documento del PJUD para verlo en el navegador",
+    summary="Reenvía un documento (PDF/DOC/DOCX) del PJUD para abrirlo desde el navegador",
 )
 def pjud_documento(
     url: str = Query(..., description="URL del documento tal como vino en el detalle PJUD"),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     """El detalle PJUD entrega los documentos como URLs del proveedor
-    (`http://api-pjud.codifica.cl/public/…pdf`): van por `http`, se sirven como
+    (`http://api-pjud.codifica.cl/public/…`): van por `http`, se sirven como
     adjunto y sin CORS, así que enlazadas directas el navegador las descarga o
     las bloquea. Esto las baja del proveedor y las reenvía por nuestra propia
-    respuesta `https`, como `application/pdf` inline, para que el visor del
-    navegador (o un iframe del modal) las muestre sin descargarlas.
+    respuesta `https`, inline, para que el visor del navegador (o un iframe
+    del modal) las muestre sin descargarlas.
+
+    En Laboral (`movimiento`) el documento puede venir como `.pdf`, `.doc` o
+    `.docx` en vez de solo PDF (Civil/Familia hasta ahora siempre traían PDF);
+    el tipo se identifica por la extensión de la URL, no se asume un formato
+    fijo. Para `.doc`/`.docx` no hay visor nativo del navegador, así que
+    normalmente el navegador los descarga igual pese al `inline` — es
+    comportamiento esperado, no un error.
 
     La descarga del proveedor es servidor-a-servidor; el `url` se valida contra
     `PJUD_API_BASE_URL` en `PjudService.abrir_documento` (no es un proxy
@@ -381,6 +390,10 @@ def pjud_documento(
         logger.warning("PJUD documento: %s (url=%s)", e, url)
         raise HTTPException(status_code=502, detail=str(e))
 
+    nombre_archivo = os.path.basename(unquote(urlsplit(url).path)) or "documento"
+    media_type, _ = mimetypes.guess_type(nombre_archivo)
+    media_type = media_type or "application/octet-stream"
+
     def _emitir():
         try:
             yield from upstream.iter_content(chunk_size=64 * 1024)
@@ -392,9 +405,9 @@ def pjud_documento(
     # chunked, que es lo que el visor del navegador espera igual.
     return StreamingResponse(
         _emitir(),
-        media_type="application/pdf",
+        media_type=media_type,
         headers={
-            "Content-Disposition": "inline",
+            "Content-Disposition": f'inline; filename="{nombre_archivo}"',
             "Cache-Control": "private, max-age=300",
         },
     )

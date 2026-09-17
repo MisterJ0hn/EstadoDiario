@@ -42,18 +42,20 @@ type TabLaboral =
   standalone: true,
   imports: [CommonModule, NgTemplateOutlet, RouterLink],
   template: `
-    <!-- Ícono reutilizable: abre un PDF del PJUD en el visor del navegador. -->
+    <!-- Ícono reutilizable: abre un documento del PJUD (PDF, DOC o DOCX,
+         según venga) en el visor del navegador o, si el navegador no sabe
+         mostrarlo (DOC/DOCX), lo descarga con su extensión real. -->
     <ng-template #enlacePdf let-url let-tipo="tipo">
       <button type="button" (click)="abrirDocumento(url)"
          class="inline-flex align-middle transition-opacity hover:opacity-60"
          [class.text-danger-600]="!esCertificado(url, tipo)"
          [class.text-blue-500]="esCertificado(url, tipo)"
-         [title]="(esCertificado(url, tipo) ? 'Ver certificado' : 'Ver documento') + ' (PDF)'">
+         [title]="(esCertificado(url, tipo) ? 'Ver certificado' : 'Ver documento') + ' (' + extensionDocumento(url) + ')'">
         <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
           <path fill-rule="evenodd" clip-rule="evenodd"
                 d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7a1 1 0 0 0 1 1h3.5L13 3.5Z" />
         </svg>
-        <span class="sr-only">PDF</span>
+        <span class="sr-only">{{ extensionDocumento(url) }}</span>
       </button>
     </ng-template>
 
@@ -703,6 +705,14 @@ export class PjudLaboralModalComponent {
     return tipo === 'certificado' || (url ?? '').includes('_doc2');
   }
 
+  /** En Laboral (`movimiento`) el documento puede venir como PDF, DOC o DOCX
+   *  en vez de solo PDF; se identifica por la extensión de la URL para
+   *  mostrar el tipo real en el tooltip/etiqueta del ícono. */
+  extensionDocumento(url: string | null | undefined): string {
+    const match = /\.([a-z0-9]+)(?:\?.*)?$/i.exec(url ?? '');
+    return match ? match[1].toUpperCase() : 'PDF';
+  }
+
   abrirGeoreferencia(g: PjudGeoreferencia): void {
     this.georefTab.set('mapa');
     this.imagenIdx.set(0);
@@ -729,19 +739,36 @@ export class PjudLaboralModalComponent {
   }
 
   /**
-   * Abre un documento del detalle en el visor del navegador, sin descargarlo.
-   * El backend baja el PDF del proveedor (http, adjunto, sin CORS) y lo reenvía
-   * https/inline; se pide como blob y se navega la pestaña al objectURL.
+   * Abre un documento del detalle en el visor del navegador (PDF) o lo
+   * descarga con su extensión real (DOC/DOCX, que el navegador no sabe
+   * mostrar inline). El backend baja el documento del proveedor (http,
+   * adjunto, sin CORS), identifica el tipo por la extensión y lo reenvía
+   * https/inline con el `Content-Type` correcto; se pide como blob y se
+   * navega la pestaña al objectURL.
    */
   abrirDocumento(url: string | null | undefined): void {
     if (!url) return;
     this.docError.set(null);
-    const win = window.open('', '_blank');
+    // Solo el PDF tiene visor nativo del navegador; DOC/DOCX se descargan
+    // directo (una pestaña en blanco quedaría vacía para siempre).
+    const esPdf = this.extensionDocumento(url).toLowerCase() === 'pdf';
+    const win = esPdf ? window.open('', '_blank') : null;
     this.service.pjudDocumento(url).subscribe({
       next: (blob) => {
         const obj = URL.createObjectURL(blob);
-        if (win) win.location.href = obj;
-        else window.open(obj, '_blank');
+        if (esPdf) {
+          if (win) win.location.href = obj;
+          else window.open(obj, '_blank');
+        } else {
+          // Un objectURL no trae el nombre de archivo del `Content-Disposition`
+          // del backend, así que se arma acá desde la URL original para que
+          // la descarga no quede sin extensión.
+          const nombre = url.split('/').pop()?.split('?')[0] || `documento.${this.extensionDocumento(url).toLowerCase()}`;
+          const a = document.createElement('a');
+          a.href = obj;
+          a.download = nombre;
+          a.click();
+        }
         setTimeout(() => URL.revokeObjectURL(obj), 60_000);
       },
       error: () => {
