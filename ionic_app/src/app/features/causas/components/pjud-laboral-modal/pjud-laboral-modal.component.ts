@@ -51,10 +51,24 @@ type TabLaboral =
          [class.text-danger-600]="!esCertificado(url, tipo)"
          [class.text-blue-500]="esCertificado(url, tipo)"
          [title]="(esCertificado(url, tipo) ? 'Ver certificado' : 'Ver documento') + ' (' + extensionDocumento(url) + ')'">
-        <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
-          <path fill-rule="evenodd" clip-rule="evenodd"
-                d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7a1 1 0 0 0 1 1h3.5L13 3.5Z" />
-        </svg>
+        @if (esDocWord(url)) {
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-5 w-5" aria-hidden="true">
+            <path stroke-width="2" stroke-linecap="round"
+                  d="M4 4C4 3.44772 4.44772 3 5 3H14H14.5858C14.851 3 15.1054 3.10536 15.2929 3.29289L19.7071 7.70711C19.8946 7.89464 20 8.149 20 8.41421V20C20 20.5523 19.5523 21 19 21H5C4.44772 21 4 20.5523 4 20V4Z" />
+            <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 8H15V3" />
+            <path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                  d="M7.5 13H7V17H7.5C8.60457 17 9.5 16.1046 9.5 15C9.5 13.8954 8.60457 13 7.5 13Z" />
+            <path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                  d="M17.5 13L17 13C16.4477 13 16 13.4477 16 14V16C16 16.5523 16.4477 17 17 17H17.5" />
+            <path stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                  d="M11.5 14C11.5 13.4477 11.9477 13 12.5 13H13C13.5523 13 14 13.4477 14 14V16C14 16.5523 13.5523 17 13 17H12.5C11.9477 17 11.5 16.5523 11.5 16V14Z" />
+          </svg>
+        } @else {
+          <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true">
+            <path fill-rule="evenodd" clip-rule="evenodd"
+                  d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7a1 1 0 0 0 1 1h3.5L13 3.5Z" />
+          </svg>
+        }
         <span class="sr-only">{{ extensionDocumento(url) }}</span>
       </button>
     </ng-template>
@@ -189,7 +203,7 @@ type TabLaboral =
                     }
                   </div>
 
-                  @if (c.certificado_envio?.url || c.ebook?.url || c.texto_demanda.length > 0 || c.audio_laboral.length > 0) {
+                  @if (c.certificado_envio?.url || c.texto_demanda.length > 0 || c.audio_laboral.length > 0) {
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
                       @if (c.texto_demanda.length > 0) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Texto Demanda:</span>
@@ -204,11 +218,6 @@ type TabLaboral =
                       @if (c.certificado_envio?.url) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
                           <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
-                        </span>
-                      }
-                      @if (c.ebook?.url) {
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
-                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
                         </span>
                       }
                       @if (c.audio_laboral.length > 0) {
@@ -711,6 +720,12 @@ export class PjudLaboralModalComponent {
   extensionDocumento(url: string | null | undefined): string {
     const match = /\.([a-z0-9]+)(?:\?.*)?$/i.exec(url ?? '');
     return match ? match[1].toUpperCase() : 'PDF';
+  }
+
+  /** true si el documento es .doc o .docx, para mostrar el ícono de Word en vez del genérico. */
+  esDocWord(url: string | null | undefined): boolean {
+    const ext = this.extensionDocumento(url).toLowerCase();
+    return ext === 'doc' || ext === 'docx';
   }
 
   abrirGeoreferencia(g: PjudGeoreferencia): void {
