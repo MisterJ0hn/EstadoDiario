@@ -932,7 +932,8 @@ class PjudService:
         self, movimiento: list[dict], identificador: str
     ) -> None:
         """Como `_normalizar_documentos_familia`: `doc` llega como lista de 0-2
-        `{"doc": url}` y se resuelve a `documentos` con `url`/`tipo`. Laboral no
+        `{"doc": url}` y se resuelve a `documentos` con `url`/`tipo`, y el
+        `doc` de cada anexo se resuelve igual que en Civil/Familia. Laboral no
         tiene cuadernos, así que la URL relativa se arma contra el cuaderno 1.
 
         (Sin confirmar en vivo: si el ícono "Doc." de un trámite abre un popup
@@ -944,6 +945,8 @@ class PjudService:
                 for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
                 if (url := self._url_documento(crudo, identificador, 1))
             ]
+            for anexo in item.get("anexo") or []:
+                anexo["doc"] = self._url_documento(anexo.get("doc"), identificador, 1)
 
     # ── Reenvío de un PDF al navegador ───────────────────────────
 

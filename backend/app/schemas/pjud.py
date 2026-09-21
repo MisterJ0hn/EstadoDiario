@@ -411,14 +411,15 @@ class PjudLaboralMovimientoItem(BaseModel):
     `historia` de Civil.
 
     `doc` llega igual que en Civil/Familia (lista de 0-2 `{"doc": ...}`) y el
-    servicio la resuelve a `documentos`. La forma de `anexo` no está
-    confirmada contra la API real (el ejemplo del proveedor siempre lo trae
-    vacío), así que queda como lista de objetos sueltos."""
+    servicio la resuelve a `documentos`. `anexo` no está confirmado contra la
+    API real (el ejemplo del proveedor siempre lo trae vacío); se asume la
+    misma forma que el anexo de Historia (Civil) — `doc`/`fecha`/`referencia`
+    — porque el frontend lo muestra igual, en el mismo popup secundario."""
 
     folio: int | None = None
     folio_texto: str | None = None
     documentos: list[PjudDocumentoTramite] = []
-    anexo: list[dict] = []
+    anexo: list[PjudHistoriaAnexoItem] = []
     etapa: str | None = None
     tramite: str | None = None
     descripcion_tramite: str | None = None

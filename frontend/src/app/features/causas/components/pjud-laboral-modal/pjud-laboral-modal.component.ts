@@ -6,6 +6,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import {
   Causa,
   PjudGeoreferencia,
+  PjudHistoriaAnexoItem,
   PjudLaboralMovimientosResponse,
 } from '@core/models/causa.model';
 import { CausaService } from '../../services/causa.service';
@@ -323,8 +324,8 @@ type TabLaboral =
                         <table class="pjud-table">
                           <thead>
                             <tr>
-                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th><th>Estado</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Georreferencia</th>
+                              <th>Folio</th><th>Doc.</th><th>Anexos</th><th>Etapa</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Estado</th><th>Georreferencia</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -342,14 +343,20 @@ type TabLaboral =
                                 </td>
                                 <td class="text-center">
                                   @if (h.anexo.length > 0) {
-                                    <span class="text-xs font-semibold text-neutral-500">{{ h.anexo.length }}</span>
+                                    <button type="button" (click)="abrirAnexosTramite(h.anexo)"
+                                            class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
+                                            title="Ver anexos del trámite">
+                                      <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                                      <span class="text-xs font-semibold text-neutral-500">{{ h.anexo.length }}</span>
+                                    </button>
                                   } @else { <span>-</span> }
                                 </td>
                                 <td class="whitespace-normal">{{ h.etapa || '-' }}</td>
-                                <td class="whitespace-normal">{{ h.estado || '-' }}</td>
+                                
                                 <td class="whitespace-normal">{{ h.tramite || '-' }}</td>
                                 <td class="whitespace-normal">{{ h.descripcion_tramite || '-' }}</td>
                                 <td>{{ h.fecha_tramite || '-' }}</td>
+                                <td class="whitespace-normal">{{ h.estado || '-' }}</td>
                                 <td class="text-center">
                                   @if (h.georeferencia) {
                                     <button type="button" (click)="abrirGeoreferencia(h.georeferencia)"
@@ -374,7 +381,7 @@ type TabLaboral =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Estado</th><th>Defensor</th><th>Sujeto</th><th>Rut</th><th>Persona</th><th>Nombre o Razón Social</th></tr></thead>
+                          <thead><tr><th>Est.</th><th>Abog. Defensor</th><th>Sujeto</th><th>Rut</th><th>Persona</th><th>Nombre o Razón Social</th></tr></thead>
                           <tbody>
                             @for (l of d.litigantes; track $index) {
                               <tr>
@@ -399,7 +406,7 @@ type TabLaboral =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Estado Notificación</th><th>Fecha Trámite</th><th>Tipo Parte</th><th>Nombre</th><th>Trámite</th><th>Observación Fallida</th></tr></thead>
+                          <thead><tr><th>Estado Notif.</th><th>Fecha Trámite</th><th>Tipo Parte</th><th>Nombre</th><th>Trámite</th><th>Obs. Fallida</th></tr></thead>
                           <tbody>
                             @for (n of d.notificaciones; track $index) {
                               <tr>
@@ -486,7 +493,7 @@ type TabLaboral =
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Código</th><th>Glosa</th><th>Estado</th><th>Fec. Término</th></tr></thead>
+                          <thead><tr><th>Código</th><th>Glosa de Materia</th><th>Estado</th><th>Fecha Término</th></tr></thead>
                           <tbody>
                             @for (m of d.materias; track $index) {
                               <tr>
@@ -631,6 +638,46 @@ type TabLaboral =
           </div>
         </div>
       }
+
+      <!-- ── Anexos de un trámite de Movimiento ────────────────────
+           Mismo mecanismo que "Anexos del trámite" de Historia en Civil. -->
+      @if (anexosTramite(); as anexos) {
+        <div class="modal-backdrop !z-[60]" (click)="anexosTramite.set(null)">
+          <div class="modal-content !z-[70] !max-w-2xl" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold text-primary-700">Anexos del trámite</h3>
+              <button (click)="anexosTramite.set(null)"
+                      class="text-neutral-400 hover:text-neutral-600 text-xl leading-none">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="overflow-x-auto rounded-lg border border-neutral-200">
+                <table class="pjud-table">
+                  <thead><tr><th>Doc.</th><th>Fecha</th><th>Referencia</th></tr></thead>
+                  <tbody>
+                    @for (a of anexos; track $index) {
+                      <tr>
+                        <td class="text-center">
+                          @if (a.doc) {
+                            <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: a.doc }" />
+                          } @else { <span>-</span> }
+                        </td>
+                        <td>{{ a.fecha || '-' }}</td>
+                        <td class="whitespace-normal">{{ a.referencia || '-' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @if (docError()) {
+                <p class="mt-2 text-sm text-danger-600">{{ docError() }}</p>
+              }
+            </div>
+            <div class="modal-footer">
+              <button (click)="anexosTramite.set(null)" class="btn-primary">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      }
     }
   `,
   styles: [`
@@ -663,6 +710,7 @@ export class PjudLaboralModalComponent {
       this.georef.set(null);
       this.georefTab.set('mapa');
       this.imagenIdx.set(0);
+      this.anexosTramite.set(null);
       this.cargar(c.id, false);
     }
   }
@@ -687,6 +735,10 @@ export class PjudLaboralModalComponent {
   georef = signal<PjudGeoreferencia | null>(null);
   georefTab = signal<'mapa' | 'imagenes' | 'videos'>('mapa');
   imagenIdx = signal(0);
+
+  /** Array `anexo` del trámite de Movimiento que se está mirando en el modal
+   *  secundario (mismo mecanismo que Historia en Civil); `null` = cerrado. */
+  anexosTramite = signal<PjudHistoriaAnexoItem[] | null>(null);
 
   private cargar(causaId: number, forzar: boolean): void {
     this.cargando.set(true);
@@ -726,6 +778,14 @@ export class PjudLaboralModalComponent {
   esDocWord(url: string | null | undefined): boolean {
     const ext = this.extensionDocumento(url).toLowerCase();
     return ext === 'doc' || ext === 'docx';
+  }
+
+  /** Abre el modal secundario con el detalle del array de anexos de un
+   *  trámite de Movimiento (Doc., Fecha, Referencia), igual que Historia
+   *  en Civil. */
+  abrirAnexosTramite(anexos: PjudHistoriaAnexoItem[]): void {
+    this.docError.set(null);
+    this.anexosTramite.set(anexos);
   }
 
   abrirGeoreferencia(g: PjudGeoreferencia): void {

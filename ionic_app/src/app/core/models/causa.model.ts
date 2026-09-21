@@ -527,8 +527,9 @@ export interface PjudLaboralMovimientoItem {
   folio_texto: string | null;
   documentos: PjudDocumentoTramite[];
   /** Forma sin confirmar contra la API real (el proveedor siempre lo trae
-   *  vacío en los ejemplos vistos). */
-  anexo: Record<string, unknown>[];
+   *  vacío en los ejemplos vistos); se asume igual a `PjudHistoriaAnexoItem`
+   *  (Civil) porque se muestra en el mismo popup secundario. */
+  anexo: PjudHistoriaAnexoItem[];
   etapa: string | null;
   tramite: string | null;
   descripcion_tramite: string | null;
