@@ -336,7 +336,7 @@ type TabLaboral =
                           <thead>
                             <tr>
                               <th>Folio</th><th>Doc.</th><th>Anexos</th><th>Etapa</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Estado</th><th>Georreferencia</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Estado</th><th>Georref.</th>
                             </tr>
                           </thead>
                           <tbody>
