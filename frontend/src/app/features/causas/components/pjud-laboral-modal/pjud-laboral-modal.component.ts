@@ -217,16 +217,17 @@ type TabLaboral =
                           </button>
                         </span>
                       }
+                       @if (c.ebook?.url) {
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
+                        </span>
+                      }
                       @if (c.certificado_envio?.url) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
                           <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
                         </span>
                       }
-                      @if (c.ebook?.url) {
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
-                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
-                        </span>
-                      }
+                     
                       @if (c.audio_laboral.length > 0) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Audio Laboral:</span>
                           <button type="button" (click)="verAudios.set(!verAudios())"
