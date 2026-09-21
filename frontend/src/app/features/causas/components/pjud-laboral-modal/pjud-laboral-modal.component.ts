@@ -187,7 +187,7 @@ type TabLaboral =
                 <!-- ── Panel de datos de la causa ──── -->
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
-                    <p><span class="pjud-k">ROL:</span> {{ c.rit || causa.rol }}</p>
+                    <p><span class="pjud-k">RIT:</span> {{ c.rit || causa.rol }}</p>
                     <p class="font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
                     <p><span class="pjud-k">F. Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
 
@@ -228,7 +228,11 @@ type TabLaboral =
                         </span>
                       }
                      
-                      @if (c.audio_laboral.length > 0) {
+                      
+                    </div>
+                  }
+                  @if (c.audio_laboral.length > 0) {
+                    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Audio Laboral:</span>
                           <button type="button" (click)="verAudios.set(!verAudios())"
                                   class="inline-flex items-center gap-1 text-sky-500 hover:text-sky-600"
@@ -237,9 +241,9 @@ type TabLaboral =
                             <span class="text-xs font-semibold text-neutral-500">{{ c.audio_laboral.length }}</span>
                           </button>
                         </span>
-                      }
                     </div>
                   }
+                   
 
                   @if (verTextoDemanda() && c.texto_demanda.length > 0) {
                     <div class="border-t border-neutral-200 px-4 py-2">
