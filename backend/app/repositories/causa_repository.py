@@ -73,9 +73,9 @@ class CausaRepository:
         return self.db.get(Causa, causa_id)
 
     def find_pjud_por_rol_tribunal(self, rol: str, tribunal: str) -> Optional[Causa]:
-        """La Causa Civil, Familia o Laboral de la cartera VIGENTE (el último
-        archivo) que calza por rol y tribunal, sin distinguir mayúsculas ni
-        espacios de sobra.
+        """La Causa Civil, Familia, Laboral o Cobranza de la cartera VIGENTE
+        (el último archivo) que calza por rol y tribunal, sin distinguir
+        mayúsculas ni espacios de sobra.
 
         Para ofrecer el botón "Detalle PJUD" desde pantallas que no tienen el
         id de la Causa —Estado Diario, Movimientos— y solo conocen su rol y
@@ -88,7 +88,7 @@ class CausaRepository:
             self.db.query(Causa)
             .filter(
                 Causa.estado_diario_origen_id == origen_id,
-                Causa.materia.in_(("Civil", "Familia", "Laboral")),
+                Causa.materia.in_(("Civil", "Familia", "Laboral", "Cobranza")),
                 func.lower(func.btrim(Causa.rol)) == rol.strip().lower(),
                 func.lower(func.btrim(Causa.tribunal)) == tribunal.strip().lower(),
             )

@@ -36,6 +36,7 @@ from app.schemas.causa import (
     ConteoMateria,
 )
 from app.schemas.pjud import (
+    PjudCobranzaMovimientosResponse,
     PjudDisponibleResponse,
     PjudFamiliaMovimientosResponse,
     PjudLaboralMovimientosResponse,
@@ -617,6 +618,76 @@ def pjud_laboral(
             rol=causa.rol,
             tribunal=causa.tribunal,
             materia="Laboral",
+            forzar=forzar,
+            resultado=resultado_log,
+            http_status=http_status,
+            mensaje=mensaje_log,
+            diagnostico=diagnostico_log,
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
+
+
+@router.get(
+    "/{causa_id}/pjud/cobranza",
+    response_model=PjudCobranzaMovimientosResponse,
+    summary="Detalle de una causa Cobranza consultado en vivo al PJUD",
+)
+def pjud_cobranza(
+    causa_id: int,
+    response: Response,
+    forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
+    cuaderno: int | None = Query(None, description="Cuaderno a traer en Historia; por defecto el primero"),
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Igual que `/pjud/movimientos` (Civil) pero para causas de materia
+    Cobranza: mismo flujo de sincronización asíncrona y mismo parámetro
+    `cuaderno` (Cobranza sí expone cuadernos), cambia la forma de la
+    respuesta (ver `PjudCobranzaMovimientosResponse`)."""
+    causa = CausaRepository(db).find_by_id(causa_id)
+    if not causa:
+        raise HTTPException(status_code=404, detail="Causa no encontrada")
+
+    credenciales_pjud = {
+        "rut": current_user.pjud_rut,
+        "clave": current_user.pjud_clave,
+        "metodo_login": current_user.pjud_metodo_login,
+    }
+
+    inicio = time.monotonic()
+    resultado_log = "error"
+    http_status = 502
+    mensaje_log: str | None = None
+    diagnostico_log: str | None = None
+    try:
+        resultado = PjudService().obtener_detalle_cobranza(
+            causa,
+            forzar_sincronizacion=forzar,
+            cuaderno_id=cuaderno,
+            credenciales_pjud=credenciales_pjud,
+        )
+        estado = resultado.get("estado")
+        diagnostico_log = resultado.pop("diagnostico", None)
+        if estado == "sincronizando":
+            response.status_code = http_status = 202
+        else:
+            http_status = 200
+        resultado_log = estado or "listo"
+        mensaje_log = resultado.get("mensaje")
+        return PjudCobranzaMovimientosResponse(**resultado)
+    except PjudApiError as e:
+        mensaje_log = str(e)
+        raise HTTPException(status_code=502, detail=mensaje_log)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra,
+            tenant=tenant,
+            causa_id=causa_id,
+            rol=causa.rol,
+            tribunal=causa.tribunal,
+            materia="Cobranza",
             forzar=forzar,
             resultado=resultado_log,
             http_status=http_status,

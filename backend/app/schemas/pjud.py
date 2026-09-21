@@ -492,6 +492,117 @@ class PjudLaboralMovimientosResponse(BaseModel):
     escritos_pendientes: list[PjudLaboralEscritoPendienteItem] = []
 
 
+# ── Cobranza ───────────────────────────────────────────────────
+# El detalle de Cobranza es el cuarto gemelo (junto a Civil/Familia/Laboral),
+# armado desde "Solicitud cobranza.md" (raíz de `ionic_app/`, no versionado en
+# `datos/`). Comparte con Civil los cuadernos y la cabecera con anexos de la
+# causa e información del receptor; con Familia/Laboral, `doc`/`anexo` como
+# `PjudDocumentoTramite`/`PjudHistoriaAnexoItem`. Cambia respecto a los tres:
+#   - la cabecera suma `titulo_ejec` (otro PDF de la causa), `juez_asignado`
+#     y `doc_demanda` (un único documento, como Civil/Laboral, pero el
+#     proveedor lo manda con la clave `ruta` en vez de `url`: se remapea en
+#     el servicio antes de construir este schema);
+#   - la sección de trámites se llama `historia` (como Civil) y cada fila
+#     suma `estado_firma` (no confirmado contra la API real);
+#   - litigantes/notificaciones/diligencias/liquidacion tienen forma propia,
+#     ninguna calza con las de Civil/Familia/Laboral;
+#   - no hay escritos por resolver, exhortos ni materias/plazos.
+
+
+class PjudCobranzaCausaDetalle(BaseModel):
+    identificador: str
+    estado: str
+    rit: str | None = None
+    caratula: str | None = None
+    fecha_ingreso: str | None = None
+    ruc: str | None = None
+    proceso: str | None = None
+    forma_inicio: str | None = None
+    estado_proceso: str | None = None
+    etapa: str | None = None
+    titulo_ejec: PjudDocumentoRef | None = None
+    juez_asignado: str | None = None
+    tribunal: str | None = None
+    fecha_ultima_sincronizacion: str | None = None
+    doc_demanda: PjudDocumentoRef | None = None
+    anexos_causa: list[PjudAnexoCausaItem] = []
+    ebook: PjudDocumentoRef | None = None
+    certificado_envio: PjudDocumentoRef | None = None
+    informacion_receptor: list[PjudInformacionReceptorItem] = []
+    cuadernos: list[PjudCuaderno] = []
+
+
+class PjudCobranzaHistoriaItem(BaseModel):
+    """Una fila de `historia`, igual que en Civil salvo por `estado_firma` (sin
+    confirmar contra la API real) y sin `foja` (el ejemplo del proveedor no la
+    trae). `descripcion_tramite` a veces llega como objeto
+    (`{"descripcion": ..., "doc": {"nombre", "ruta"}}`) en vez de texto plano;
+    el servicio lo aplana a texto y agrega ese documento a `documentos`."""
+
+    folio: int | None = None
+    folio_texto: str | None = None
+    documentos: list[PjudDocumentoTramite] = []
+    anexo: list[PjudHistoriaAnexoItem] = []
+    etapa: str | None = None
+    tramite: str | None = None
+    descripcion_tramite: str | None = None
+    estado_firma: str | None = None
+    fecha_tramite: str | None = None
+    georeferencia: PjudGeoreferencia | None = None
+
+
+class PjudCobranzaLitiganteItem(BaseModel):
+    sujeto: str | None = None
+    rut: str | None = None
+    persona: str | None = None
+    razon_social: str | None = None
+
+
+class PjudCobranzaNotificacionItem(BaseModel):
+    tipo_notificacion: str | None = None
+    estado_notificacion: str | None = None
+    fecha_notificacion: str | None = None
+    fecha_tramite: str | None = None
+    tramite: str | None = None
+    tipo_part: str | None = None
+    nombre: str | None = None
+
+
+class PjudCobranzaDiligenciaItem(BaseModel):
+    doc_ida: str | None = None
+    doc_vta: str | None = None
+    estado_diligencia: str | None = None
+    rit: str | None = None
+    ruc: str | None = None
+    tipo_diligencia: str | None = None
+    fecha_tramite: str | None = None
+    destinatario: str | None = None
+    responsable: str | None = None
+
+
+class PjudCobranzaLiquidacionItem(BaseModel):
+    liquidacion: str | None = None
+    fecha_liquidacion: str | None = None
+    cuaderno: str | None = None
+    estado: str | None = None
+    monto_liquido: str | None = None
+
+
+class PjudCobranzaMovimientosResponse(BaseModel):
+    # Mismos estados y semántica que `PjudMovimientosResponse` (ver ahí).
+    estado: Literal["listo", "sincronizando", "error", "sin_credenciales"] = "listo"
+    mensaje: str | None = None
+    ultimo_error: str | None = None
+    detalle_estado: str | None = None
+    causa: PjudCobranzaCausaDetalle | None = None
+    cuaderno_consultado_id: int | None = None
+    historia: list[PjudCobranzaHistoriaItem] = []
+    litigantes: list[PjudCobranzaLitiganteItem] = []
+    notificaciones: list[PjudCobranzaNotificacionItem] = []
+    diligencias: list[PjudCobranzaDiligenciaItem] = []
+    liquidacion: list[PjudCobranzaLiquidacionItem] = []
+
+
 class PjudErrorResponse(BaseModel):
     exito: bool = False
     mensaje: str
@@ -502,8 +613,9 @@ class PjudDisponibleResponse(BaseModel):
 
 
 class PjudPorRolResponse(BaseModel):
-    """Resuelve, por rol y tribunal, la Causa Civil, Familia o Laboral de la
-    cartera vigente que corresponde: es lo que ofrece el botón "Detalle PJUD"
+    """Resuelve, por rol y tribunal, la Causa Civil, Familia, Laboral o
+    Cobranza de la cartera vigente que corresponde: es lo que ofrece el botón
+    "Detalle PJUD"
     en pantallas que no tienen el id de la Causa (Estado Diario, Movimientos) y
     solo conocen su rol y tribunal. `causa` viene en `null` si no hay cartera
     cargada, no calza ninguna, o la que calza no es de una materia que expone

@@ -948,6 +948,213 @@ class PjudService:
             for anexo in item.get("anexo") or []:
                 anexo["doc"] = self._url_documento(anexo.get("doc"), identificador, 1)
 
+    # ── Cobranza ────────────────────────────────────────────────
+
+    def obtener_detalle_cobranza(
+        self,
+        causa,
+        forzar_sincronizacion: bool = False,
+        cuaderno_id: Optional[int] = None,
+        credenciales_pjud: Optional[dict] = None,
+    ) -> dict:
+        """Detalle completo de una `Causa` de materia Cobranza desde el PJUD.
+
+        Mismo flujo asíncrono que Civil/Familia/Laboral: `sincronizando`
+        mientras el proveedor scrapea, `error` si el scrape terminó mal,
+        `sin_credenciales` si hay que sincronizar y la persona no cargó su
+        clave del OJV, `listo` cuando está todo.
+
+        Como Civil (y a diferencia de Familia/Laboral), Cobranza SÍ expone
+        `cuadernos` en la cabecera y necesita los IDs numéricos del catálogo
+        del proveedor, con su propio árbol de tribunales
+        (`/catalogo/tribunales?competencia=cobranza`, ver "Solicitud
+        cobranza.md" — el archivo dice "laboral" en el cuerpo por error de
+        tipeo, pero la URL que da es la de `cobranza`).
+
+        (Sin confirmar en vivo: el ejemplo de `consultar_movimientos_cobranza`
+        no muestra un parámetro de cuaderno en el request, pero la cabecera sí
+        trae varios `cuadernos` como Civil; se asume el mismo contrato de
+        Civil —`cuadeno: cuaderno["id"]`— hasta poder confirmarlo contra una
+        causa real.)
+        """
+        if (causa.materia or "").strip().lower() != "cobranza":
+            raise PjudApiError(
+                "El detalle de Cobranza solo está disponible para causas de esa materia."
+            )
+
+        tipo, rol, anio = self.parsear_rol_civil(causa.rol)
+        diag: list[str] = [f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"]
+        try:
+            corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "cobranza")
+        except PjudApiError as e:
+            diag.append(f"resolver_tribunal(cobranza): {e}")
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": None,
+                "ultimo_error": (
+                    f"No se pudo resolver el tribunal «{causa.tribunal}» contra el "
+                    f"catálogo Cobranza del PJUD: {e}"
+                ),
+                "diagnostico": " · ".join(diag),
+            }
+        diag[0] = f"corte={corte_id} tribunal={tribunal_id} " + diag[0]
+        cuerpo_causa = {
+            "corte": corte_id, "tribunal": tribunal_id,
+            "tipo": tipo, "rol": rol, "anio": anio,
+        }
+
+        puede_sincronizar = bool(
+            credenciales_pjud
+            and credenciales_pjud.get("rut")
+            and credenciales_pjud.get("clave")
+        )
+        if not puede_sincronizar:
+            diag.append("sin clave del OJV cargada")
+
+        if forzar_sincronizacion and puede_sincronizar:
+            diag.append(
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "cobranza")
+            )
+
+        detalle_estado: Optional[str] = None
+        ultimo_error: Optional[str] = None
+        try:
+            data = self._request("POST", "/consultar_cobranza", json=cuerpo_causa)
+            # Igual que Familia/Laboral: se tolera que la causa venga bajo
+            # `causa` o en la raíz, por si el envoltorio cambia.
+            detalle = data.get("causa", data)
+            estado_raw = detalle.get("estado")
+            detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
+            ultimo_error = (detalle.get("ultimo_error") or "").strip() or None
+            diag.append(
+                f"consultar_cobranza: 200 estado={estado_raw!r} "
+                f"detalle_estado={detalle_estado!r} "
+                f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
+                f"ultimo_error={ultimo_error!r} "
+                f"cuadernos={len(detalle.get('cuadernos') or [])}"
+            )
+        except PjudNoEncontrado:
+            detalle = None
+            diag.append("consultar_cobranza: 404 (api-pjud no tiene la causa)")
+
+        estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
+
+        if estado_norm in _ESTADOS_ERROR:
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": detalle_estado,
+                "ultimo_error": ultimo_error,
+                "diagnostico": " · ".join(diag),
+            }
+
+        cuadernos = (detalle.get("cuadernos") or []) if detalle else []
+        esta_sincronizando = (
+            detalle is None
+            or estado_norm in _ESTADOS_SINCRONIZANDO
+            or not cuadernos
+        )
+
+        if esta_sincronizando and not puede_sincronizar:
+            return {
+                "estado": "sin_credenciales",
+                "mensaje": _MENSAJE_SIN_CREDENCIALES,
+                "detalle_estado": detalle_estado,
+                "diagnostico": " · ".join(diag),
+            }
+
+        if esta_sincronizando and not forzar_sincronizacion:
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "cobranza"))
+
+        # El proveedor manda `doc_demanda.ruta` en vez de `.url` (los demás
+        # documentos de la cabecera sí usan `url`); se remapea acá antes de
+        # construir el schema, que solo conoce `url`.
+        identificador = (detalle or {}).get("identificador")
+        causa_out = detalle if identificador else None
+        if causa_out is not None:
+            doc_demanda = causa_out.get("doc_demanda")
+            if isinstance(doc_demanda, dict) and "ruta" in doc_demanda:
+                doc_demanda["url"] = doc_demanda.pop("ruta")
+
+        resultado: dict = {
+            "estado": "sincronizando" if esta_sincronizando else "listo",
+            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "detalle_estado": detalle_estado,
+            "ultimo_error": ultimo_error,
+            "diagnostico": " · ".join(diag),
+            "causa": causa_out,
+            "cuaderno_consultado_id": None,
+            "historia": [],
+            "litigantes": [],
+            "notificaciones": [],
+            "diligencias": [],
+            "liquidacion": [],
+        }
+
+        if cuadernos and identificador:
+            cuaderno = self._elegir_cuaderno(cuadernos, cuaderno_id)
+            try:
+                movimientos = self._request(
+                    "POST", "/consultar_movimientos_cobranza",
+                    json={"identificador": identificador, "cuadeno": cuaderno["id"]},
+                )
+            except PjudApiError as e:
+                if not esta_sincronizando:
+                    raise
+                diag.append(f"historia: no disponible aún ({e})")
+                resultado["diagnostico"] = " · ".join(diag)
+            else:
+                historia = movimientos.get("historia") or []
+                self._normalizar_documentos_cobranza(historia, identificador, cuaderno["id"])
+                diag.append(f"historia: cuaderno {cuaderno['id']}, {len(historia)} trámites")
+                resultado.update(
+                    diagnostico=" · ".join(diag),
+                    cuaderno_consultado_id=cuaderno["id"],
+                    historia=historia,
+                    litigantes=movimientos.get("litigantes") or [],
+                    notificaciones=movimientos.get("notificaciones") or [],
+                    diligencias=movimientos.get("diligencias") or [],
+                    liquidacion=movimientos.get("liquidacion") or [],
+                )
+
+        return resultado
+
+    def _normalizar_documentos_cobranza(
+        self, historia: list[dict], identificador: str, cuaderno_id: int
+    ) -> None:
+        """Como `_normalizar_documentos` (Civil), con dos diferencias del
+        contrato de Cobranza (sin confirmar contra la API real, ver
+        "Solicitud cobranza.md"):
+          - la georeferencia llega en la clave `georref` (no `georeferencia`
+            como en Civil/Laboral) y como lista vacía en vez de `null` cuando
+            no hay; se remapea y se normaliza a `None` salvo que venga un
+            objeto;
+          - `descripcion_tramite` a veces llega como objeto
+            (`{"descripcion": ..., "doc": {"nombre", "ruta"}}`) en vez de
+            texto plano; se aplana a texto y su documento se agrega a
+            `documentos` del trámite (mismo mecanismo de apertura que el
+            resto de los documentos)."""
+        for item in historia:
+            item["documentos"] = [
+                {"url": url, "tipo": tipo}
+                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
+                if (url := self._url_documento(crudo, identificador, cuaderno_id))
+            ]
+            for anexo in item.get("anexo") or []:
+                anexo["doc"] = self._url_documento(anexo.get("doc"), identificador, cuaderno_id)
+
+            desc = item.get("descripcion_tramite")
+            if isinstance(desc, dict):
+                ruta = (desc.get("doc") or {}).get("ruta")
+                url = self._url_documento(ruta, identificador, cuaderno_id)
+                if url:
+                    item["documentos"].append({"url": url, "tipo": "principal"})
+                item["descripcion_tramite"] = desc.get("descripcion")
+
+            georref = item.pop("georref", None)
+            item["georeferencia"] = georref if isinstance(georref, dict) else None
+
     # ── Reenvío de un PDF al navegador ───────────────────────────
 
     def abrir_documento(self, url: str):

@@ -9,6 +9,7 @@ import { PjudBotonComponent } from '@features/causas/components/pjud-boton/pjud-
 import { PjudMovimientosModalComponent } from '@features/causas/components/pjud-movimientos-modal/pjud-movimientos-modal.component';
 import { PjudFamiliaModalComponent } from '@features/causas/components/pjud-familia-modal/pjud-familia-modal.component';
 import { PjudLaboralModalComponent } from '@features/causas/components/pjud-laboral-modal/pjud-laboral-modal.component';
+import { PjudCobranzaModalComponent } from '@features/causas/components/pjud-cobranza-modal/pjud-cobranza-modal.component';
 import { CausaService } from '@features/causas/services/causa.service';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 
@@ -17,7 +18,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
   standalone: true,
   imports: [
     CommonModule, RecordatorioModalComponent,
-    PjudBotonComponent, PjudMovimientosModalComponent, PjudFamiliaModalComponent, PjudLaboralModalComponent,
+    PjudBotonComponent, PjudMovimientosModalComponent, PjudFamiliaModalComponent, PjudLaboralModalComponent, PjudCobranzaModalComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -44,7 +45,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
             @if (pjudDisponible()) {
               <!-- Mismo botón que Mis Causas: solo se pinta si la causa
                    resultó de una materia que expone la API del PJUD (Civil,
-                   Familia o Laboral). -->
+                   Familia, Laboral o Cobranza). -->
               PJUD:
               <app-pjud-boton [causa]="pjudCausa()" (abrir)="pjudModal.set(pjudCausa())"
                               (estadoPjud)="onEstadoPjud($event)" />
@@ -257,7 +258,7 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
         (guardado)="onRecordatorioGuardado()"
       />
 
-      <!-- Un modal por materia (Civil / Familia / Laboral): ver CausasComponent. -->
+      <!-- Un modal por materia (Civil / Familia / Laboral / Cobranza): ver CausasComponent. -->
       <app-pjud-movimientos-modal
           [causa]="pjudModal()?.materia === 'Civil' ? pjudModal() : null"
           (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
@@ -266,6 +267,9 @@ import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-m
           (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
       <app-pjud-laboral-modal
           [causa]="pjudModal()?.materia === 'Laboral' ? pjudModal() : null"
+          (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+      <app-pjud-cobranza-modal
+          [causa]="pjudModal()?.materia === 'Cobranza' ? pjudModal() : null"
           (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
     </div>
   `,
@@ -284,7 +288,7 @@ export class MovimientoDetailComponent implements OnInit {
   /** Si api-pjud.codifica.cl está configurada; sin esto el botón "Detalle
    *  PJUD" no tiene sentido y no se muestra (mismo criterio que Mis Causas). */
   pjudDisponible = signal(false);
-  /** La Causa Civil, Familia o Laboral de la cartera que calza con el
+  /** La Causa Civil, Familia, Laboral o Cobranza de la cartera que calza con el
    *  rol/tribunal de este registro, resuelta por `/causas/pjud/por-rol`; null =
    *  no hay cartera cargada, no calza ninguna, o no es de una materia que
    *  expone la API del PJUD (ahí no se muestra el botón). */
@@ -325,7 +329,7 @@ export class MovimientoDetailComponent implements OnInit {
     });
   }
 
-  /** Busca la Causa Civil, Familia o Laboral que corresponde a este registro por
+  /** Busca la Causa Civil, Familia, Laboral o Cobranza que corresponde a este registro por
    *  rol/tribunal, para el botón "Detalle PJUD". Sin rol o tribunal, o si no
    *  calza ninguna, simplemente no se ofrece el botón. */
   private resolverPjud(m: Movimiento): void {

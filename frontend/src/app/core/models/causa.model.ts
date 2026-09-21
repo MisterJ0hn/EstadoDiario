@@ -598,3 +598,104 @@ export interface PjudLaboralMovimientosResponse {
   materias: PjudLaboralMateriaItem[];
   escritos_pendientes: PjudLaboralEscritoPendienteItem[];
 }
+
+/**
+ * Detalle EN VIVO de una causa **Cobranza** (api-pjud), el cuarto gemelo
+ * (junto a Civil/Familia/Laboral), armado desde "Solicitud cobranza.md"
+ * (raíz de `ionic_app/`). Comparte con Civil los cuadernos y la cabecera con
+ * anexos de la causa e información del receptor; la sección de trámites se
+ * llama `historia` (como Civil). Cambia respecto a los tres:
+ *  - la cabecera suma `titulo_ejec` (otro documento) y `juez_asignado`;
+ *  - `historia` suma `estado_firma` (sin confirmar contra la API real);
+ *  - litigantes/notificaciones/diligencias/liquidacion tienen forma propia,
+ *    ninguna calza con las de Civil/Familia/Laboral;
+ *  - no hay escritos por resolver, exhortos ni materias/plazos.
+ */
+export interface PjudCobranzaCausaDetalle {
+  identificador: string;
+  estado: string;
+  rit: string | null;
+  caratula: string | null;
+  fecha_ingreso: string | null;
+  ruc: string | null;
+  proceso: string | null;
+  forma_inicio: string | null;
+  estado_proceso: string | null;
+  etapa: string | null;
+  titulo_ejec: PjudDocumentoRef | null;
+  juez_asignado: string | null;
+  tribunal: string | null;
+  fecha_ultima_sincronizacion: string | null;
+  doc_demanda: PjudDocumentoRef | null;
+  anexos_causa: PjudAnexoCausaItem[];
+  ebook: PjudDocumentoRef | null;
+  certificado_envio: PjudDocumentoRef | null;
+  informacion_receptor: PjudInformacionReceptorItem[];
+  cuadernos: PjudCuaderno[];
+}
+
+export interface PjudCobranzaHistoriaItem {
+  folio: number | null;
+  folio_texto: string | null;
+  documentos: PjudDocumentoTramite[];
+  anexo: PjudHistoriaAnexoItem[];
+  etapa: string | null;
+  tramite: string | null;
+  descripcion_tramite: string | null;
+  /** Sin confirmar contra la API real (nuevo en Cobranza, sin precedente en
+   *  Civil/Familia/Laboral). */
+  estado_firma: string | null;
+  fecha_tramite: string | null;
+  georeferencia: PjudGeoreferencia | null;
+}
+
+export interface PjudCobranzaLitiganteItem {
+  sujeto: string | null;
+  rut: string | null;
+  persona: string | null;
+  razon_social: string | null;
+}
+
+export interface PjudCobranzaNotificacionItem {
+  tipo_notificacion: string | null;
+  estado_notificacion: string | null;
+  fecha_notificacion: string | null;
+  fecha_tramite: string | null;
+  tramite: string | null;
+  tipo_part: string | null;
+  nombre: string | null;
+}
+
+export interface PjudCobranzaDiligenciaItem {
+  doc_ida: string | null;
+  doc_vta: string | null;
+  estado_diligencia: string | null;
+  rit: string | null;
+  ruc: string | null;
+  tipo_diligencia: string | null;
+  fecha_tramite: string | null;
+  destinatario: string | null;
+  responsable: string | null;
+}
+
+export interface PjudCobranzaLiquidacionItem {
+  liquidacion: string | null;
+  fecha_liquidacion: string | null;
+  cuaderno: string | null;
+  estado: string | null;
+  monto_liquido: string | null;
+}
+
+export interface PjudCobranzaMovimientosResponse {
+  estado: 'listo' | 'sincronizando' | 'error' | 'sin_credenciales';
+  mensaje: string | null;
+  detalle_estado: string | null;
+  ultimo_error: string | null;
+  causa: PjudCobranzaCausaDetalle | null;
+  cuaderno_consultado_id: number | null;
+  historia: PjudCobranzaHistoriaItem[];
+  litigantes: PjudCobranzaLitiganteItem[];
+  notificaciones: PjudCobranzaNotificacionItem[];
+  diligencias: PjudCobranzaDiligenciaItem[];
+  liquidacion: PjudCobranzaLiquidacionItem[];
+}
