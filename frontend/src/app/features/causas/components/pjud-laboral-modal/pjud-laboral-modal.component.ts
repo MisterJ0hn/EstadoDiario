@@ -231,25 +231,14 @@ type TabLaboral =
                       
                     </div>
                   }
-                  @if (c.audio_laboral.length > 0) {
-                    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Audio Laboral:</span>
-                          <button type="button" (click)="verAudios.set(!verAudios())"
-                                  class="inline-flex items-center gap-1 text-sky-500 hover:text-sky-600"
-                                  [title]="verAudios() ? 'Ocultar audios' : 'Ver audios'">
-                            <ng-container *ngTemplateOutlet="iconoAudio" />
-                            <span class="text-xs font-semibold text-neutral-500">{{ c.audio_laboral.length }}</span>
-                          </button>
-                        </span>
-                    </div>
-                  }
+                 
                    
 
                   @if (verTextoDemanda() && c.texto_demanda.length > 0) {
                     <div class="border-t border-neutral-200 px-4 py-2">
                       <div class="overflow-x-auto rounded border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Estado</th><th>Doc.</th><th>Fecha</th><th>Referencia</th></tr></thead>
+                          <thead><tr><th>Doc. Demanda</th><th>Doc.</th><th>Fecha</th><th>Referencia</th></tr></thead>
                           <tbody>
                             @for (t of c.texto_demanda; track $index) {
                               <tr>
@@ -268,7 +257,18 @@ type TabLaboral =
                       </div>
                     </div>
                   }
-
+                   @if (c.audio_laboral.length > 0) {
+                    <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Audio Laboral:</span>
+                          <button type="button" (click)="verAudios.set(!verAudios())"
+                                  class="inline-flex items-center gap-1 text-sky-500 hover:text-sky-600"
+                                  [title]="verAudios() ? 'Ocultar audios' : 'Ver audios'">
+                            <ng-container *ngTemplateOutlet="iconoAudio" />
+                            <span class="text-xs font-semibold text-neutral-500">{{ c.audio_laboral.length }}</span>
+                          </button>
+                        </span>
+                    </div>
+                  }
                   @if (verAudios() && c.audio_laboral.length > 0) {
                     <div class="border-t border-neutral-200 px-4 py-2">
                       <div class="overflow-x-auto rounded border border-neutral-200">
