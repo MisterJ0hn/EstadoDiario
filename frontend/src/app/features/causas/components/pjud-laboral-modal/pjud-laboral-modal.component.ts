@@ -7,6 +7,7 @@ import {
   Causa,
   PjudGeoreferencia,
   PjudHistoriaAnexoItem,
+  PjudLaboralMovimientoItem,
   PjudLaboralMovimientosResponse,
 } from '@core/models/causa.model';
 import { CausaService } from '../../services/causa.service';
@@ -204,7 +205,7 @@ type TabLaboral =
                     }
                   </div>
 
-                  @if (c.certificado_envio?.url || c.texto_demanda.length > 0 || c.audio_laboral.length > 0) {
+                  @if (c.certificado_envio?.url || c.ebook?.url || c.texto_demanda.length > 0 || c.audio_laboral.length > 0) {
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
                       @if (c.texto_demanda.length > 0) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Texto Demanda:</span>
@@ -219,6 +220,11 @@ type TabLaboral =
                       @if (c.certificado_envio?.url) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
                           <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
+                        </span>
+                      }
+                      @if (c.ebook?.url) {
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
                         </span>
                       }
                       @if (c.audio_laboral.length > 0) {
@@ -333,7 +339,13 @@ type TabLaboral =
                               <tr>
                                 <td class="text-center">{{ h.folio_texto ?? '-' }}</td>
                                 <td class="text-center">
-                                  @if (h.documentos.length > 0) {
+                                  @if (esIngresoCausa(h)) {
+                                    <button type="button" (click)="verTextoDemanda.set(true)"
+                                            class="inline-flex items-center text-amber-500 hover:text-amber-600"
+                                            title="Ver texto de demanda">
+                                      <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                                    </button>
+                                  } @else if (h.documentos.length > 0) {
                                     <span class="inline-flex items-center justify-center gap-2">
                                       @for (doc of h.documentos; track $index) {
                                         <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: doc.url, tipo: doc.tipo }" />
@@ -778,6 +790,13 @@ export class PjudLaboralModalComponent {
   esDocWord(url: string | null | undefined): boolean {
     const ext = this.extensionDocumento(url).toLowerCase();
     return ext === 'doc' || ext === 'docx';
+  }
+
+  /** El trámite de "Ingreso Causa" no trae el documento en `documentos` sino
+   *  en la demanda (`texto_demanda` de la cabecera): en vez del ícono de
+   *  documento se muestra una carpeta que abre ese panel. */
+  esIngresoCausa(item: PjudLaboralMovimientoItem): boolean {
+    return (item.descripcion_tramite ?? '').trim().toLowerCase() === 'ingreso causa';
   }
 
   /** Abre el modal secundario con el detalle del array de anexos de un
