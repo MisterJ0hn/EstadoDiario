@@ -6,6 +6,7 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 import {
   Causa,
+  PjudAnexoCausaItem,
   PjudCobranzaMovimientosResponse,
   PjudCuaderno,
   PjudGeoreferencia,
@@ -159,7 +160,7 @@ const INTERVALO_POLL_MS = 5000;
                   </div>
 
                   <!-- Documentos de la causa -->
-                  @if (c.doc_demanda?.url || c.titulo_ejec?.url || c.certificado_envio?.url || c.ebook?.url || c.anexos_causa.length > 0) {
+                  @if (c.doc_demanda?.url || c.titulo_ejec?.url || c.certificado_envio?.url || c.ebook?.url || c.anexos_causa.length > 0 || c.documentos_laboral.length > 0) {
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
                       @if (c.doc_demanda?.url) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Demanda:</span>
@@ -173,6 +174,16 @@ const INTERVALO_POLL_MS = 5000;
                                   [title]="verAnexos() ? 'Ocultar anexos' : 'Ver anexos de la causa'">
                             <ng-container *ngTemplateOutlet="iconoCarpeta" />
                             <span class="text-xs font-semibold text-neutral-500">{{ c.anexos_causa.length }}</span>
+                          </button>
+                        </span>
+                      }
+                      @if (c.documentos_laboral.length > 0) {
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Documentos Laboral:</span>
+                          <button type="button" (click)="abrirDocumentosLaboral(c.documentos_laboral)"
+                                  class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
+                                  title="Ver documentos laboral">
+                            <ng-container *ngTemplateOutlet="iconoCarpeta" />
+                            <span class="text-xs font-semibold text-neutral-500">{{ c.documentos_laboral.length }}</span>
                           </button>
                         </span>
                       }
@@ -530,6 +541,48 @@ const INTERVALO_POLL_MS = 5000;
         </div>
       }
 
+      <!-- ── Documentos Laboral de la causa ────────────────────────
+           Mismo mecanismo que "Anexos del trámite": la cabecera muestra una
+           carpeta con el conteo y este modal (por encima del principal)
+           despliega el detalle (Doc., Fecha, Referencia). -->
+      @if (documentosLaboralAbierto(); as documentos) {
+        <div class="modal-backdrop !z-[60]" (click)="documentosLaboralAbierto.set(null)">
+          <div class="modal-content !z-[70] !max-w-2xl" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <h3 class="text-lg font-semibold text-primary-700">Documentos Laboral</h3>
+              <button (click)="documentosLaboralAbierto.set(null)"
+                      class="text-neutral-400 hover:text-neutral-600 text-xl leading-none">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="overflow-x-auto rounded-lg border border-neutral-200">
+                <table class="pjud-table">
+                  <thead><tr><th>Doc.</th><th>Fecha</th><th>Referencia</th></tr></thead>
+                  <tbody>
+                    @for (doc of documentos; track $index) {
+                      <tr>
+                        <td class="text-center">
+                          @if (doc.doc) {
+                            <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: doc.doc }" />
+                          } @else { <span>-</span> }
+                        </td>
+                        <td>{{ doc.fecha || '-' }}</td>
+                        <td class="whitespace-normal">{{ doc.referencia || doc.nombre_doc || '-' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @if (docError()) {
+                <p class="mt-2 text-sm text-danger-600">{{ docError() }}</p>
+              }
+            </div>
+            <div class="modal-footer">
+              <button (click)="documentosLaboralAbierto.set(null)" class="btn-primary">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      }
+
       <!-- ── Georeferencia de un movimiento de la Historia ─────────
            Mismo mecanismo que Civil/Familia/Laboral: popup con tres pestañas:
            mapa (situado según latitud/longitud), imágenes (carrusel si hay
@@ -635,6 +688,7 @@ export class PjudCobranzaModalComponent implements OnDestroy {
       this.verAnexos.set(false);
       this.verReceptor.set(false);
       this.anexosTramite.set(null);
+      this.documentosLaboralAbierto.set(null);
       this.docError.set(null);
       this.georef.set(null);
       this.georefTab.set('mapa');
@@ -665,6 +719,9 @@ export class PjudCobranzaModalComponent implements OnDestroy {
   /** Array `anexo` del trámite de Historia que se está mirando en el modal
    *  secundario; `null` = cerrado. */
   anexosTramite = signal<PjudHistoriaAnexoItem[] | null>(null);
+  /** `documentos_laboral` de la cabecera, mirado en el modal secundario;
+   *  `null` = cerrado. */
+  documentosLaboralAbierto = signal<PjudAnexoCausaItem[] | null>(null);
   docError = signal<string | null>(null);
 
   /** Georeferencia del movimiento que se está mirando en el popup; `null` = cerrado. */
@@ -754,6 +811,13 @@ export class PjudCobranzaModalComponent implements OnDestroy {
   abrirAnexosTramite(anexos: PjudHistoriaAnexoItem[]): void {
     this.docError.set(null);
     this.anexosTramite.set(anexos);
+  }
+
+  /** Abre el modal secundario con el detalle de `documentos_laboral` de la
+   *  cabecera (Doc., Fecha, Referencia). */
+  abrirDocumentosLaboral(documentos: PjudAnexoCausaItem[]): void {
+    this.docError.set(null);
+    this.documentosLaboralAbierto.set(documentos);
   }
 
   abrirGeoreferencia(g: PjudGeoreferencia): void {

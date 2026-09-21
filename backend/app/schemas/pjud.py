@@ -502,6 +502,9 @@ class PjudLaboralMovimientosResponse(BaseModel):
 #     y `doc_demanda` (un único documento, como Civil/Laboral, pero el
 #     proveedor lo manda con la clave `ruta` en vez de `url`: se remapea en
 #     el servicio antes de construir este schema);
+#   - la cabecera también suma `documentos_laboral` (misma forma que
+#     `anexos_causa`; el frontend lo abre en un popup aparte, con su propio
+#     ícono de carpeta);
 #   - la sección de trámites se llama `historia` (como Civil) y cada fila
 #     suma `estado_firma` (no confirmado contra la API real);
 #   - litigantes/notificaciones/diligencias/liquidacion tienen forma propia,
@@ -526,6 +529,9 @@ class PjudCobranzaCausaDetalle(BaseModel):
     fecha_ultima_sincronizacion: str | None = None
     doc_demanda: PjudDocumentoRef | None = None
     anexos_causa: list[PjudAnexoCausaItem] = []
+    # Misma forma que `anexos_causa` (fecha/referencia/nombre_doc/doc); el
+    # frontend lo muestra en un popup aparte, no en el desplegable de anexos.
+    documentos_laboral: list[PjudAnexoCausaItem] = []
     ebook: PjudDocumentoRef | None = None
     certificado_envio: PjudDocumentoRef | None = None
     informacion_receptor: list[PjudInformacionReceptorItem] = []

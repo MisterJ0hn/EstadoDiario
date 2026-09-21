@@ -628,6 +628,9 @@ export interface PjudCobranzaCausaDetalle {
   fecha_ultima_sincronizacion: string | null;
   doc_demanda: PjudDocumentoRef | null;
   anexos_causa: PjudAnexoCausaItem[];
+  /** Misma forma que `anexos_causa`; se muestra en un popup aparte, con su
+   *  propio ícono de carpeta. */
+  documentos_laboral: PjudAnexoCausaItem[];
   ebook: PjudDocumentoRef | null;
   certificado_envio: PjudDocumentoRef | null;
   informacion_receptor: PjudInformacionReceptorItem[];
