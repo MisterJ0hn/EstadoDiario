@@ -144,16 +144,24 @@ const INTERVALO_POLL_MS = 5000;
                 <!-- ── Panel de datos de la causa ──── -->
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
-                    <p><span class="pjud-k">ROL:</span> {{ c.rit || causa.rol }}</p>
+                    <p><span class="pjud-k">RIT:</span> {{ c.rit || causa.rol }}</p>
                     <p class="font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
-                    <p><span class="pjud-k">F. Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
+                    <p><span class="pjud-k">Fecha Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
 
                     <p><span class="pjud-k">RUC:</span> {{ c.ruc || '-' }}</p>
+                    <p><span class="pjud-k">Est.Adm:</span> </p>
                     <p><span class="pjud-k">Proc.:</span> {{ c.proceso || '-' }}</p>
                     <p><span class="pjud-k">Forma Inicio:</span> {{ c.forma_inicio || '-' }}</p>
 
                     <p><span class="pjud-k">Estado Proc.:</span> {{ cuadernoActual(c.cuadernos)?.estado_proceso || c.estado_proceso || '-' }}</p>
                     <p><span class="pjud-k">Etapa:</span> {{ cuadernoActual(c.cuadernos)?.etapa || c.etapa || '-' }}</p>
+                     <p><span class="pjud-k"Título Ejec.:</span>
+                    @if (c.titulo_ejec?.url) {
+                        
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.titulo_ejec!.url }" />
+                       
+                      }
+                    </p>
                     <p><span class="pjud-k">Juez Asignado:</span> {{ c.juez_asignado || '-' }}</p>
 
                     <p class="md:col-span-3"><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
@@ -163,7 +171,7 @@ const INTERVALO_POLL_MS = 5000;
                   @if (c.doc_demanda?.url || c.titulo_ejec?.url || c.certificado_envio?.url || c.ebook?.url || c.anexos_causa.length > 0 || c.documentos_laboral.length > 0) {
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-neutral-200 px-4 py-2.5 text-sm">
                       @if (c.doc_demanda?.url) {
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Demanda:</span>
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Doc. Demanda:</span>
                           <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.doc_demanda!.url }" />
                         </span>
                       }
@@ -177,7 +185,19 @@ const INTERVALO_POLL_MS = 5000;
                           </button>
                         </span>
                       }
-                      @if (c.documentos_laboral.length > 0) {
+                        @if (c.ebook?.url) {
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
+                        </span>
+                      }
+                      
+                      
+                      @if (c.certificado_envio?.url) {
+                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
+                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
+                        </span>
+                      }
+                        @if (c.documentos_laboral.length > 0) {
                         <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Documentos Laboral:</span>
                           <button type="button" (click)="abrirDocumentosLaboral(c.documentos_laboral)"
                                   class="inline-flex items-center gap-1 text-amber-500 hover:text-amber-600"
@@ -187,21 +207,7 @@ const INTERVALO_POLL_MS = 5000;
                           </button>
                         </span>
                       }
-                      @if (c.titulo_ejec?.url) {
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Título Ejecutivo:</span>
-                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.titulo_ejec!.url }" />
-                        </span>
-                      }
-                      @if (c.certificado_envio?.url) {
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Certificado de Envío:</span>
-                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.certificado_envio!.url }" />
-                        </span>
-                      }
-                      @if (c.ebook?.url) {
-                        <span class="inline-flex items-center gap-1.5"><span class="pjud-k">Ebook:</span>
-                          <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.ebook!.url }" />
-                        </span>
-                      }
+                      
                     </div>
                   }
 
