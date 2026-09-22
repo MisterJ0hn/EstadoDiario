@@ -155,7 +155,7 @@ const INTERVALO_POLL_MS = 5000;
 
                     <p><span class="pjud-k">Estado Proc.:</span> {{ cuadernoActual(c.cuadernos)?.estado_proceso || c.estado_proceso || '-' }}</p>
                     <p><span class="pjud-k">Etapa:</span> {{ cuadernoActual(c.cuadernos)?.etapa || c.etapa || '-' }}</p>
-                    <p><span class="pjud-k"Título Ejec.:</span>
+                    <p><span class="pjud-k">Título Ejec.:</span>
                     @if (c.titulo_ejec?.url) {
                         
                           <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: c.titulo_ejec!.url }" />
