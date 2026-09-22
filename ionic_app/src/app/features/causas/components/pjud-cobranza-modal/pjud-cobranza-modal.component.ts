@@ -404,7 +404,7 @@ const INTERVALO_POLL_MS = 5000;
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Tip.Not.</th><th>Est.Not.</th><th>Fec.Not.</th><th>Fec.Trám.</th><th>Trámite</th><th>Tip.Part.</th><th>Nombre</th></tr></thead>
+                          <thead><tr><th>Tip.Not.</th><th>Est.Not.</th><th>Fec.Not.</th><th>Fec.Tram.</th><th>Trámite</th><th>Tip.Part.</th><th>Nombre</th></tr></thead>
                           <tbody>
                             @for (n of d.notificaciones; track $index) {
                               <tr>
@@ -568,7 +568,7 @@ const INTERVALO_POLL_MS = 5000;
         <div class="modal-backdrop !z-[60]" (click)="documentosLaboralAbierto.set(null)">
           <div class="modal-content !z-[70] !max-w-2xl" (click)="$event.stopPropagation()">
             <div class="modal-header">
-              <h3 class="text-lg font-semibold text-primary-700">Documentos Laboral</h3>
+              <h3 class="text-lg font-semibold text-primary-700">Detalle Documentos Laboral</h3>
               <button (click)="documentosLaboralAbierto.set(null)"
                       class="text-neutral-400 hover:text-neutral-600 text-xl leading-none">&times;</button>
             </div>
