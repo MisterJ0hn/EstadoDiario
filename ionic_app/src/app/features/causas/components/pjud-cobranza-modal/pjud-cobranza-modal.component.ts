@@ -348,7 +348,12 @@ const INTERVALO_POLL_MS = 5000;
                                 <td class="whitespace-normal">
                                   @if (h.descripcion_tramite_doc) {
                                     <a href="javascript:void(0)" (click)="abrirDocumento(h.descripcion_tramite_doc)"
-                                       class="text-primary-700 underline hover:text-primary-800">
+                                       class="badge-info gap-1 hover:bg-primary-200 transition-colors"
+                                       title="Ver documento (PDF)">
+                                      <svg viewBox="0 0 24 24" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true">
+                                        <path fill-rule="evenodd" clip-rule="evenodd"
+                                              d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V7a1 1 0 0 0 1 1h3.5L13 3.5Z" />
+                                      </svg>
                                       {{ h.descripcion_tramite || '-' }}
                                     </a>
                                   } @else {
