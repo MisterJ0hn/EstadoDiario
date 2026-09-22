@@ -149,7 +149,7 @@ const INTERVALO_POLL_MS = 5000;
                     <p><span class="pjud-k">Fecha Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
 
                     <p><span class="pjud-k">RUC:</span> {{ c.ruc || '-' }}</p>
-                    <p><span class="pjud-k">Est.Adm:</span> </p>
+                    <p><span class="pjud-k">Est.Adm.:</span> {{ c.est_adm || '-' }}</p>
                     <p><span class="pjud-k">Proc.:</span> {{ c.proceso || '-' }}</p>
                     <p><span class="pjud-k">Forma Inicio:</span> {{ c.forma_inicio || '-' }}</p>
 
@@ -164,7 +164,7 @@ const INTERVALO_POLL_MS = 5000;
                     </p>
                     <p><span class="pjud-k">Juez Asignado:</span> {{ c.juez_asignado || '-' }}</p>
 
-                    <p class="md:col-span-3"><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
+                    <p ><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
                   </div>
 
                   <!-- Documentos de la causa -->

@@ -622,6 +622,7 @@ export interface PjudCobranzaCausaDetalle {
   forma_inicio: string | null;
   estado_proceso: string | null;
   etapa: string | null;
+  est_adm: string | null;
   titulo_ejec: PjudDocumentoRef | null;
   juez_asignado: string | null;
   tribunal: string | null;

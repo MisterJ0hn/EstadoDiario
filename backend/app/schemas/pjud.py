@@ -523,6 +523,7 @@ class PjudCobranzaCausaDetalle(BaseModel):
     forma_inicio: str | None = None
     estado_proceso: str | None = None
     etapa: str | None = None
+    est_adm: str | None = None
     titulo_ejec: PjudDocumentoRef | None = None
     juez_asignado: str | None = None
     tribunal: str | None = None
