@@ -1140,9 +1140,10 @@ class PjudService:
             objeto;
           - `descripcion_tramite` a veces llega como objeto
             (`{"descripcion": ..., "doc": {"nombre", "ruta"}}`) en vez de
-            texto plano; se aplana a texto y su documento se agrega a
-            `documentos` del trámite (mismo mecanismo de apertura que el
-            resto de los documentos)."""
+            texto plano; se aplana a texto en `descripcion_tramite` y su
+            documento se deja aparte en `descripcion_tramite_doc` (no se
+            mezcla con `documentos`, que es la columna "Doc." del trámite):
+            el frontend pinta la descripción como link a ese documento."""
         for item in historia:
             item["documentos"] = [
                 {"url": url, "tipo": tipo}
@@ -1153,11 +1154,10 @@ class PjudService:
                 anexo["doc"] = self._url_documento(anexo.get("doc"), identificador, cuaderno_id)
 
             desc = item.get("descripcion_tramite")
+            item["descripcion_tramite_doc"] = None
             if isinstance(desc, dict):
                 ruta = (desc.get("doc") or {}).get("ruta")
-                url = self._url_documento(ruta, identificador, cuaderno_id)
-                if url:
-                    item["documentos"].append({"url": url, "tipo": "principal"})
+                item["descripcion_tramite_doc"] = self._url_documento(ruta, identificador, cuaderno_id)
                 item["descripcion_tramite"] = desc.get("descripcion")
 
             georref = item.pop("georref", None)

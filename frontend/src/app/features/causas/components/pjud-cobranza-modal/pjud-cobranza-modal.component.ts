@@ -345,7 +345,16 @@ const INTERVALO_POLL_MS = 5000;
                                 </td>
                                 <td class="whitespace-normal">{{ h.etapa || '-' }}</td>
                                 <td class="whitespace-normal">{{ h.tramite || '-' }}</td>
-                                <td class="whitespace-normal">{{ h.descripcion_tramite || '-' }}</td>
+                                <td class="whitespace-normal">
+                                  @if (h.descripcion_tramite_doc) {
+                                    <a href="javascript:void(0)" (click)="abrirDocumento(h.descripcion_tramite_doc)"
+                                       class="text-primary-700 underline hover:text-primary-800">
+                                      {{ h.descripcion_tramite || '-' }}
+                                    </a>
+                                  } @else {
+                                    {{ h.descripcion_tramite || '-' }}
+                                  }
+                                </td>
                                 <td>{{ h.estado_firma || '-' }}</td>
                                 <td>{{ h.fecha_tramite || '-' }}</td>
                                 <td class="text-center">

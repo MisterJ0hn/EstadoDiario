@@ -544,7 +544,9 @@ class PjudCobranzaHistoriaItem(BaseModel):
     confirmar contra la API real) y sin `foja` (el ejemplo del proveedor no la
     trae). `descripcion_tramite` a veces llega como objeto
     (`{"descripcion": ..., "doc": {"nombre", "ruta"}}`) en vez de texto plano;
-    el servicio lo aplana a texto y agrega ese documento a `documentos`."""
+    el servicio lo aplana a texto y deja su documento en
+    `descripcion_tramite_doc` (el frontend pinta la descripción como link a
+    ese documento en vez de sumarlo a `documentos`)."""
 
     folio: int | None = None
     folio_texto: str | None = None
@@ -553,6 +555,7 @@ class PjudCobranzaHistoriaItem(BaseModel):
     etapa: str | None = None
     tramite: str | None = None
     descripcion_tramite: str | None = None
+    descripcion_tramite_doc: str | None = None
     estado_firma: str | None = None
     fecha_tramite: str | None = None
     georeferencia: PjudGeoreferencia | None = None

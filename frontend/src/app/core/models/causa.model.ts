@@ -646,6 +646,10 @@ export interface PjudCobranzaHistoriaItem {
   etapa: string | null;
   tramite: string | null;
   descripcion_tramite: string | null;
+  /** Documento del trámite ligado a `descripcion_tramite` (viene aparte de
+   *  `documentos`, la columna "Doc."): si no es null, la descripción se
+   *  pinta como link a este PDF. */
+  descripcion_tramite_doc: string | null;
   /** Sin confirmar contra la API real (nuevo en Cobranza, sin precedente en
    *  Civil/Familia/Laboral). */
   estado_firma: string | null;
