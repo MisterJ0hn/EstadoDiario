@@ -682,6 +682,8 @@ export interface PjudCobranzaDiligenciaItem {
 }
 
 export interface PjudCobranzaLiquidacionItem {
+  /** No es una glosa de texto: es la URL de un documento (mismo criterio que
+   *  el "Doc." de Historia), ya resuelta por el backend. */
   liquidacion: string | null;
   fecha_liquidacion: string | null;
   cuaderno: string | null;

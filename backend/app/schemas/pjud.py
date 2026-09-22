@@ -587,6 +587,8 @@ class PjudCobranzaDiligenciaItem(BaseModel):
 
 
 class PjudCobranzaLiquidacionItem(BaseModel):
+    # No es una glosa de texto: es la URL de un documento, resuelta por el
+    # servicio con el mismo criterio que el "Doc." de Historia.
     liquidacion: str | None = None
     fecha_liquidacion: str | None = None
     cuaderno: str | None = None

@@ -311,7 +311,7 @@ const INTERVALO_POLL_MS = 5000;
                           <thead>
                             <tr>
                               <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th>
-                              <th>Trámite</th><th>Desc. Trámite</th><th>Estado Firma</th><th>Fec. Trámite</th><th>Georreferencia</th>
+                              <th>Trámite</th><th>Desc. Trámite</th><th>Estado Firma</th><th>Fec. Trámite</th><th>Georref.</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -389,21 +389,21 @@ const INTERVALO_POLL_MS = 5000;
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Est. Notif.</th><th>Tipo Notif.</th><th>Fecha Notif.</th><th>Fecha Trámite</th><th>Tipo Part.</th><th>Nombre</th><th>Trámite</th></tr></thead>
+                          <thead><tr><th>Tip.Not.</th><th>Est.Not.</th><th>Fec.Not.</th><th>Fec.Trám.</th><th>Trámite</th><th>Tip.Part.</th><th>Nombre</th></tr></thead>
                           <tbody>
                             @for (n of d.notificaciones; track $index) {
                               <tr>
+                                <td>{{ n.tipo_notificacion || '-' }}</td>
                                 <td>
                                   @if (n.estado_notificacion) {
                                     <span class="badge-neutral">{{ n.estado_notificacion }}</span>
                                   } @else { <span>-</span> }
                                 </td>
-                                <td>{{ n.tipo_notificacion || '-' }}</td>
                                 <td>{{ n.fecha_notificacion || '-' }}</td>
                                 <td>{{ n.fecha_tramite || '-' }}</td>
+                                <td>{{ n.tramite || '-' }}</td>                                
                                 <td>{{ n.tipo_part || '-' }}</td>
-                                <td class="whitespace-normal">{{ n.nombre || '-' }}</td>
-                                <td>{{ n.tramite || '-' }}</td>
+                                <td class="whitespace-normal">{{ n.nombre || '-' }}</td>                                
                               </tr>
                             }
                           </tbody>
@@ -459,7 +459,11 @@ const INTERVALO_POLL_MS = 5000;
                           <tbody>
                             @for (li of d.liquidacion; track $index) {
                               <tr>
-                                <td class="whitespace-normal">{{ li.liquidacion || '-' }}</td>
+                                <td class="text-center">
+                                  @if (li.liquidacion) {
+                                    <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: li.liquidacion }" />
+                                  } @else { <span>-</span> }
+                                </td>
                                 <td>{{ li.fecha_liquidacion || '-' }}</td>
                                 <td>{{ li.cuaderno || '-' }}</td>
                                 <td>{{ li.estado || '-' }}</td>

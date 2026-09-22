@@ -1108,6 +1108,14 @@ class PjudService:
                 historia = movimientos.get("historia") or []
                 self._normalizar_documentos_cobranza(historia, identificador, cuaderno["id"])
                 diag.append(f"historia: cuaderno {cuaderno['id']}, {len(historia)} trámites")
+                liquidacion = movimientos.get("liquidacion") or []
+                # `liquidacion` es en realidad un documento (mismo criterio que
+                # el "Doc." de Historia), no una glosa de texto: se resuelve a
+                # URL absoluta con el mismo mecanismo.
+                for li in liquidacion:
+                    li["liquidacion"] = self._url_documento(
+                        li.get("liquidacion"), identificador, cuaderno["id"]
+                    )
                 resultado.update(
                     diagnostico=" · ".join(diag),
                     cuaderno_consultado_id=cuaderno["id"],
@@ -1115,7 +1123,7 @@ class PjudService:
                     litigantes=movimientos.get("litigantes") or [],
                     notificaciones=movimientos.get("notificaciones") or [],
                     diligencias=movimientos.get("diligencias") or [],
-                    liquidacion=movimientos.get("liquidacion") or [],
+                    liquidacion=liquidacion,
                 )
 
         return resultado
