@@ -272,11 +272,12 @@ type TabLaboral =
                     <div class="border-t border-neutral-200 px-4 py-2">
                       <div class="overflow-x-auto rounded border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>N°</th><th>Audio</th><th>Fecha</th><th>Referencia</th></tr></thead>
+                          <thead><tr><th>N°</th><th>Descargar</th><th>Audio</th><th>Fecha</th><th>Referencia</th></tr></thead>
                           <tbody>
                             @for (a of c.audio_laboral; track $index) {
                               <tr>
                                 <td class="text-center">{{ a.numero ?? '-' }}</td>
+                                <td><a href="{{a.audio}}">Descargar</a></td>
                                 <td>
                                   @if (a.audio) {
                                     <audio controls preload="none" [src]="a.audio" class="h-8 max-w-xs"></audio>
@@ -297,7 +298,7 @@ type TabLaboral =
                 <div class="border-b border-neutral-200">
                   <nav class="tabs-nav">
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'movimiento'" (click)="tab.set('movimiento')">
-                      Movimiento <span class="tab-contador">{{ d.movimiento.length }}</span>
+                      Movimientos <span class="tab-contador">{{ d.movimiento.length }}</span>
                     </button>
                     <button class="tab-link" [class.tab-link-activo]="tab() === 'litigantes'" (click)="tab.set('litigantes')">
                       Litigantes <span class="tab-contador">{{ d.litigantes.length }}</span>
