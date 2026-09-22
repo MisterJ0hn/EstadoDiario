@@ -284,12 +284,12 @@ def listar(
 
     # Último estado conocido de "Detalle PJUD" por causa (del log de llamados,
     # NO en vivo al proveedor): pinta el icono del botón sin el costo de
-    # golpear a api-pjud una vez por fila. Solo aplica a Civil, Familia y
-    # Laboral, que son las materias con ese botón.
+    # golpear a api-pjud una vez por fila. Solo aplica a Civil, Familia,
+    # Laboral y Cobranza, que son las materias con ese botón.
     if settings.pjud_api_activo:
         pjud_ids = [
             r.id for r, c in zip(causas_resp, items)
-            if (c.materia or "").strip().lower() in ("civil", "familia", "laboral")
+            if (c.materia or "").strip().lower() in ("civil", "familia", "laboral", "cobranza")
         ]
         ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
             cliente_id=tenant.cliente_id, causa_ids=pjud_ids,

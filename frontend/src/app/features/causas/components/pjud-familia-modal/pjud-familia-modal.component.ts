@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnDestroy, Output, inject, signal } from '@angular/core';
 import { CommonModule, NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
@@ -18,6 +18,10 @@ type TabFamilia =
   | 'materias'
   | 'plazos'
   | 'diligencias';
+
+/** Cada cuánto se pregunta, mientras el PJUD sincroniza, si ya terminó (mismo
+ *  intervalo que usa `PjudBotonComponent` para su propio polling). */
+const INTERVALO_POLL_MS = 5000;
 
 /**
  * "Detalle Causa Familia": la ficha del PJUD de una causa de materia Familia,
@@ -583,14 +587,16 @@ type TabFamilia =
     .pjud-table tbody tr:hover { @apply bg-primary-50/40; }
   `],
 })
-export class PjudFamiliaModalComponent {
+export class PjudFamiliaModalComponent implements OnDestroy {
   private service = inject(CausaService);
   private sanitizer = inject(DomSanitizer);
 
   private _causa: Causa | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
 
   @Input()
   set causa(c: Causa | null) {
+    this.detenerPolling();
     this._causa = c;
     if (c !== null) {
       this.tab.set('movimiento');
@@ -605,6 +611,10 @@ export class PjudFamiliaModalComponent {
   }
   get causa(): Causa | null {
     return this._causa;
+  }
+
+  ngOnDestroy(): void {
+    this.detenerPolling();
   }
 
   @Output() cerrado = new EventEmitter<void>();
@@ -626,6 +636,7 @@ export class PjudFamiliaModalComponent {
   imagenIdx = signal(0);
 
   private cargar(causaId: number, forzar: boolean): void {
+    this.detenerPolling();
     this.cargando.set(true);
     this.error.set(null);
     this.service.pjudFamilia(causaId, forzar).subscribe({
@@ -633,6 +644,9 @@ export class PjudFamiliaModalComponent {
         this.datos.set(res);
         this.cargando.set(false);
         this.estadoPjud.emit({ causaId, estado: res.estado });
+        if (res.estado === 'sincronizando') {
+          this.iniciarPolling(causaId);
+        }
       },
       error: (err) => {
         this.cargando.set(false);
@@ -640,6 +654,32 @@ export class PjudFamiliaModalComponent {
         this.error.set(err.error?.detail || 'No se pudo obtener el detalle desde el PJUD');
       },
     });
+  }
+
+  /** Mientras el popup siga abierto y el PJUD siga sincronizando, pregunta
+   *  cada `INTERVALO_POLL_MS` (sin `forzar`, solo consulta el estado) y
+   *  refresca el popup solo con lo que vuelva; se detiene sola al salir de
+   *  'sincronizando', o antes si el usuario cierra el modal o dispara otra
+   *  consulta (Actualizar). */
+  private iniciarPolling(causaId: number): void {
+    this.detenerPolling();
+    this.pollTimer = setInterval(() => {
+      this.service.pjudFamilia(causaId, false).subscribe({
+        next: (res) => {
+          this.datos.set(res);
+          this.estadoPjud.emit({ causaId, estado: res.estado });
+          if (res.estado !== 'sincronizando') this.detenerPolling();
+        },
+        // Error de red en un tick: no se sabe nada nuevo, se sigue
+        // preguntando en el próximo intervalo.
+        error: () => {},
+      });
+    }, INTERVALO_POLL_MS);
+  }
+
+  private detenerPolling(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
   }
 
   actualizar(): void {
