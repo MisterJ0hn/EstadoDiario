@@ -137,22 +137,17 @@ const INTERVALO_POLL_MS = 5000;
                 <!-- ── Panel de datos de la causa ──── -->
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
-                    <p><span class="pjud-k">ROL:</span> {{ c.rol || causa.rol }}</p>
-                    <p class="font-medium text-neutral-800">{{ c.caratula || '-' }}</p>
-                    <p><span class="pjud-k">F. Ing.:</span> {{ c.fecha_ingreso || '-' }}</p>
-
-                    <p><span class="pjud-k">RUC:</span> {{ c.ruc || '-' }}</p>
-                    <p><span class="pjud-k">Est. Adm.:</span> {{ c.estado_adm || '-' }}</p>
+                    <p><span class="pjud-k">ROL:</span> {{ c.rol || causa.rol }} / <span class="pjud-k">RUC:</span> {{ c.ruc || '-' }}</p>
+                    
+                    <p><span class="pjud-k">Fecha Ingreso:</span> {{ c.fecha_ingreso || '-' }}</p>
+                    <p><span class="pjud-k">Caratulado:</span>{{ c.caratula || '-' }}</p>
+                    <p><span class="pjud-k">Est.Adm.:</span> {{ c.estado_adm || '-' }}</p>
                     <p><span class="pjud-k">Procedimiento:</span> {{ c.procedimiento || '-' }}</p>
-
-                    <p><span class="pjud-k">Proc.:</span> {{ c.proceso || '-' }}</p>
-                    <p><span class="pjud-k">Forma Inicio:</span> {{ c.forma_inicio || '-' }}</p>
-                    <p><span class="pjud-k">Estado Proc.:</span> {{ cuadernoActual(c.cuadernos)?.estado_proceso || c.estado_proceso || '-' }}</p>
-
                     <p><span class="pjud-k">Ubicación:</span> {{ c.ubicacion || '-' }}</p>
+                    <p><span class="pjud-k">Estado Procesal:</span> {{ cuadernoActual(c.cuadernos)?.estado_proceso || c.estado_proceso || '-' }}</p>
                     <p class="md:col-span-2"><span class="pjud-k">Etapa:</span> {{ cuadernoActual(c.cuadernos)?.etapa || c.etapa || '-' }}</p>
-
                     <p class="md:col-span-3"><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
+                    
                   </div>
 
                   @if (c.acumulada || c.certificado_envio) {
@@ -217,7 +212,7 @@ const INTERVALO_POLL_MS = 5000;
                           <thead>
                             <tr>
                               <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Trámite</th>
-                              <th>Desc. Trámite</th><th>Fecha Trámite</th><th>Firma</th><th>Estado</th>
+                              <th>Desc. Trámite</th><th>Fec. Trámite</th><th>Fec. Firma</th><th>Estado</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -263,12 +258,11 @@ const INTERVALO_POLL_MS = 5000;
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Participante</th><th>Rut</th><th>Persona</th><th>Nombre o Razón Social</th></tr></thead>
+                          <thead><tr><th>Participantes</th><th>Persona</th><th>Nombre o Razón Social</th></tr></thead>
                           <tbody>
                             @for (l of d.litigantes; track $index) {
                               <tr>
-                                <td>{{ l.participantes || '-' }}</td>
-                                <td>{{ l.rut || '-' }}</td>
+                                <td>{{ l.participantes || '-' }}</td>                      
                                 <td>{{ l.persona || '-' }}</td>
                                 <td class="whitespace-normal">{{ l.razon_social || '-' }}</td>
                               </tr>
@@ -286,7 +280,7 @@ const INTERVALO_POLL_MS = 5000;
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Tipo Notif.</th><th>Estado</th><th>Fecha Notif.</th><th>Nombre</th><th>Estampado</th><th>Georreferencia</th></tr></thead>
+                          <thead><tr><th>Tipo Notificación</th><th>Estado Notificación</th><th>Fecha Notificación</th><th>Nombre</th><th>Estampado</th><th>Geo</th></tr></thead>
                           <tbody>
                             @for (n of d.notificaciones; track $index) {
                               <tr>
