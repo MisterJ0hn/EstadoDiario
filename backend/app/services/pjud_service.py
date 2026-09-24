@@ -1163,6 +1163,217 @@ class PjudService:
             georref = item.pop("georref", None)
             item["georeferencia"] = georref if isinstance(georref, dict) else None
 
+    # ── Penal ───────────────────────────────────────────────────
+
+    # `tipo` del request de Penal es una palabra (no la letra del RIT): sale del
+    # "Tipo Causa" del Excel (`Causa.tipo_causa`). Se canoniza contra la lista
+    # del proveedor para tolerar mayúsculas/acentos ("EXTRADICION").
+    _TIPOS_PENAL = ("Ordinaria", "Exhorto", "Administrativa", "Extradición", "Militar")
+
+    def obtener_detalle_penal(
+        self,
+        causa,
+        forzar_sincronizacion: bool = False,
+        cuaderno_id: Optional[int] = None,
+        credenciales_pjud: Optional[dict] = None,
+    ) -> dict:
+        """Detalle completo de una `Causa` de materia Penal desde el PJUD.
+
+        Mismo flujo asíncrono que Civil/Familia/Laboral/Cobranza
+        (`sincronizando` / `error` / `sin_credenciales` / `listo`).
+
+        Como Laboral y Cobranza, Penal necesita los IDs reales del catálogo
+        (`/catalogo/tribunales?competencia=penal`, árbol propio). Cambia además:
+          - `tipo` es una palabra ("Ordinaria", "Exhorto"...) tomada del Tipo
+            Causa de la cartera, no la letra del RIT;
+          - expone `cuadernos` como Civil/Cobranza: `/consultar_movimientos_penal`
+            recibe `identificador` + `cuaderno` y devuelve `historia`,
+            `litigantes`, `notificaciones` (con `geo`) y `Relaciones`.
+        """
+        if (causa.materia or "").strip().lower() != "penal":
+            raise PjudApiError(
+                "El detalle de Penal solo está disponible para causas de esa materia."
+            )
+
+        _, rol, anio = self.parsear_rol_civil(causa.rol)
+        tipo = next(
+            (t for t in self._TIPOS_PENAL
+             if _normalizar(t) == _normalizar(getattr(causa, "tipo_causa", None) or "")),
+            None,
+        )
+        if tipo is None:
+            raise PjudApiError(
+                f"El tipo de causa «{getattr(causa, 'tipo_causa', None) or ''}» de la causa "
+                f"«{causa.rol}» no es uno de los del PJUD Penal "
+                f"({', '.join(self._TIPOS_PENAL)})."
+            )
+        diag: list[str] = [
+            f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"
+        ]
+        try:
+            corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "penal")
+        except PjudApiError as e:
+            diag.append(f"resolver_tribunal(penal): {e}")
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": None,
+                "ultimo_error": (
+                    f"No se pudo resolver el tribunal «{causa.tribunal}» contra el "
+                    f"catálogo Penal del PJUD: {e}"
+                ),
+                "diagnostico": " · ".join(diag),
+            }
+        diag[0] = f"corte={corte_id} tribunal={tribunal_id} " + diag[0]
+        cuerpo_causa = {
+            "corte": corte_id, "tribunal": tribunal_id,
+            "tipo": tipo, "rol": rol, "anio": anio,
+        }
+
+        puede_sincronizar = bool(
+            credenciales_pjud
+            and credenciales_pjud.get("rut")
+            and credenciales_pjud.get("clave")
+        )
+        if not puede_sincronizar:
+            diag.append("sin clave del OJV cargada")
+
+        if forzar_sincronizacion and puede_sincronizar:
+            diag.append(
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "penal")
+            )
+
+        detalle_estado: Optional[str] = None
+        ultimo_error: Optional[str] = None
+        try:
+            data = self._request("POST", "/consultar_penal", json=cuerpo_causa)
+            # Se tolera que la causa venga bajo `causa` o en la raíz.
+            detalle = data.get("causa", data)
+            estado_raw = detalle.get("estado")
+            detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
+            ultimo_error = (detalle.get("ultimo_error") or "").strip() or None
+            diag.append(
+                f"consultar_penal: 200 estado={estado_raw!r} "
+                f"detalle_estado={detalle_estado!r} "
+                f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
+                f"ultimo_error={ultimo_error!r}"
+            )
+        except PjudNoEncontrado:
+            detalle = None
+            diag.append("consultar_penal: 404 (api-pjud no tiene la causa)")
+
+        estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
+
+        if estado_norm in _ESTADOS_ERROR:
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": detalle_estado,
+                "ultimo_error": ultimo_error,
+                "diagnostico": " · ".join(diag),
+            }
+
+        cuadernos = (detalle.get("cuadernos") or []) if detalle else []
+        esta_sincronizando = (
+            detalle is None
+            or estado_norm in _ESTADOS_SINCRONIZANDO
+            or not cuadernos
+        )
+
+        if esta_sincronizando and not puede_sincronizar:
+            return {
+                "estado": "sin_credenciales",
+                "mensaje": _MENSAJE_SIN_CREDENCIALES,
+                "detalle_estado": detalle_estado,
+                "diagnostico": " · ".join(diag),
+            }
+
+        if esta_sincronizando and not forzar_sincronizacion:
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "penal"))
+
+        identificador = (detalle or {}).get("identificador")
+        causa_out = self._normalizar_cabecera_penal(detalle) if identificador else None
+
+        resultado: dict = {
+            "estado": "sincronizando" if esta_sincronizando else "listo",
+            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "detalle_estado": detalle_estado,
+            "ultimo_error": ultimo_error,
+            "diagnostico": " · ".join(diag),
+            "causa": causa_out,
+            "cuaderno_consultado_id": None,
+            "historia": [],
+            "litigantes": [],
+            "notificaciones": [],
+            "relaciones": [],
+        }
+
+        if cuadernos and identificador:
+            cuaderno = self._elegir_cuaderno(cuadernos, cuaderno_id)
+            try:
+                mov = self._request(
+                    "POST", "/consultar_movimientos_penal",
+                    json={"identificador": identificador, "cuaderno": cuaderno["id"]},
+                )
+            except PjudApiError as e:
+                if not esta_sincronizando:
+                    raise
+                diag.append(f"historia: no disponible aún ({e})")
+                resultado["diagnostico"] = " · ".join(diag)
+            else:
+                historia = mov.get("historia") or []
+                self._normalizar_historia_penal(historia, identificador)
+                diag.append(f"historia: cuaderno {cuaderno['id']}, {len(historia)} trámites")
+                resultado.update(
+                    diagnostico=" · ".join(diag),
+                    cuaderno_consultado_id=cuaderno["id"],
+                    historia=historia,
+                    litigantes=mov.get("litigantes") or [],
+                    notificaciones=mov.get("notificaciones") or [],
+                    # El proveedor la manda como `Relaciones` (con mayúscula).
+                    relaciones=mov.get("Relaciones") or mov.get("relaciones") or [],
+                )
+
+        return resultado
+
+    @staticmethod
+    def _normalizar_cabecera_penal(detalle: dict) -> dict:
+        """Deja la cabecera con las claves del schema: el proveedor puede mandar
+        `rit`/`est_adm` (como los otros detalles) y `acumulada`/
+        `certificado_envio` como objeto `{url}` en vez de URL suelta."""
+        cab = dict(detalle)
+        if not cab.get("rol") and cab.get("rit"):
+            cab["rol"] = cab["rit"]
+        if not cab.get("estado_adm") and cab.get("est_adm"):
+            cab["estado_adm"] = cab["est_adm"]
+        for clave in ("acumulada", "certificado_envio"):
+            valor = cab.get(clave)
+            if isinstance(valor, dict):
+                cab[clave] = valor.get("url") or valor.get("ruta")
+            elif not valor:
+                cab[clave] = None
+        return cab
+
+    def _normalizar_historia_penal(self, historia: list[dict], identificador: str) -> None:
+        """`doc` es una lista de `{"doc": url, "color": hex}` (0, 1 o varios por
+        folio) y se resuelve a `documentos`, conservando el `color`; el `doc` de
+        cada anexo se resuelve a URL absoluta. Penal no tiene cuadernos: la URL
+        relativa se arma contra el cuaderno 1."""
+        for item in historia:
+            crudos = item.pop("doc", None)
+            if isinstance(crudos, str):
+                crudos = [{"doc": crudos}]
+            documentos = []
+            for entrada in crudos or []:
+                if not isinstance(entrada, dict):
+                    continue
+                url = self._url_documento(entrada.get("doc"), identificador, 1)
+                if url:
+                    documentos.append({"url": url, "color": entrada.get("color")})
+            item["documentos"] = documentos
+            for anexo in item.get("anexo") or []:
+                anexo["doc"] = self._url_documento(anexo.get("doc"), identificador, 1)
+
     # ── Reenvío de un PDF al navegador ───────────────────────────
 
     def abrir_documento(self, url: str):

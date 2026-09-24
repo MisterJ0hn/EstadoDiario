@@ -73,7 +73,7 @@ class CausaRepository:
         return self.db.get(Causa, causa_id)
 
     def find_pjud_por_rol_tribunal(self, rol: str, tribunal: str) -> Optional[Causa]:
-        """La Causa Civil, Familia, Laboral o Cobranza de la cartera VIGENTE
+        """La Causa Civil, Familia, Laboral, Cobranza o Penal de la cartera VIGENTE
         (el último archivo) que calza por rol y tribunal, sin distinguir
         mayúsculas ni espacios de sobra.
 
@@ -88,7 +88,7 @@ class CausaRepository:
             self.db.query(Causa)
             .filter(
                 Causa.estado_diario_origen_id == origen_id,
-                Causa.materia.in_(("Civil", "Familia", "Laboral", "Cobranza")),
+                Causa.materia.in_(("Civil", "Familia", "Laboral", "Cobranza", "Penal")),
                 func.lower(func.btrim(Causa.rol)) == rol.strip().lower(),
                 func.lower(func.btrim(Causa.tribunal)) == tribunal.strip().lower(),
             )

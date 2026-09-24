@@ -29,7 +29,7 @@ const MARTILLO_PJUD_PNG =
  * - error: el mismo icono, rojo y tachado.
  *
  * No pinta nada si `causa` es null o no es de una materia que expone la API
- * del PJUD (Civil, Familia, Laboral o Cobranza). Se usa tanto en Mis Causas (que ya tiene la
+ * del PJUD (Civil, Familia, Laboral, Cobranza o Penal). Se usa tanto en Mis Causas (que ya tiene la
  * `Causa` completa)
  * como en pantallas que la resuelven por rol/tribunal (Estado Diario,
  * Movimientos): mismo botón, mismos íconos, en un solo lugar.
@@ -48,7 +48,7 @@ const MARTILLO_PJUD_PNG =
   selector: 'app-pjud-boton',
   standalone: true,
   template: `
-    @if (causa && (causa.materia === 'Civil' || causa.materia === 'Familia' || causa.materia === 'Laboral' || causa.materia === 'Cobranza')) {
+    @if (causa && (causa.materia === 'Civil' || causa.materia === 'Familia' || causa.materia === 'Laboral' || causa.materia === 'Cobranza' || causa.materia === 'Penal')) {
       <button type="button" class="btn-outline btn-sm !px-2" (click)="onClick()"
               [class.text-warning-500]="variante() === 'nuevo'"
               [class.text-accent-600]="variante() === 'sincronizando'"
@@ -168,6 +168,8 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
         ? this.causaService.pjudLaboral(causaId)
         : this.causa?.materia === 'Cobranza'
         ? this.causaService.pjudCobranza(causaId)
+        : this.causa?.materia === 'Penal'
+        ? this.causaService.pjudPenal(causaId)
         : this.causaService.pjudMovimientos(causaId);
     consulta$.subscribe({
       next: (res) => {

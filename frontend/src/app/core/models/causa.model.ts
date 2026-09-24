@@ -709,3 +709,99 @@ export interface PjudCobranzaMovimientosResponse {
   diligencias: PjudCobranzaDiligenciaItem[];
   liquidacion: PjudCobranzaLiquidacionItem[];
 }
+
+/**
+ * Detalle EN VIVO de una causa **Penal** (api-pjud), armado desde "Solicitud
+ * Penal.md". Como Laboral/Cobranza usa el catálogo propio de tribunales; la
+ * cabecera trae `acumulada` y `certificado_envio` como URL suelta, la
+ * `historia` no lleva georeferencia (vive en `notificaciones[].geo`) y cada
+ * documento/anexo trae el `color` de su ícono en el OJV.
+ */
+export interface PjudPenalCuaderno {
+  id: number;
+  nombre: string;
+  estado_proceso: string | null;
+  etapa: string | null;
+}
+
+export interface PjudPenalCausaDetalle {
+  identificador: string;
+  estado: string;
+  rol: string | null;
+  fecha_ingreso: string | null;
+  caratula: string | null;
+  ruc: string | null;
+  estado_adm: string | null;
+  procedimiento: string | null;
+  proceso: string | null;
+  forma_inicio: string | null;
+  estado_proceso: string | null;
+  ubicacion: string | null;
+  etapa: string | null;
+  tribunal: string | null;
+  fecha_ultima_sincronizacion: string | null;
+  acumulada: string | null;
+  certificado_envio: string | null;
+  cuadernos: PjudPenalCuaderno[];
+}
+
+export interface PjudPenalDocumento {
+  url: string;
+  color: string | null;
+}
+
+export interface PjudPenalAnexoItem {
+  doc: string | null;
+  color: string | null;
+  fecha: string | null;
+  referencia: string | null;
+}
+
+export interface PjudPenalHistoriaItem {
+  folio: number | null;
+  /** Folio tal como lo muestra el OJV: "1", o "[6E]" en un exhorto. */
+  folio_texto: string | null;
+  documentos: PjudPenalDocumento[];
+  anexo: PjudPenalAnexoItem[];
+  tramite: string | null;
+  descripcion_tramite: string | null;
+  fecha_tramite: string | null;
+  fecha_firma: string | null;
+  estado: string | null;
+}
+
+export interface PjudPenalLitiganteItem {
+  participantes: string | null;
+  rut: string | null;
+  persona: string | null;
+  razon_social: string | null;
+}
+
+export interface PjudPenalNotificacionItem {
+  tipo_notificacion: string | null;
+  estado_notificacion: string | null;
+  fecha_notificacion: string | null;
+  nombre: string | null;
+  estampado: string | null;
+  geo: PjudGeoreferencia | null;
+}
+
+export interface PjudPenalRelacionItem {
+  nombre: string | null;
+  materia: string | null;
+  estado_causa: string | null;
+  fecha_cambio_estado: string | null;
+}
+
+export interface PjudPenalMovimientosResponse {
+  estado: 'listo' | 'sincronizando' | 'error' | 'sin_credenciales';
+  mensaje: string | null;
+  detalle_estado: string | null;
+  ultimo_error: string | null;
+  causa: PjudPenalCausaDetalle | null;
+  cuaderno_consultado_id: number | null;
+  historia: PjudPenalHistoriaItem[];
+  litigantes: PjudPenalLitiganteItem[];
+  notificaciones: PjudPenalNotificacionItem[];
+  relaciones: PjudPenalRelacionItem[];
+}

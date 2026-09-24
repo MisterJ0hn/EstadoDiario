@@ -14,6 +14,7 @@ import { PjudMovimientosModalComponent } from './components/pjud-movimientos-mod
 import { PjudFamiliaModalComponent } from './components/pjud-familia-modal/pjud-familia-modal.component';
 import { PjudLaboralModalComponent } from './components/pjud-laboral-modal/pjud-laboral-modal.component';
 import { PjudCobranzaModalComponent } from './components/pjud-cobranza-modal/pjud-cobranza-modal.component';
+import { PjudPenalModalComponent } from './components/pjud-penal-modal/pjud-penal-modal.component';
 import { CausaService } from './services/causa.service';
 
 /**
@@ -27,7 +28,7 @@ import { CausaService } from './services/causa.service';
 @Component({
   selector: 'app-causas',
   standalone: true,
-  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudBotonComponent, PjudMovimientosModalComponent, PjudFamiliaModalComponent, PjudLaboralModalComponent, PjudCobranzaModalComponent],
+  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudBotonComponent, PjudMovimientosModalComponent, PjudFamiliaModalComponent, PjudLaboralModalComponent, PjudCobranzaModalComponent, PjudPenalModalComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-4">
@@ -312,7 +313,7 @@ import { CausaService } from './services/causa.service';
       }
     </div>
 
-    <!-- Un modal por materia: Civil, Familia, Laboral y Cobranza consultan
+    <!-- Un modal por materia: Civil, Familia, Laboral, Cobranza y Penal consultan
          servicios distintos de api-pjud y la ficha tiene otra forma.
          causaPjud() guarda la causa abierta; su materia decide cuál se
          muestra. -->
@@ -328,6 +329,9 @@ import { CausaService } from './services/causa.service';
         (cerrado)="causaPjud.set(null)" (estadoPjud)="onEstadoPjud($event)" />
     <app-pjud-cobranza-modal
         [causa]="causaPjud()?.materia === 'Cobranza' ? causaPjud() : null"
+        (cerrado)="causaPjud.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+    <app-pjud-penal-modal
+        [causa]="causaPjud()?.materia === 'Penal' ? causaPjud() : null"
         (cerrado)="causaPjud.set(null)" (estadoPjud)="onEstadoPjud($event)" />
   `,
 })

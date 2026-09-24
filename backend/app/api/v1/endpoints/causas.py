@@ -40,6 +40,7 @@ from app.schemas.pjud import (
     PjudDisponibleResponse,
     PjudFamiliaMovimientosResponse,
     PjudLaboralMovimientosResponse,
+    PjudPenalMovimientosResponse,
     PjudMovimientosResponse,
     PjudPorRolResponse,
 )
@@ -285,11 +286,11 @@ def listar(
     # Último estado conocido de "Detalle PJUD" por causa (del log de llamados,
     # NO en vivo al proveedor): pinta el icono del botón sin el costo de
     # golpear a api-pjud una vez por fila. Solo aplica a Civil, Familia,
-    # Laboral y Cobranza, que son las materias con ese botón.
+    # Laboral, Cobranza y Penal, que son las materias con ese botón.
     if settings.pjud_api_activo:
         pjud_ids = [
             r.id for r, c in zip(causas_resp, items)
-            if (c.materia or "").strip().lower() in ("civil", "familia", "laboral", "cobranza")
+            if (c.materia or "").strip().lower() in ("civil", "familia", "laboral", "cobranza", "penal")
         ]
         ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
             cliente_id=tenant.cliente_id, causa_ids=pjud_ids,
@@ -688,6 +689,78 @@ def pjud_cobranza(
             rol=causa.rol,
             tribunal=causa.tribunal,
             materia="Cobranza",
+            forzar=forzar,
+            resultado=resultado_log,
+            http_status=http_status,
+            mensaje=mensaje_log,
+            diagnostico=diagnostico_log,
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
+
+
+@router.get(
+    "/{causa_id}/pjud/penal",
+    response_model=PjudPenalMovimientosResponse,
+    summary="Detalle de una causa Penal consultado en vivo al PJUD",
+)
+def pjud_penal(
+    causa_id: int,
+    response: Response,
+    forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
+    cuaderno: int | None = Query(None, description="Cuaderno a traer en Historia; por defecto el primero"),
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Igual que `/pjud/laboral` pero para causas de materia Penal: mismo flujo
+    de sincronización asíncrona, cambia la forma de la respuesta (ver
+    `PjudPenalMovimientosResponse`). Penal expone cuadernos, así que acepta
+    el parámetro `cuaderno` como Civil/Cobranza."""
+    causa = CausaRepository(db).find_by_id(causa_id)
+    if not causa:
+        raise HTTPException(status_code=404, detail="Causa no encontrada")
+
+    credenciales_pjud = {
+        "rut": current_user.pjud_rut,
+        "clave": current_user.pjud_clave,
+        "metodo_login": current_user.pjud_metodo_login,
+    }
+
+    inicio = time.monotonic()
+    resultado_log = "error"
+    http_status = 502
+    mensaje_log: str | None = None
+    diagnostico_log: str | None = None
+    try:
+        resultado = PjudService().obtener_detalle_penal(
+            causa,
+            forzar_sincronizacion=forzar,
+            cuaderno_id=cuaderno,
+            credenciales_pjud=credenciales_pjud,
+        )
+        estado = resultado.get("estado")
+        diagnostico_log = resultado.pop("diagnostico", None)
+        if estado == "sincronizando":
+            response.status_code = http_status = 202
+        else:
+            # 'sin_credenciales' y 'error' también van 200: el estado va en el
+            # cuerpo y el modal decide qué mostrar.
+            http_status = 200
+        resultado_log = estado or "listo"
+        mensaje_log = resultado.get("mensaje")
+        return PjudPenalMovimientosResponse(**resultado)
+    except PjudApiError as e:
+        mensaje_log = str(e)
+        raise HTTPException(status_code=502, detail=mensaje_log)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra,
+            tenant=tenant,
+            causa_id=causa_id,
+            rol=causa.rol,
+            tribunal=causa.tribunal,
+            materia="Penal",
             forzar=forzar,
             resultado=resultado_log,
             http_status=http_status,

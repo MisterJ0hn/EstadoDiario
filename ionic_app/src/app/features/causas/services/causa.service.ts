@@ -9,6 +9,7 @@ import {
   CausaListResponse,
   CausaResumenResponse,
   PjudCobranzaMovimientosResponse,
+  PjudPenalMovimientosResponse,
   PjudFamiliaMovimientosResponse,
   PjudLaboralMovimientosResponse,
   PjudMovimientosResponse,
@@ -150,6 +151,24 @@ export class CausaService {
     if (cuaderno != null) params = params.set('cuaderno', String(cuaderno));
     return this.http.get<PjudCobranzaMovimientosResponse>(
       `${this.apiUrl}/${causaId}/pjud/cobranza`,
+      { params },
+    );
+  }
+
+  /** Detalle EN VIVO de una causa **Penal**, consultado directo al PJUD.
+   *  Misma semántica que `pjudCobranza`: Penal expone cuadernos, así que
+   *  acepta `cuaderno`. `forzar` pide además que el PJUD sincronice antes de
+   *  responder. */
+  pjudPenal(
+    causaId: number,
+    forzar = false,
+    cuaderno?: number,
+  ): Observable<PjudPenalMovimientosResponse> {
+    let params = new HttpParams();
+    if (forzar) params = params.set('forzar', 'true');
+    if (cuaderno != null) params = params.set('cuaderno', String(cuaderno));
+    return this.http.get<PjudPenalMovimientosResponse>(
+      `${this.apiUrl}/${causaId}/pjud/penal`,
       { params },
     );
   }

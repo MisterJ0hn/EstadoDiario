@@ -615,6 +615,115 @@ class PjudCobranzaMovimientosResponse(BaseModel):
     liquidacion: list[PjudCobranzaLiquidacionItem] = []
 
 
+# ── Penal ──────────────────────────────────────────────────────
+# Armado desde "Solicitud Penal.md" (raíz del repo). Como Laboral/Cobranza
+# necesita el `corte`/`tribunal` reales del catálogo del proveedor
+# (`competencia=penal`, árbol propio). Cambia respecto a los otros detalles:
+#   - `tipo` del request es una palabra ("Ordinaria", "Exhorto"...) que sale
+#     del Tipo Causa de la cartera, no la letra del RIT;
+#   - expone cuadernos: los movimientos se piden por `cuaderno`;
+#   - la cabecera trae `acumulada` y `certificado_envio` como URL suelta (no
+#     como objeto `{nombre_archivo, url}`), y `procedimiento`/`ubicacion`;
+#   - `historia` no lleva georeferencia, pero cada documento y anexo trae un
+#     `color` (el del ícono en el OJV) y cada fila `fecha_firma`;
+#   - la georeferencia vive en las `notificaciones` (clave `geo`);
+#   - hay `relaciones` (el proveedor las manda como `Relaciones`) en vez de
+#     materias/plazos/diligencias.
+
+
+class PjudPenalCuaderno(BaseModel):
+    id: int
+    nombre: str
+    estado_proceso: str | None = None
+    etapa: str | None = None
+
+
+class PjudPenalCausaDetalle(BaseModel):
+    identificador: str
+    estado: str
+    rol: str | None = None
+    fecha_ingreso: str | None = None
+    caratula: str | None = None
+    ruc: str | None = None
+    estado_adm: str | None = None
+    procedimiento: str | None = None
+    proceso: str | None = None
+    forma_inicio: str | None = None
+    estado_proceso: str | None = None
+    ubicacion: str | None = None
+    etapa: str | None = None
+    tribunal: str | None = None
+    fecha_ultima_sincronizacion: str | None = None
+    acumulada: str | None = None
+    certificado_envio: str | None = None
+    cuadernos: list[PjudPenalCuaderno] = []
+
+
+class PjudPenalDocumento(BaseModel):
+    """Un documento de la columna "Doc." de un trámite. `color` es el del
+    ícono en el OJV (distingue el tipo de documento)."""
+
+    url: str
+    color: str | None = None
+
+
+class PjudPenalAnexoItem(BaseModel):
+    doc: str | None = None
+    color: str | None = None
+    fecha: str | None = None
+    referencia: str | None = None
+
+
+class PjudPenalHistoriaItem(BaseModel):
+    folio: int | None = None
+    # Folio tal como lo muestra el OJV: "1", o "[6E]" en un exhorto.
+    folio_texto: str | None = None
+    documentos: list[PjudPenalDocumento] = []
+    anexo: list[PjudPenalAnexoItem] = []
+    tramite: str | None = None
+    descripcion_tramite: str | None = None
+    fecha_tramite: str | None = None
+    fecha_firma: str | None = None
+    estado: str | None = None
+
+
+class PjudPenalLitiganteItem(BaseModel):
+    participantes: str | None = None
+    rut: str | None = None
+    persona: str | None = None
+    razon_social: str | None = None
+
+
+class PjudPenalNotificacionItem(BaseModel):
+    tipo_notificacion: str | None = None
+    estado_notificacion: str | None = None
+    fecha_notificacion: str | None = None
+    nombre: str | None = None
+    estampado: str | None = None
+    geo: PjudGeoreferencia | None = None
+
+
+class PjudPenalRelacionItem(BaseModel):
+    nombre: str | None = None
+    materia: str | None = None
+    estado_causa: str | None = None
+    fecha_cambio_estado: str | None = None
+
+
+class PjudPenalMovimientosResponse(BaseModel):
+    # Mismos estados y semántica que `PjudMovimientosResponse` (ver ahí).
+    estado: Literal["listo", "sincronizando", "error", "sin_credenciales"] = "listo"
+    mensaje: str | None = None
+    ultimo_error: str | None = None
+    detalle_estado: str | None = None
+    causa: PjudPenalCausaDetalle | None = None
+    cuaderno_consultado_id: int | None = None
+    historia: list[PjudPenalHistoriaItem] = []
+    litigantes: list[PjudPenalLitiganteItem] = []
+    notificaciones: list[PjudPenalNotificacionItem] = []
+    relaciones: list[PjudPenalRelacionItem] = []
+
+
 class PjudErrorResponse(BaseModel):
     exito: bool = False
     mensaje: str
