@@ -145,8 +145,8 @@ const INTERVALO_POLL_MS = 5000;
                     <p><span class="pjud-k">Procedimiento:</span> {{ c.procedimiento || '-' }}</p>
                     <p><span class="pjud-k">Ubicación:</span> {{ c.ubicacion || '-' }}</p>
                     <p><span class="pjud-k">Estado Procesal:</span> {{ cuadernoActual(c.cuadernos)?.estado_proceso || c.estado_proceso || '-' }}</p>
-                    <p class="md:col-span-2"><span class="pjud-k">Etapa:</span> {{ cuadernoActual(c.cuadernos)?.etapa || c.etapa || '-' }}</p>
-                    <p class="md:col-span-3"><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
+                    <p ><span class="pjud-k">Etapa:</span> {{ cuadernoActual(c.cuadernos)?.etapa || c.etapa || '-' }}</p>
+                    <p ><span class="pjud-k">Tribunal:</span> {{ c.tribunal || causa.tribunal }}</p>
                     
                   </div>
 
