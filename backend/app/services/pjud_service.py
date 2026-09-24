@@ -41,6 +41,9 @@ logger = logging.getLogger(__name__)
 # reportes): tipo de 1 a 4 letras, rol numérico, año de 4 dígitos.
 _RE_ROL_CIVIL = re.compile(r"^\s*([A-Za-zÑñ]{1,4})-(\d+)-(\d{4})\s*$")
 
+# Penal: el RIT es solo rol-año (`1653-2023`); el tipo va aparte.
+_RE_ROL_PENAL = re.compile(r"^\s*(?:[A-Za-zÑñ]{1,4}-)?(\d+)-(\d{4})\s*$")
+
 # El catálogo de tribunales cambia poquísimo (juzgados no se crean todos los
 # días); cachearlo evita pedirlo en cada clic de "ver detalle".
 _CATALOGO_TTL_SEGUNDOS = 6 * 3600
@@ -290,6 +293,18 @@ class PjudService:
             )
         tipo, numero, anio = match.groups()
         return tipo.upper(), int(numero), int(anio)
+
+    @staticmethod
+    def parsear_rol_penal(rol: Optional[str]) -> tuple[int, int]:
+        """`(rol, año)` del RIT de Penal, que viene como `1653-2023` (sin letra
+        de tipo: el tipo sale de `Causa.tipo_causa`). Tolera un prefijo de
+        letras (`O-1653-2023`) por si algún archivo lo trae."""
+        match = _RE_ROL_PENAL.match(rol or "")
+        if not match:
+            raise PjudApiError(
+                f"El rol «{rol}» no tiene el formato de una causa Penal (rol-año)."
+            )
+        return int(match.group(1)), int(match.group(2))
 
     # ── Flujo completo ───────────────────────────────────────────
 
@@ -1195,7 +1210,7 @@ class PjudService:
                 "El detalle de Penal solo está disponible para causas de esa materia."
             )
 
-        _, rol, anio = self.parsear_rol_civil(causa.rol)
+        rol, anio = self.parsear_rol_penal(causa.rol)
         tipo = next(
             (t for t in self._TIPOS_PENAL
              if _normalizar(t) == _normalizar(getattr(causa, "tipo_causa", None) or "")),

@@ -11,7 +11,7 @@ _CREDS = {"rut": "12345678-9", "clave": "secreta", "metodo_login": 1}
 _CATALOGO = {"cortes": [{"id": 90, "tribunales": [{"id": 387, "nombre": "Juzgado de Garantía de Chile Chico"}]}]}
 
 
-def _causa(rol="O-1-2025", tribunal="Juzgado de Garantía de Chile Chico", tipo_causa="Ordinaria"):
+def _causa(rol="1-2025", tribunal="Juzgado de Garantía de Chile Chico", tipo_causa="Ordinaria"):
     return types.SimpleNamespace(
         id=1, materia="Penal", rol=rol, tribunal=tribunal, tipo_causa=tipo_causa,
     )
@@ -59,7 +59,7 @@ class TestObtenerDetallePenal:
             "/sincronizar_penal": {"exito": True},
         })
         servicio.obtener_detalle_penal(
-            _causa(rol="RIT-1-2025", tipo_causa="EXTRADICION"), credenciales_pjud=_CREDS,
+            _causa(rol="1-2025", tipo_causa="EXTRADICION"), credenciales_pjud=_CREDS,
         )
         assert self.cuerpos["/sincronizar_penal"]["tipo"] == "Extradición"
 
@@ -77,7 +77,7 @@ class TestObtenerDetallePenal:
     def test_listo_normaliza_cabecera_documentos_y_relaciones(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
             "/consultar_penal": {"causa": {
-                "identificador": "abc", "estado": "Completo", "rit": "O-1-2025",
+                "identificador": "abc", "estado": "Completo", "rit": "1-2025",
                 "cuadernos": [{"id": 1, "nombre": "1 - principal"}, {"id": 2, "nombre": "2 - x"}],
                 "est_adm": "Sin archivar", "certificado_envio": "https://x/c.pdf", "acumulada": "",
             }},
@@ -92,9 +92,15 @@ class TestObtenerDetallePenal:
         })
         r = servicio.obtener_detalle_penal(_causa(), cuaderno_id=2, credenciales_pjud=_CREDS)
         assert r["estado"] == "listo" and r["cuaderno_consultado_id"] == 2
-        assert r["causa"]["rol"] == "O-1-2025" and r["causa"]["estado_adm"] == "Sin archivar"
+        assert r["causa"]["rol"] == "1-2025" and r["causa"]["estado_adm"] == "Sin archivar"
         assert r["causa"]["acumulada"] is None
         assert r["historia"][0]["documentos"] == [{"url": "https://h/a.pdf", "color": "#ffddee"}]
         assert r["historia"][0]["anexo"][0]["doc"].endswith("/public/abc/1/b.pdf")
         assert r["relaciones"] == [{"nombre": "NN"}]
         assert self.cuerpos["/consultar_movimientos_penal"] == {"identificador": "abc", "cuaderno": 2}
+
+    def test_rol_de_penal_es_rol_anio_y_tolera_prefijo(self):
+        assert PjudService.parsear_rol_penal("1653-2023") == (1653, 2023)
+        assert PjudService.parsear_rol_penal("O-1653-2023") == (1653, 2023)
+        with pytest.raises(PjudApiError, match="rol-año"):
+            PjudService.parsear_rol_penal("abc")
