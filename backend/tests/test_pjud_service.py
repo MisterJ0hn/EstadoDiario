@@ -263,8 +263,8 @@ class TestObtenerDetalle:
         assert resultado["estado"] == "listo"
         assert resultado["cuaderno_consultado_id"] == 1
         assert resultado["historia"][0]["documentos"] == [
-            {"url": "https://x/f1.pdf", "tipo": "principal"},
-            {"url": "https://x/cert.pdf", "tipo": "certificado"},
+            {"url": "https://x/f1.pdf", "tipo": "principal", "color": None},
+            {"url": "https://x/cert.pdf", "tipo": "certificado", "color": None},
         ]
         assert resultado["exhortos"][0]["rol_origen"] == "C-1-2020"
 
@@ -293,7 +293,13 @@ class TestObtenerDetalle:
         ],
     )
     def test_docs_de_tramite_normaliza_las_formas_del_proveedor(self, doc, esperado):
-        assert PjudService._docs_de_tramite(doc) == esperado
+        assert [(c, t) for c, t, _ in PjudService._docs_de_tramite(doc)] == esperado
+
+    def test_docs_de_tramite_conserva_el_color_del_proveedor(self):
+        doc = [{"doc": "a.pdf", "color": "#ffddee"}, {"doc": "b.pdf"}]
+        assert PjudService._docs_de_tramite(doc) == [
+            ("a.pdf", "principal", "#ffddee"), ("b.pdf", "principal", None),
+        ]
 
     def test_materia_no_civil_se_rechaza(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {})

@@ -213,6 +213,9 @@ export interface PjudDocumentoTramite {
   /** `principal` = escrito/resolución (PDF rojo); `certificado` = certificado
    *  del escrito (PDF azul). Es la distinción `doc` / `doc2` del proveedor. */
   tipo: 'principal' | 'certificado';
+  /** Color del ícono si el proveedor lo manda; si no, el primero va rojo y
+   *  el segundo azul. */
+  color?: string | null;
 }
 
 export interface PjudMovimientoItem {

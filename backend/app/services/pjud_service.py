@@ -686,8 +686,8 @@ class PjudService:
         tiene cuadernos, así que la URL relativa se arma contra el cuaderno 1."""
         for item in movimientos:
             item["documentos"] = [
-                {"url": url, "tipo": tipo}
-                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
+                {"url": url, "tipo": tipo, "color": color}
+                for crudo, tipo, color in self._docs_de_tramite(item.pop("doc", None))
                 if (url := self._url_documento(crudo, identificador, 1))
             ]
             for anexo in item.get("anexo") or []:
@@ -715,8 +715,8 @@ class PjudService:
         del trámite."""
         for item in historia:
             item["documentos"] = [
-                {"url": url, "tipo": tipo}
-                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
+                {"url": url, "tipo": tipo, "color": color}
+                for crudo, tipo, color in self._docs_de_tramite(item.pop("doc", None))
                 if (url := self._url_documento(crudo, identificador, cuaderno_id))
             ]
             for anexo in item.get("anexo") or []:
@@ -734,27 +734,31 @@ class PjudService:
             pieza["doc"] = self._url_documento(pieza.get("doc"), identificador, cuaderno_id)
 
     @staticmethod
-    def _docs_de_tramite(doc) -> list[tuple[str, str]]:
-        """Normaliza el `doc` de un trámite a `[(crudo, tipo), ...]`.
+    def _docs_de_tramite(doc) -> list[tuple[str, str, Optional[str]]]:
+        """Normaliza el `doc` de un trámite a `[(crudo, tipo, color), ...]`.
 
         `tipo`: `"principal"` para la clave `doc` (o un string suelto o el
-        primer elemento), `"certificado"` para la clave `doc2`. Acepta la forma
-        nueva (`[{"doc": "..."}, {"doc2": "..."}]`), una lista de strings, o un
-        único string (formas viejas). `None`/vacío → lista vacía."""
+        primer elemento), `"certificado"` para la clave `doc2`. `color` es el
+        que el proveedor manda junto al documento (`{"doc": ..., "color": ...}`),
+        o `None`: entonces el frontend pinta el primero rojo y el segundo azul.
+        Acepta la forma nueva (`[{"doc": "..."}, {"doc2": "..."}]`), una lista
+        de strings, o un único string (formas viejas). `None`/vacío → lista
+        vacía."""
         if not doc:
             return []
         if isinstance(doc, str):
-            return [(doc, "principal")]
-        salida: list[tuple[str, str]] = []
+            return [(doc, "principal", None)]
+        salida: list[tuple[str, str, Optional[str]]] = []
         for i, entrada in enumerate(doc):
             if isinstance(entrada, str):
                 if entrada:
-                    salida.append((entrada, "principal" if i == 0 else "certificado"))
+                    salida.append((entrada, "principal" if i == 0 else "certificado", None))
             elif isinstance(entrada, dict):
+                color = entrada.get("color") or None
                 if entrada.get("doc"):
-                    salida.append((entrada["doc"], "principal"))
+                    salida.append((entrada["doc"], "principal", color))
                 if entrada.get("doc2"):
-                    salida.append((entrada["doc2"], "certificado"))
+                    salida.append((entrada["doc2"], "certificado", color))
         return salida
 
     def _url_documento(
@@ -956,8 +960,8 @@ class PjudService:
         aplica y hay que revisarla — ver nota en "Solicitud Laboral.md".)"""
         for item in movimiento:
             item["documentos"] = [
-                {"url": url, "tipo": tipo}
-                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
+                {"url": url, "tipo": tipo, "color": color}
+                for crudo, tipo, color in self._docs_de_tramite(item.pop("doc", None))
                 if (url := self._url_documento(crudo, identificador, 1))
             ]
             for anexo in item.get("anexo") or []:
@@ -1161,8 +1165,8 @@ class PjudService:
             el frontend pinta la descripción como link a ese documento."""
         for item in historia:
             item["documentos"] = [
-                {"url": url, "tipo": tipo}
-                for crudo, tipo in self._docs_de_tramite(item.pop("doc", None))
+                {"url": url, "tipo": tipo, "color": color}
+                for crudo, tipo, color in self._docs_de_tramite(item.pop("doc", None))
                 if (url := self._url_documento(crudo, identificador, cuaderno_id))
             ]
             for anexo in item.get("anexo") or []:

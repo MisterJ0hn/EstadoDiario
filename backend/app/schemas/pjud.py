@@ -96,6 +96,9 @@ class PjudDocumentoTramite(BaseModel):
 
     url: str
     tipo: Literal["principal", "certificado"] = "principal"
+    # Color del ícono si el proveedor lo manda; si no, el frontend pinta el
+    # primero rojo y el segundo azul.
+    color: str | None = None
 
 
 class PjudGeoreferenciaMapa(BaseModel):

@@ -109,8 +109,8 @@ class TestObtenerDetalleFamilia:
         assert resultado["estado"] == "listo"
         assert resultado["causa"]["ruc"] == "23-2-4049306-3"
         assert resultado["movimientos"][0]["documentos"] == [
-            {"url": "https://x/f2.pdf", "tipo": "principal"},
-            {"url": "https://x/f2_doc2.pdf", "tipo": "principal"},
+            {"url": "https://x/f2.pdf", "tipo": "principal", "color": None},
+            {"url": "https://x/f2_doc2.pdf", "tipo": "principal", "color": None},
         ]
         assert resultado["materias"][0]["glosa_de_materia"] == "DIVORCIO DE COMUN ACUERDO"
         assert resultado["plazos"] and resultado["diligencias"]
