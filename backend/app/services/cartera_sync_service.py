@@ -89,6 +89,17 @@ _NUMERO_INGRESO = re.compile(r"^\s*(?P<materia>.+?)-(?P<rol>\d+)-(?P<era>\d{4})\
 _CAMPOS_VOLATILES_CAUSA = ("estado_causa",)
 _CAMPOS_VOLATILES_CORTE = ("estado_procesal", "ubicacion", "fecha_ubicacion")
 
+# Las cinco hojas de materia que trae tanto el reporte de Causas como el
+# Estado Diario. Mapea el nombre normalizado a su forma canónica porque
+# `Causa.materia` se guarda tal cual la escribe el Excel de Causas.
+_MATERIAS_CONOCIDAS = {
+    "civil": "Civil",
+    "familia": "Familia",
+    "laboral": "Laboral",
+    "cobranza": "Cobranza",
+    "penal": "Penal",
+}
+
 
 def _norm(valor: Optional[str]) -> str:
     """Recorta y normaliza a minúsculas para comparar.
@@ -98,6 +109,20 @@ def _norm(valor: Optional[str]) -> str:
     reportes de un mismo estudio y con esto calzan 82/82 y 43/43.
     """
     return (valor or "").strip().lower()
+
+
+def _materia_de_hoja(corte: Optional[str]) -> Optional[str]:
+    """La materia si `corte` resultó ser el nombre de una hoja de materia.
+
+    `EstadoDiario.corte` se llama así porque el campo nació para las hojas de
+    CORTE, pero `ImportService` lo reutiliza también en las hojas de materia:
+    cuando esa hoja no trae su propia columna "Corte" —el caso normal en
+    Civil/Familia/Laboral/Penal/Cobranza—, cae al nombre de la hoja (ver
+    `ImportService._read_xls`/`_read_xlsx`). Si en cambio la hoja sí traía un
+    "Corte" real, esto no calza con ninguna materia conocida y devuelve None,
+    dejando que se recurra a la deducción por tribunal.
+    """
+    return _MATERIAS_CONOCIDAS.get(_norm(corte))
 
 
 def _vacio(valor) -> bool:
@@ -471,8 +496,15 @@ class CarteraSyncService:
             }
         return {
             **comunes,
-            # El estado diario no trae materia; se deduce del tribunal.
-            "materia": materia_de.get(_norm(fila.tribunal)),
+            # El estado diario no tiene una columna de materia propiamente
+            # tal, pero el importador (`ImportService._read_xls`/`_read_xlsx`)
+            # deja el nombre de la hoja (Civil/Familia/Laboral/Penal/Cobranza)
+            # en `corte` cuando la hoja no trae su propia columna "Corte" —el
+            # caso normal en una hoja de materia—. Es la materia REAL del
+            # archivo y hay que preferirla a deducirla por tribunal, que
+            # depende de que otra causa del mismo tribunal ya la tenga
+            # asignada y falla apenas ese tribunal es nuevo para el cliente.
+            "materia": _materia_de_hoja(fila.corte) or materia_de.get(_norm(fila.tribunal)),
             "estado_causa": fila.estado,
             "tipo_causa": fila.tipo_causa,
             # "Rol Unico" del estado diario es el RUC de la cartera.

@@ -74,10 +74,10 @@ def _origen(db, tipo, fecha, deducida=False) -> EstadoDiarioOrigen:
     return origen
 
 
-def _estado_diario(db, origen, rol, tribunal) -> EstadoDiario:
+def _estado_diario(db, origen, rol, tribunal, corte=None) -> EstadoDiario:
     fila = EstadoDiario(
         estado_diario_origen_id=origen.id, rol=rol, tribunal=tribunal,
-        caratulado="Pérez con Soto",
+        caratulado="Pérez con Soto", corte=corte,
     )
     db.add(fila)
     db.flush()
@@ -186,6 +186,27 @@ def test_una_causa_nueva_deduce_la_materia_de_un_tribunal_conocido(db):
                  tribunal="2º Juzgado de Letras de Vallenar", materia="Civil"))
     origen = _origen(db, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, date(2026, 8, 2))
     _estado_diario(db, origen, "E-970-2026", "2º Juzgado de Letras de Vallenar")
+
+    CarteraSyncService(db).sincronizar()
+
+    nueva = db.query(Causa).filter(Causa.rol == "E-970-2026").one()
+    assert nueva.materia == "Civil"
+
+
+def test_una_causa_nueva_usa_el_nombre_de_hoja_del_estado_diario_como_materia(db):
+    """El caso real, tal cual pasó en producción: E-970-2026 llegó por el
+    Estado Diario a un tribunal (2º Juzgado de Letras de Vallenar) del que el
+    cliente no tenía ninguna otra causa registrada con materia conocida —ni en
+    la cartera vigente ni en ninguna anterior—, así que la deducción por
+    tribunal no tenía de dónde sacar nada.
+
+    El importador (`ImportService`) igual sabe la materia: es el nombre de la
+    hoja del Excel, que deja en `EstadoDiario.corte` porque esa hoja no trae su
+    propia columna "Corte". El cruce tiene que usar ese dato en vez de
+    depender solo de la deducción.
+    """
+    origen = _origen(db, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, date(2026, 8, 25))
+    _estado_diario(db, origen, "E-970-2026", "2º Juzgado de Letras de Vallenar", corte="Civil")
 
     CarteraSyncService(db).sincronizar()
 
