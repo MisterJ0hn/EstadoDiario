@@ -245,7 +245,7 @@ const INTERVALO_POLL_MS = 5000;
                         <table class="pjud-table">
                           <thead>
                             <tr>
-                              <th>Folio</th><th>Doc.</th><th>Anexo</th><th>Etapa</th><th>Estado</th>
+                              <th>Folio</th><th>Doc.</th><th>Anexos</th><th>Etapa</th><th>Estado</th>
                               <th>Trámite</th><th>Desc. Trámite</th><th>Fecha Trámite</th><th>Georreferencia</th>
                             </tr>
                           </thead>
@@ -358,7 +358,7 @@ const INTERVALO_POLL_MS = 5000;
                     } @else {
                       <div class="overflow-x-auto rounded-lg border border-neutral-200">
                         <table class="pjud-table">
-                          <thead><tr><th>Código</th><th>Glosa</th><th>Estado</th><th>Fec. Término</th></tr></thead>
+                          <thead><tr><th>Código</th><th>Glosa de materia</th><th>Estado</th><th>Fecha Término</th></tr></thead>
                           <tbody>
                             @for (m of d.materias; track $index) {
                               <tr>
@@ -473,16 +473,17 @@ const INTERVALO_POLL_MS = 5000;
             <div class="modal-body">
               <div class="overflow-x-auto rounded-lg border border-neutral-200">
                 <table class="pjud-table">
-                  <thead><tr><th>Doc.</th><th>Folio</th><th>Fecha</th><th>Documento</th><th>Observación</th></tr></thead>
+                  <thead><tr><th>Folio</th><th>Doc.</th><th>Fecha</th><th>Documento</th><th>Observación</th></tr></thead>
                   <tbody>
                     @for (a of anexos; track $index) {
                       <tr>
+                        
+                        <td class="text-center">{{ a.folio ?? '-' }}</td>
                         <td class="text-center">
                           @if (a.doc) {
                             <ng-container *ngTemplateOutlet="enlacePdf; context: { $implicit: a.doc }" />
                           } @else { <span>-</span> }
                         </td>
-                        <td class="text-center">{{ a.folio ?? '-' }}</td>
                         <td>{{ a.fecha || '-' }}</td>
                         <td class="whitespace-normal">{{ a.nombre_documento || '-' }}</td>
                         <td class="whitespace-normal">{{ a.observacion || '-' }}</td>
