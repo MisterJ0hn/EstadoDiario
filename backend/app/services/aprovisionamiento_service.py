@@ -37,9 +37,7 @@ JURISDICCIONES_INICIALES = (
     "Penal",
     "Cobranza",
     "Corte de Apelaciones",
-    "Corte Suprema",
-    "Garantía",
-    "Policía Local",
+    "Corte Suprema"
 )
 
 
