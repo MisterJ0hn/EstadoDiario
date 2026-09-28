@@ -49,7 +49,7 @@ const MARTILLO_PJUD_PNG =
   standalone: true,
   template: `
     @if (causa && (causa.materia === 'Civil' || causa.materia === 'Familia' || causa.materia === 'Laboral' || causa.materia === 'Cobranza' || causa.materia === 'Penal')) {
-      <button type="button" class="btn-outline btn-sm !px-2" (click)="onClick()"
+      <button type="button" class="btn-outline btn-sm !px-2 outline-offset-2" (click)="onClick()"
               [class.text-warning-500]="variante() === 'nuevo'"
               [class.text-accent-600]="variante() === 'sincronizando'"
               [class.text-danger-600]="variante() === 'error'"
