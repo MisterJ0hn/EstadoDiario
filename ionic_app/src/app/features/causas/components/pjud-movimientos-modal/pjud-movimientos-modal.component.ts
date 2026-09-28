@@ -815,7 +815,11 @@ export class PjudMovimientosModalComponent implements OnDestroy {
       this.causaOrigenAbierta.set(null);
       this.resolviendoOrigen.set(false);
       this.origenError.set(null);
-      this.cargar(c.id, false);
+      // Si ya estaba "listo" (sincronizada antes), reabrir el modal la vuelve
+      // a consultar al PJUD por si hubo cambios, en vez de mostrar la foto
+      // vieja; si nunca sincronizó o quedó en error, forzar no cambia nada
+      // porque el backend igual dispara el scrape la primera vez.
+      this.cargar(c.id, c.pjud_estado === 'listo');
     }
   }
   get causa(): Causa | null {
