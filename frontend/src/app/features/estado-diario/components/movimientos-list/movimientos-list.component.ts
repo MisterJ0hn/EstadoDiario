@@ -10,11 +10,19 @@ import {
 } from '../../services/movimientos-filtros.store';
 import { NotificationService } from '@core/services/notification.service';
 import { Movimiento, Jurisdiccion } from '@core/models/estado-diario.model';
+import { Causa } from '@core/models/causa.model';
 import { RecordatorioModalComponent } from '../recordatorio-modal/recordatorio-modal.component';
 import {
   ChipFiltro,
   FiltrosPanelComponent,
 } from '@shared/components/filtros-panel/filtros-panel.component';
+import { PjudBotonComponent } from '@features/causas/components/pjud-boton/pjud-boton.component';
+import { PjudMovimientosModalComponent } from '@features/causas/components/pjud-movimientos-modal/pjud-movimientos-modal.component';
+import { PjudFamiliaModalComponent } from '@features/causas/components/pjud-familia-modal/pjud-familia-modal.component';
+import { PjudLaboralModalComponent } from '@features/causas/components/pjud-laboral-modal/pjud-laboral-modal.component';
+import { PjudCobranzaModalComponent } from '@features/causas/components/pjud-cobranza-modal/pjud-cobranza-modal.component';
+import { PjudPenalModalComponent } from '@features/causas/components/pjud-penal-modal/pjud-penal-modal.component';
+import { CausaService } from '@features/causas/services/causa.service';
 
 type Tab = 'no-leidos' | 'leidos' | 'pendientes';
 
@@ -34,6 +42,12 @@ function fmtFechaChip(iso: string): string {
     RouterLink,
     RecordatorioModalComponent,
     FiltrosPanelComponent,
+    PjudBotonComponent,
+    PjudMovimientosModalComponent,
+    PjudFamiliaModalComponent,
+    PjudLaboralModalComponent,
+    PjudCobranzaModalComponent,
+    PjudPenalModalComponent,
   ],
   template: `
     <div class="space-y-6">
@@ -152,6 +166,14 @@ function fmtFechaChip(iso: string): string {
                     </td>
                     <td class="relative">
                       <div class="inline-flex items-center gap-1 align-middle">
+                        @if (pjudDisponible()) {
+                          <!-- Mismo botón que Mis Causas / Detalle: solo se pinta si
+                               este rol/tribunal calzó con una Causa de una materia
+                               que expone la API del PJUD. -->
+                          <app-pjud-boton [causa]="pjudCausas()[m.id] ?? null"
+                                          (abrir)="pjudModal.set(pjudCausas()[m.id] ?? null)"
+                                          (estadoPjud)="onEstadoPjud($event)" />
+                        }
                         @if (!m.leido) {
                           <button (click)="toggleMenu(m.id, $event)" class="btn-outline btn-sm" title="Acciones">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,6 +242,23 @@ function fmtFechaChip(iso: string): string {
       (cerrado)="recordatorioMovimientoId.set(null)"
       (guardado)="onRecordatorioGuardado()"
     />
+
+    <!-- Un modal por materia (Civil / Familia / Laboral / Cobranza / Penal): ver CausasComponent. -->
+    <app-pjud-movimientos-modal
+        [causa]="pjudModal()?.materia === 'Civil' ? pjudModal() : null"
+        (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+    <app-pjud-familia-modal
+        [causa]="pjudModal()?.materia === 'Familia' ? pjudModal() : null"
+        (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+    <app-pjud-laboral-modal
+        [causa]="pjudModal()?.materia === 'Laboral' ? pjudModal() : null"
+        (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+    <app-pjud-cobranza-modal
+        [causa]="pjudModal()?.materia === 'Cobranza' ? pjudModal() : null"
+        (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
+    <app-pjud-penal-modal
+        [causa]="pjudModal()?.materia === 'Penal' ? pjudModal() : null"
+        (cerrado)="pjudModal.set(null)" (estadoPjud)="onEstadoPjud($event)" />
   `,
 })
 export class MovimientosListComponent implements OnInit {
@@ -228,6 +267,7 @@ export class MovimientosListComponent implements OnInit {
   private notification = inject(NotificationService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  private causaService = inject(CausaService);
 
   readonly tabs: { key: Tab; label: string }[] = [
     { key: 'no-leidos', label: 'No Leídos' },
@@ -263,6 +303,16 @@ export class MovimientosListComponent implements OnInit {
    */
   recordatorioMovimientoId = signal<number | null>(null);
 
+  /** Si api-pjud.codifica.cl está configurada; sin esto el botón "Detalle
+   *  PJUD" no tiene sentido y no se muestra (mismo criterio que Mis Causas). */
+  pjudDisponible = signal(false);
+  /** Por id de movimiento, la Causa de la cartera que calza con su rol/tribunal
+   *  (resuelta por `/causas/pjud/por-rol`); null = no calza ninguna o no es de
+   *  una materia que expone la API del PJUD. Ausente = todavía no se resolvió. */
+  pjudCausas = signal<Record<number, Causa | null>>({});
+  /** Causa para la que está abierto el modal de detalle PJUD; null = cerrado. */
+  pjudModal = signal<Causa | null>(null);
+
   title = computed(() => (this.isOrigen() ? 'Estado Diario del Archivo' : 'Estado Diario'));
 
   claseNivel(nivel: string | null): string {
@@ -274,6 +324,11 @@ export class MovimientosListComponent implements OnInit {
   ngOnInit(): void {
     const filter = this.route.snapshot.data['filter'] || 'movimientos';
     this.isOrigen.set(filter === 'origen');
+
+    this.causaService.pjudDisponible().subscribe({
+      next: (res) => this.pjudDisponible.set(res.disponible),
+      error: () => this.pjudDisponible.set(false),
+    });
 
     if (this.isOrigen()) {
       this.loadData();
@@ -360,6 +415,7 @@ export class MovimientosListComponent implements OnInit {
           this.movimientos.set(res.movimientos);
           this.total.set(res.total);
           this.loading.set(false);
+          this.resolverPjud(res.movimientos);
         },
         error: () => {
           this.loading.set(false);
@@ -374,6 +430,7 @@ export class MovimientosListComponent implements OnInit {
           this.currentPage.set(res.page);
           this.totalPages.set(res.total_pages);
           this.loading.set(false);
+          this.resolverPjud(res.movimientos);
         },
         error: () => {
           this.loading.set(false);
@@ -381,6 +438,33 @@ export class MovimientosListComponent implements OnInit {
         },
       });
     }
+  }
+
+  /** Busca, para cada registro de la página, la Causa de la cartera que
+   *  corresponde por rol/tribunal, para el botón "Detalle PJUD" (misma
+   *  resolución que en el detalle de un registro). Sin rol o tribunal, o si
+   *  no calza ninguna, ese registro simplemente no ofrece el botón. */
+  private resolverPjud(movimientos: Movimiento[]): void {
+    this.pjudCausas.set({});
+    for (const m of movimientos) {
+      if (!m.rol || !m.tribunal) continue;
+      this.causaService.pjudPorRol(m.rol, m.tribunal).subscribe({
+        next: (res) => this.pjudCausas.update((map) => ({ ...map, [m.id]: res.causa })),
+        error: () => this.pjudCausas.update((map) => ({ ...map, [m.id]: null })),
+      });
+    }
+  }
+
+  /** El botón (polling propio) o el modal (Reintentar/Actualizar) avisan que
+   *  cambió el estado de sincronización de la causa: se refleja en el botón
+   *  de esa fila sin esperar a resolverla de nuevo por rol/tribunal. */
+  onEstadoPjud(ev: { causaId: number; estado: string }): void {
+    this.pjudCausas.update((map) => {
+      const entries = Object.entries(map).map(([id, causa]): [string, Causa | null] =>
+        causa && causa.id === ev.causaId ? [id, { ...causa, pjud_estado: ev.estado }] : [id, causa],
+      );
+      return Object.fromEntries(entries);
+    });
   }
 
   private buildParams(): {
