@@ -17,6 +17,13 @@ import { PjudCobranzaModalComponent } from './components/pjud-cobranza-modal/pju
 import { PjudPenalModalComponent } from './components/pjud-penal-modal/pjud-penal-modal.component';
 import { CausaService } from './services/causa.service';
 
+/** Lo que manda el backend para "sin materia" (causas de la cartera deducida
+ *  cuyo tribunal no calzó con ninguna materia conocida). No puede ser `''` ni
+ *  `null`: ambos ya significan "sin filtro" (la pestaña "Todas"), y con ese
+ *  valor la pestaña "Sin materia" terminaba mostrando lo mismo que "Todas".
+ *  Debe coincidir con `SIN_MATERIA` en `causa_repository.py` del backend. */
+const SIN_MATERIA = '__sin_materia__';
+
 /**
  * Cartera de causas por materia (submenú **Materia** de Mis Causas).
  *
@@ -84,11 +91,11 @@ import { CausaService } from './services/causa.service';
             <button
               type="button"
               role="tab"
-              [attr.aria-selected]="materiaActiva() === c.materia"
-              (click)="seleccionarMateria(c.materia)"
+              [attr.aria-selected]="materiaActiva() === (c.materia ?? sinMateria)"
+              (click)="seleccionarMateria(c.materia ?? sinMateria)"
               class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors"
               [class]="
-                materiaActiva() === c.materia
+                materiaActiva() === (c.materia ?? sinMateria)
                   ? 'border-primary-600 text-primary-700'
                   : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
               "
@@ -352,8 +359,10 @@ export class CausasComponent implements OnInit {
   totalPaginas = signal(1);
   cargando = signal(true);
 
-  /** null = pestaña "Todas". Se refleja en el query param `materia`. */
+  /** null = pestaña "Todas", `sinMateria` = pestaña "Sin materia". Se refleja
+   *  en el query param `materia`. */
   materiaActiva = signal<string | null>(null);
+  readonly sinMateria = SIN_MATERIA;
 
   /**
    * Qué mitad de la cartera se está viendo. Por defecto las vigentes: son las

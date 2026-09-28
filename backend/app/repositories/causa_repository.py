@@ -22,7 +22,15 @@ from app.models.estado_diario_origen import EstadoDiarioOrigen
 # `VIGENTES` y `FINALIZADAS` se re-exportan desde `app.core.estados_causa`: los
 # endpoints y los otros repositorios los importan desde acá desde antes, y la
 # regla vive allá.
-__all__ = ["VIGENTES", "FINALIZADAS", "ultimo_origen_causas_id", "CausaRepository"]
+__all__ = ["VIGENTES", "FINALIZADAS", "SIN_MATERIA", "ultimo_origen_causas_id", "CausaRepository"]
+
+# Valor que manda el frontend para la pestaña "Sin materia" (causas de la
+# cartera deducida cuyo tribunal no calzó con ninguna materia conocida, ver
+# `CarteraSyncService._materia_por_tribunal`). No puede ser "" ni None: las dos
+# pantallas (Angular y este filtro) tratan esos dos valores como "sin filtro" —
+# de ahí que la pestaña "Todas" y la pestaña "Sin materia" terminaran mostrando
+# lo mismo antes de este sentinel.
+SIN_MATERIA = "__sin_materia__"
 
 
 def ultimo_origen_causas_id(db: Session) -> Optional[int]:
@@ -132,7 +140,9 @@ class CausaRepository:
         origen_id: Optional[int],
         vigencia: Optional[str] = None,
     ):
-        if materia:
+        if materia == SIN_MATERIA:
+            query = query.filter(Causa.materia.is_(None))
+        elif materia:
             query = query.filter(Causa.materia == materia)
         if estado_causa:
             query = query.filter(Causa.estado_causa == estado_causa)

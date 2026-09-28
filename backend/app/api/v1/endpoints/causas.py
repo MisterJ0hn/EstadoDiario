@@ -24,7 +24,7 @@ from app.core.database import get_db_maestra
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
-from app.repositories.causa_repository import FINALIZADAS, VIGENTES, CausaRepository
+from app.repositories.causa_repository import FINALIZADAS, SIN_MATERIA, VIGENTES, CausaRepository
 from app.repositories.pjud_llamado_repository import PjudLlamadoRepository
 from app.schemas.causa import (
     CargarCausasResponse,
@@ -240,7 +240,10 @@ def resumen(
     summary="Listar la cartera de causas",
 )
 def listar(
-    materia: str | None = Query(None),
+    materia: str | None = Query(
+        None,
+        description=f"Nombre exacto, '{SIN_MATERIA}' para causas sin materia, o vacío para todas",
+    ),
     estado_causa: str | None = Query(None),
     tribunal: str | None = Query(None),
     busqueda: str | None = Query(None, description="Carátula, rol o RUC"),
