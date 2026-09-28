@@ -358,7 +358,7 @@ class CarteraSyncService:
         for c in cartera:
             indice.setdefault((_norm(c.rol), _norm(c.tribunal)), []).append(c)
 
-        materia_de = self._materia_por_tribunal(cartera)
+        materia_de = self._materia_por_tribunal()
         fecha_cartera = origen_cartera.fecha
 
         for fila, origen, procedencia in self._fuentes_materia():
@@ -416,19 +416,34 @@ class CarteraSyncService:
             for fila, origen in filas:
                 yield fila, origen, procedencia
 
-    @staticmethod
-    def _materia_por_tribunal(cartera: List[Causa]) -> Dict[str, str]:
-        """`tribunal → materia`, sacado de la propia cartera del cliente.
+    def _materia_por_tribunal(self) -> Dict[str, str]:
+        """`tribunal → materia`, sacado de TODAS las causas que el cliente haya
+        tenido alguna vez, no solo las de la cartera vigente.
 
         El Estado Diario no dice de qué materia es cada causa, pero sí de qué
         tribunal, y el tribunal determina la materia (por eso agregar la materia
         a la llave `rol + tribunal` no cambia el conteo). Así una causa que llega
         del estado diario entra a la cartera con su materia y no como "Sin
         materia", que la sacaría de su grupo en la factura.
+
+        Por qué TODA la historia y no solo `Causa.estado_diario_origen_id ==
+        origen_cartera.id`: cada carga nueva del Excel de Causas reemplaza la
+        cartera por un origen distinto (ver el docstring del módulo), y esa
+        foto puede no repetir un tribunal con pocas causas activas que sí
+        apareció en una foto anterior. Sin la historia completa, una causa
+        nueva de Estado Diario para ese mismo tribunal no tendría de dónde
+        deducir la materia — y quedaría "Sin materia" pese a que el tribunal
+        ya era conocido. Fue justo lo que le pasó a E-970-2026 (2° Juzgado de
+        Letras de Vallenar) del cliente 17314741-4 el 25-08-2026.
         """
         mapa: Dict[str, str] = {}
-        for c in cartera:
-            t, m = _norm(c.tribunal), (c.materia or "").strip()
+        filas = (
+            self.db.query(Causa.tribunal, Causa.materia)
+            .filter(Causa.materia.isnot(None))
+            .all()
+        )
+        for tribunal, materia in filas:
+            t, m = _norm(tribunal), (materia or "").strip()
             if t and m:
                 mapa.setdefault(t, m)
         return mapa

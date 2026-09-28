@@ -23,6 +23,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import BaseTenant
+from app.models.audiencia import Audiencia
 from app.models.causa import ORIGEN_DATO_ESTADO_DIARIO, Causa
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario import EstadoDiario
@@ -47,6 +48,11 @@ def db():
             MovimientoCorte.__table__,
             Causa.__table__,
             CausaCorte.__table__,
+            # `_calcular_ultima_actividad` la consulta siempre que la cartera
+            # no esté vacía: sin esta tabla, cualquier test con una causa
+            # revienta con "no such table: audiencia" antes de llegar a lo
+            # que en realidad está probando.
+            Audiencia.__table__,
         ],
     )
     sesion = sessionmaker(bind=engine)()
@@ -169,3 +175,47 @@ def test_entre_dos_cargadas_manda_la_mas_nueva(db):
     nueva = _origen(db, EstadoDiarioOrigen.TIPO_CAUSAS, date(2026, 8, 1))
 
     assert ultimo_origen_causas_id(db) == nueva.id
+
+
+# ── Deducción de materia por tribunal ──────────────────────
+
+
+def test_una_causa_nueva_deduce_la_materia_de_un_tribunal_conocido(db):
+    cartera = _origen(db, EstadoDiarioOrigen.TIPO_CAUSAS, date(2026, 8, 1))
+    db.add(Causa(estado_diario_origen_id=cartera.id, rol="C-17-2021",
+                 tribunal="2º Juzgado de Letras de Vallenar", materia="Civil"))
+    origen = _origen(db, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, date(2026, 8, 2))
+    _estado_diario(db, origen, "E-970-2026", "2º Juzgado de Letras de Vallenar")
+
+    CarteraSyncService(db).sincronizar()
+
+    nueva = db.query(Causa).filter(Causa.rol == "E-970-2026").one()
+    assert nueva.materia == "Civil"
+
+
+def test_recargar_causas_sin_un_tribunal_no_le_hace_perder_la_materia_conocida(db):
+    """El caso real: E-970-2026 (2º Juzgado de Letras de Vallenar, cliente
+    17314741-4) quedó "Sin materia" el 25-08-2026 pese a que ese tribunal era
+    Civil hacía rato.
+
+    La cartera vigente es la del ÚLTIMO Excel de Causas cargado, y ese archivo
+    no tiene por qué repetir un tribunal con pocas causas activas que sí
+    apareció en uno anterior. `_materia_por_tribunal` tiene que mirar toda la
+    historia del cliente, no solo la foto vigente, o esa causa nueva del
+    Estado Diario no tiene de dónde deducir la materia.
+    """
+    vieja = _origen(db, EstadoDiarioOrigen.TIPO_CAUSAS, date(2026, 7, 1))
+    db.add(Causa(estado_diario_origen_id=vieja.id, rol="C-17-2021",
+                 tribunal="2º Juzgado de Letras de Vallenar", materia="Civil"))
+
+    # El Excel de Causas de agosto se recarga y esta vez no trae ninguna causa
+    # de ese tribunal (p.ej. porque las pocas que había ahí concluyeron).
+    _origen(db, EstadoDiarioOrigen.TIPO_CAUSAS, date(2026, 8, 1))
+
+    origen_ed = _origen(db, EstadoDiarioOrigen.TIPO_ESTADO_DIARIO, date(2026, 8, 25))
+    _estado_diario(db, origen_ed, "E-970-2026", "2º Juzgado de Letras de Vallenar")
+
+    CarteraSyncService(db).sincronizar()
+
+    nueva = db.query(Causa).filter(Causa.rol == "E-970-2026").one()
+    assert nueva.materia == "Civil"
