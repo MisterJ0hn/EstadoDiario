@@ -24,7 +24,8 @@ la base principal; ningún header ni parámetro lo decide.
   nuevo se agregue mañana: una lista de lo permitido envejece mejor que una de
   lo prohibido.
 - Escribir solo si la key tiene `permite_escritura` Y la ruta está en los
-  prefijos de escritura (por defecto, `PREFIJOS_ESCRITURA_DEFECTO`: causas).
+  prefijos de escritura (por defecto, `PREFIJOS_ESCRITURA_DEFECTO`: causas),
+  o es un `POST` a `ESCRITURAS_PUNTUALES` (marcar leído / no leído / pendiente).
 
 - Usarse solo desde las IPs de `ips_permitidas`, si la key las tiene (ver
   `ip_confiable` para de dónde sale la IP y por qué no es la primera de
@@ -41,6 +42,7 @@ import hashlib
 import ipaddress
 import logging
 import random
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -76,6 +78,14 @@ PREFIJOS_LECTURA = (
 )
 # Dónde puede ESCRIBIR una key con `permite_escritura` y sin lista propia.
 PREFIJOS_ESCRITURA_DEFECTO = ("/api/v1/causas",)
+
+# Escrituras puntuales que toda key con `permite_escritura` puede hacer, además
+# de sus prefijos: marcar un movimiento como leído / no leído / pendiente. Van
+# como patrón exacto (método + ruta) y no como prefijo, porque abrir
+# `/api/v1/estado-diario` entero habilitaría también el POST y el DELETE de ese módulo.
+ESCRITURAS_PUNTUALES = re.compile(
+    r"^/api/v1/estado-diario/[^/]+/(leido|no-leido|pendiente)$"
+)
 
 METODOS_DE_LECTURA = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -159,6 +169,8 @@ def motivo_de_denegacion(
 
     if not permite_escritura:
         return "key_solo_lectura"
+    if metodo.upper() == "POST" and ESCRITURAS_PUNTUALES.match(path):
+        return None
     if not _bajo_prefijo(path, prefijos_escritura):
         return "escritura_no_permitida_en_la_ruta"
     return None

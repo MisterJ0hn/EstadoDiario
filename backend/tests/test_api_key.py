@@ -170,6 +170,29 @@ def test_una_key_con_escritura_escribe_en_causas():
     )
 
 
+@pytest.mark.parametrize("accion", ["leido", "no-leido", "pendiente"])
+def test_una_key_con_escritura_marca_leido_no_leido_y_pendiente(accion):
+    path = f"/api/v1/estado-diario/123/{accion}"
+    assert api_key.motivo_de_denegacion("POST", path, permite_escritura=True) is None
+    assert api_key.motivo_de_denegacion("POST", path, permite_escritura=False) == "key_solo_lectura"
+
+
+@pytest.mark.parametrize(
+    "metodo,path",
+    [
+        ("DELETE", "/api/v1/estado-diario/123/leido"),
+        ("PUT", "/api/v1/estado-diario/123/leido"),
+        ("POST", "/api/v1/estado-diario/123/otra"),
+        ("POST", "/api/v1/estado-diario/123/leido/extra"),
+        ("POST", "/api/v1/estado-diario//leido"),
+        ("POST", "/api/v1/estado-diario"),
+        ("DELETE", "/api/v1/estado-diario/123"),
+    ],
+)
+def test_solo_esas_tres_escrituras_de_estado_diario_se_abren(metodo, path):
+    assert api_key.motivo_de_denegacion(metodo, path, permite_escritura=True) is not None
+
+
 @pytest.mark.parametrize("metodo", ["POST", "PUT", "PATCH", "DELETE"])
 @pytest.mark.parametrize(
     "path",

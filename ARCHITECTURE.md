@@ -396,7 +396,8 @@ endpoints existentes funcionan sin tocarlos.
 - **Deny por defecto.** Lee solo `PREFIJOS_LECTURA` (causas, estado diario,
   movimientos, audiencias, reportes, dashboard, jurisdicciones). Escribe solo
   con `permite_escritura` y solo bajo `prefijos_escritura`, que por defecto es
-  `/api/v1/causas`. Auth, pagos, facturas, configuración y Google quedan
+  `/api/v1/causas`; además, con `permite_escritura`, `POST` a
+  `/api/v1/estado-diario/{id}/leido|no-leido|pendiente`. Auth, pagos, facturas, configuración y Google quedan
   cerrados aunque se agreguen endpoints nuevos.
 - **Límite por minuto por key**, con contador en la tabla `api_key_uso`
   (ventana fija). Está en la base y no en memoria porque no se sabe cuántos
