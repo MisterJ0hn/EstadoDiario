@@ -377,8 +377,8 @@ en `CorreoService` (`_procesar_adjunto` anota, `revisar` despacha).
   leído/pendiente, asistencia ni datos de Google.
 
 Se administra desde `admin_api` en `/api/v1/admin/clientes/{id}/webhook`:
-configurar, rotar secreto, probar, ver entregas y reintentar las fallidas. Hoy no
-hay pantalla en `admin_app`.
+configurar, rotar secreto, probar, ver entregas y reintentar las fallidas; en
+`admin_app`, desde la pestaña **Webhook** de la ficha del cliente.
 
 ### API keys para sistemas externos
 
@@ -410,8 +410,7 @@ endpoints existentes funcionan sin tocarlos.
 
 Las keys las emite el administrador de la plataforma desde `admin_api`
 (`/api/v1/admin/clientes/{id}/api-keys`: listar, emitir, cambiar límite,
-revocar). Hoy no hay pantalla en `admin_app`; se usa desde `/docs` del puerto
-8092.
+revocar), y desde `admin_app` en la pestaña **API keys** de la ficha del cliente.
 
 ### reCAPTCHA v3 en los formularios públicos
 
