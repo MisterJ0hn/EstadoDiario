@@ -20,6 +20,7 @@ from typing import Optional
 from sqlalchemy import func, nulls_last, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.filtro_roles import filtrar_por_roles
 from app.models.audiencia import Audiencia
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 
@@ -141,6 +142,7 @@ class AudienciaRepository:
         origen_id: Optional[int],
         desde: Optional[date],
         hasta: Optional[date],
+        roles: Optional[list[str]] = None,
     ):
         # Permiso de visibilidad. None = sin restricción. Las audiencias sin
         # jurisdicción las ve todo el mundo, igual que las causas.
@@ -161,6 +163,8 @@ class AudienciaRepository:
                 | Audiencia.rol.ilike(patron)
                 | Audiencia.ruc.ilike(patron)
             )
+
+        query = filtrar_por_roles(query, Audiencia.rol, roles)
 
         if origen_id:
             query = query.filter(Audiencia.estado_diario_origen_id == origen_id)
@@ -188,11 +192,12 @@ class AudienciaRepository:
         origen_id: Optional[int] = None,
         desde: Optional[date] = None,
         hasta: Optional[date] = None,
+        roles: Optional[list[str]] = None,
     ) -> int:
         query = self.db.query(func.count(Audiencia.id))
         query = self._aplicar_filtros(
             query, materia, tipo_audiencia, tribunal, busqueda,
-            rut, origen_id, desde, hasta,
+            rut, origen_id, desde, hasta, roles,
         )
         return query.scalar() or 0
 
@@ -206,6 +211,7 @@ class AudienciaRepository:
         origen_id: Optional[int] = None,
         desde: Optional[date] = None,
         hasta: Optional[date] = None,
+        roles: Optional[list[str]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -217,7 +223,7 @@ class AudienciaRepository:
         """
         total = self.count_filtered(
             materia, tipo_audiencia, tribunal, busqueda,
-            rut, origen_id, desde, hasta,
+            rut, origen_id, desde, hasta, roles,
         )
 
         query = self.db.query(Audiencia).options(
@@ -225,7 +231,7 @@ class AudienciaRepository:
         )
         query = self._aplicar_filtros(
             query, materia, tipo_audiencia, tribunal, busqueda,
-            rut, origen_id, desde, hasta,
+            rut, origen_id, desde, hasta, roles,
         ).order_by(
             Audiencia.fecha_audiencia.asc(),
             nulls_last(Audiencia.hora.asc()),
@@ -291,13 +297,14 @@ class AudienciaRepository:
         origen_id: Optional[int] = None,
         desde: Optional[date] = None,
         hasta: Optional[date] = None,
+        roles: Optional[list[str]] = None,
     ) -> list[tuple[Optional[str], int]]:
         """GROUP BY materia en SQL. No recibe `materia` a propósito: alimenta el
         total de cada pestaña, incluidas las no seleccionadas."""
         query = self.db.query(Audiencia.materia, func.count(Audiencia.id))
         query = self._aplicar_filtros(
             query, None, tipo_audiencia, tribunal, busqueda,
-            rut, origen_id, desde, hasta,
+            rut, origen_id, desde, hasta, roles,
         )
         return query.group_by(Audiencia.materia).order_by(Audiencia.materia).all()
 

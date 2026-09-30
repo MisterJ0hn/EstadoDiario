@@ -46,6 +46,8 @@ from app.services.estado_diario_service import EstadoDiarioService
 
 logger = logging.getLogger(__name__)
 
+from app.core.filtro_roles import DESC_ROLES, parse_roles
+
 router = APIRouter(prefix="/audiencias", tags=["Audiencias"])
 
 
@@ -68,6 +70,7 @@ def listar_audiencias(
     incluir_pasadas: bool = Query(
         False, description="Ignora el `desde` por defecto y muestra también el histórico"
     ),
+    roles: str | None = Query(None, description=DESC_ROLES),
     page: int | None = Query(None, ge=1),
     limit: int | None = Query(None, ge=1, le=500),
     db: Session = Depends(get_db_tenant),
@@ -88,6 +91,7 @@ def listar_audiencias(
         origen_id=origen_id,
         desde=desde,
         hasta=hasta,
+        roles=parse_roles(roles),
         page=page,
         limit=limit,
     )
@@ -113,6 +117,7 @@ def resumen(
     desde: date | None = Query(None),
     hasta: date | None = Query(None),
     incluir_pasadas: bool = Query(False),
+    roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -133,6 +138,7 @@ def resumen(
         origen_id=origen_id,
         desde=desde,
         hasta=hasta,
+        roles=parse_roles(roles),
     )
     return AudienciaResumenResponse(
         total=sum(c for _, c in conteos),

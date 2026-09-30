@@ -38,6 +38,8 @@ from app.services.movimiento_import_service import (
 
 logger = logging.getLogger(__name__)
 
+from app.core.filtro_roles import DESC_ROLES, parse_roles
+
 router = APIRouter(prefix="/movimientos", tags=["Movimientos"])
 
 
@@ -71,6 +73,7 @@ def listar_movimientos(
     vigencia: str | None = Query(
         VIGENTES, description="vigentes | finalizadas | vacío para todas"
     ),
+    roles: str | None = Query(None, description=DESC_ROLES),
     page: int | None = Query(None, ge=1),
     limit: int | None = Query(None, ge=1, le=500),
     db: Session = Depends(get_db_tenant),
@@ -87,6 +90,7 @@ def listar_movimientos(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
         vigencia=_vigencia(vigencia),
+        roles=parse_roles(roles),
         page=page,
         limit=limit,
     )
@@ -111,6 +115,7 @@ def resumen(
     origen_id: int | None = Query(None),
     fecha_desde: str | None = Query(None),
     fecha_hasta: str | None = Query(None),
+    roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -125,6 +130,7 @@ def resumen(
         origen_id=origen_id,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
+        roles=parse_roles(roles),
     )
     return MovimientoResumenResponse(
         total=sum(c for _, c in conteos),

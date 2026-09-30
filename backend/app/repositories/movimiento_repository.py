@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.core.estados_causa import condicion_vigencia
+from app.core.filtro_roles import filtrar_por_roles
 from app.models.movimiento import Movimiento
 
 
@@ -87,6 +88,7 @@ class MovimientoRepository:
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
         vigencia: Optional[str] = None,
+        roles: Optional[list[str]] = None,
     ):
         # Red de seguridad: un movimiento siempre cuelga de un archivo de tipo
         # movimientos, pero nada en el esquema lo garantiza.
@@ -110,6 +112,8 @@ class MovimientoRepository:
             query = query.filter(
                 Movimiento.caratulado.ilike(patron) | Movimiento.rol.ilike(patron)
             )
+
+        query = filtrar_por_roles(query, Movimiento.rol, roles)
 
         if rut:
             query = query.filter(EstadoDiarioOrigen.rut == rut)
@@ -139,6 +143,7 @@ class MovimientoRepository:
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
+        roles: Optional[list[str]] = None,
     ) -> int:
         query = (
             self.db.query(func.count(Movimiento.id))
@@ -146,7 +151,7 @@ class MovimientoRepository:
         )
         query = self._aplicar_filtros(
             query, materia, estado_causa, tribunal, busqueda,
-            rut, origen_id, fecha_desde, fecha_hasta, vigencia,
+            rut, origen_id, fecha_desde, fecha_hasta, vigencia, roles,
         )
         return query.scalar() or 0
 
@@ -161,13 +166,14 @@ class MovimientoRepository:
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
+        roles: Optional[list[str]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
         """Devuelve (items, total, page, total_pages)."""
         total = self.count_filtered(
             materia, estado_causa, tribunal, busqueda,
-            rut, origen_id, fecha_desde, fecha_hasta, vigencia,
+            rut, origen_id, fecha_desde, fecha_hasta, vigencia, roles,
         )
 
         query = (
@@ -177,7 +183,7 @@ class MovimientoRepository:
         )
         query = self._aplicar_filtros(
             query, materia, estado_causa, tribunal, busqueda,
-            rut, origen_id, fecha_desde, fecha_hasta, vigencia,
+            rut, origen_id, fecha_desde, fecha_hasta, vigencia, roles,
         ).order_by(
             nulls_last(Movimiento.fecha_ingreso.desc()),
             Movimiento.id.desc(),
@@ -204,6 +210,7 @@ class MovimientoRepository:
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
+        roles: Optional[list[str]] = None,
     ) -> list[tuple[Optional[str], int]]:
         """GROUP BY materia en SQL. No recibe `materia` a propósito: se usa para
         pintar el total de cada pestaña, incluidas las no seleccionadas."""
@@ -213,7 +220,7 @@ class MovimientoRepository:
         )
         query = self._aplicar_filtros(
             query, None, estado_causa, tribunal, busqueda,
-            rut, origen_id, fecha_desde, fecha_hasta, vigencia,
+            rut, origen_id, fecha_desde, fecha_hasta, vigencia, roles,
         )
         return (
             query.group_by(Movimiento.materia)

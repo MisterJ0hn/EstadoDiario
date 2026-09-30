@@ -66,13 +66,15 @@ class EstadoDiarioService:
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
+        roles: Optional[list[str]] = None,
     ):
         log = self._create_log("no-leidos", json.dumps({
-            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut
+            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut,
+            "roles": len(roles) if roles else None,
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha_desde, fecha_hasta, rut, None, page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, None, page, limit, roles
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -94,13 +96,15 @@ class EstadoDiarioService:
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
+        roles: Optional[list[str]] = None,
     ):
         log = self._create_log("leidos", json.dumps({
-            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut
+            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut,
+            "roles": len(roles) if roles else None,
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "resuelto", page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "resuelto", page, limit, roles
             )
             data = [self._map_movimiento(m) for m in items]
             result = {
@@ -122,13 +126,15 @@ class EstadoDiarioService:
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
+        roles: Optional[list[str]] = None,
     ):
         log = self._create_log("pendientes", json.dumps({
-            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut
+            "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut,
+            "roles": len(roles) if roles else None,
         }))
         try:
             items, total, current_page, total_pages = self.repo.find_filtered(
-                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "pendiente", page, limit
+                jurisdiccion_id, fecha_desde, fecha_hasta, rut, "pendiente", page, limit, roles
             )
             data = [self._map_movimiento(m, include_pendiente=True) for m in items]
             result = {

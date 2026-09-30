@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
 from app.core.database import get_db_maestra
+from app.core.filtro_roles import DESC_ROLES, parse_roles
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.schemas.estado_diario import (
@@ -277,12 +278,14 @@ def no_leidos(
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
+    roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_no_leidos(
-        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit,
+        parse_roles(roles),
     )
 
 
@@ -298,12 +301,14 @@ def leidos(
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
+    roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_leidos(
-        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit,
+        parse_roles(roles),
     )
 
 
@@ -319,12 +324,14 @@ def pendientes(
     rut: str | None = Query(None),
     page: int | None = Query(None),
     limit: int | None = Query(None),
+    roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     service = EstadoDiarioService(db)
     return service.get_movimientos_pendientes(
-        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit
+        jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit,
+        parse_roles(roles),
     )
 
 

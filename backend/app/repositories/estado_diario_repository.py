@@ -4,6 +4,7 @@ import math
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.filtro_roles import filtrar_por_roles
 from app.models.estado_diario import EstadoDiario
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 
@@ -54,6 +55,7 @@ class EstadoDiarioRepository:
         fecha_hasta: Optional[str],
         rut: Optional[str],
         status_filter: Optional[str],
+        roles: Optional[list[str]] = None,
     ):
         # Permiso de visibilidad. Va primero porque es la restricción que no
         # puede faltar nunca; los demás filtros son opcionales del usuario.
@@ -82,6 +84,8 @@ class EstadoDiarioRepository:
         if fecha_hasta:
             query = query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
 
+        query = filtrar_por_roles(query, EstadoDiario.rol, roles)
+
         if rut:
             query = query.filter(EstadoDiarioOrigen.rut == rut)
 
@@ -94,6 +98,7 @@ class EstadoDiarioRepository:
         fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         status_filter: Optional[str] = None,  # None = no-leidos, 'resuelto', 'pendiente'
+        roles: Optional[list[str]] = None,
     ):
         query = (
             self.db.query(EstadoDiario)
@@ -105,7 +110,7 @@ class EstadoDiarioRepository:
             )
         )
         return self._aplicar_filtros_comunes(
-            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter, roles
         )
 
     def count_filtered(
@@ -115,13 +120,14 @@ class EstadoDiarioRepository:
         fecha_hasta: Optional[str] = None,
         rut: Optional[str] = None,
         status_filter: Optional[str] = None,
+        roles: Optional[list[str]] = None,
     ) -> int:
         query = (
             self.db.query(func.count(EstadoDiario.id))
             .join(EstadoDiario.estado_diario_origen)
         )
         query = self._aplicar_filtros_comunes(
-            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+            query, jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter, roles
         )
         return query.scalar()
 
@@ -134,12 +140,13 @@ class EstadoDiarioRepository:
         status_filter: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
+        roles: Optional[list[str]] = None,
     ):
         query = self._build_filtered_query(
-            jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+            jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter, roles
         )
         total = self.count_filtered(
-            jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter
+            jurisdiccion_id, fecha_desde, fecha_hasta, rut, status_filter, roles
         )
 
         total_pages = 1
