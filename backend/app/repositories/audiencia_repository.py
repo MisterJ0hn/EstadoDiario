@@ -20,7 +20,7 @@ from typing import Optional
 from sqlalchemy import func, nulls_last, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.filtro_roles import filtrar_por_roles
+from app.core.filtro_roles import RolFiltro, filtrar_por_roles
 from app.models.audiencia import Audiencia
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 
@@ -142,7 +142,7 @@ class AudienciaRepository:
         origen_id: Optional[int],
         desde: Optional[date],
         hasta: Optional[date],
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ):
         # Permiso de visibilidad. None = sin restricción. Las audiencias sin
         # jurisdicción las ve todo el mundo, igual que las causas.
@@ -164,7 +164,7 @@ class AudienciaRepository:
                 | Audiencia.ruc.ilike(patron)
             )
 
-        query = filtrar_por_roles(query, Audiencia.rol, roles)
+        query = filtrar_por_roles(query, Audiencia.rol, Audiencia.tribunal, roles)
 
         if origen_id:
             query = query.filter(Audiencia.estado_diario_origen_id == origen_id)
@@ -192,7 +192,7 @@ class AudienciaRepository:
         origen_id: Optional[int] = None,
         desde: Optional[date] = None,
         hasta: Optional[date] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ) -> int:
         query = self.db.query(func.count(Audiencia.id))
         query = self._aplicar_filtros(
@@ -211,7 +211,7 @@ class AudienciaRepository:
         origen_id: Optional[int] = None,
         desde: Optional[date] = None,
         hasta: Optional[date] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -297,7 +297,7 @@ class AudienciaRepository:
         origen_id: Optional[int] = None,
         desde: Optional[date] = None,
         hasta: Optional[date] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ) -> list[tuple[Optional[str], int]]:
         """GROUP BY materia en SQL. No recibe `materia` a propósito: alimenta el
         total de cada pestaña, incluidas las no seleccionadas."""

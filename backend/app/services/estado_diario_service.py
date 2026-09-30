@@ -66,7 +66,7 @@ class EstadoDiarioService:
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[tuple[str, Optional[str]]]] = None,
     ):
         log = self._create_log("no-leidos", json.dumps({
             "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut,
@@ -96,7 +96,7 @@ class EstadoDiarioService:
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[tuple[str, Optional[str]]]] = None,
     ):
         log = self._create_log("leidos", json.dumps({
             "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut,
@@ -126,7 +126,7 @@ class EstadoDiarioService:
         rut: Optional[str] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[tuple[str, Optional[str]]]] = None,
     ):
         log = self._create_log("pendientes", json.dumps({
             "jurisdiccion": jurisdiccion_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta, "rut": rut,

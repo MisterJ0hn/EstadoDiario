@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.core.estados_causa import condicion_vigencia
-from app.core.filtro_roles import filtrar_por_roles
+from app.core.filtro_roles import RolFiltro, filtrar_por_roles
 from app.models.movimiento import Movimiento
 
 
@@ -88,7 +88,7 @@ class MovimientoRepository:
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
         vigencia: Optional[str] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ):
         # Red de seguridad: un movimiento siempre cuelga de un archivo de tipo
         # movimientos, pero nada en el esquema lo garantiza.
@@ -113,7 +113,7 @@ class MovimientoRepository:
                 Movimiento.caratulado.ilike(patron) | Movimiento.rol.ilike(patron)
             )
 
-        query = filtrar_por_roles(query, Movimiento.rol, roles)
+        query = filtrar_por_roles(query, Movimiento.rol, Movimiento.tribunal, roles)
 
         if rut:
             query = query.filter(EstadoDiarioOrigen.rut == rut)
@@ -143,7 +143,7 @@ class MovimientoRepository:
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ) -> int:
         query = (
             self.db.query(func.count(Movimiento.id))
@@ -166,7 +166,7 @@ class MovimientoRepository:
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -210,7 +210,7 @@ class MovimientoRepository:
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
-        roles: Optional[list[str]] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ) -> list[tuple[Optional[str], int]]:
         """GROUP BY materia en SQL. No recibe `materia` a propósito: se usa para
         pintar el total de cada pestaña, incluidas las no seleccionadas."""
