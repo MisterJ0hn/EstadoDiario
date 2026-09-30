@@ -27,6 +27,312 @@ import { AdminWebhookService } from '../services/admin-webhook.service';
  *  - **La prueba usa lo guardado**, no lo que hay en el formulario; si hay
  *    cambios sin guardar se avisa, porque probar la URL vieja es engañoso.
  */
+// ── Documentación del contrato ───────────────────────────────────────────
+// Refleja lo que arma `construir_cuerpo` en backend/app/services/webhook_service.py.
+// Si se agrega o quita un campo allá, se actualiza acá: esta tabla es lo que lee
+// quien programa el receptor.
+
+type PestanaDoc = 'mensaje' | 'estado_diario' | 'movimientos' | 'audiencias' | 'firma';
+
+interface CampoDoc {
+  campo: string;
+  tipo: string;
+  descripcion: string;
+}
+
+interface DocReporte {
+  intro: string;
+  campos: CampoDoc[];
+  nota?: string;
+  tituloEjemplo: string;
+  ejemplo: string;
+}
+
+const json = (valor: unknown): string => JSON.stringify(valor, null, 2);
+
+/** Campos que llevan todos los registros, sea cual sea el reporte. */
+const CAMPOS_BASE: CampoDoc[] = [
+  { campo: 'id', tipo: 'número', descripcion: 'Identificador interno del registro en la plataforma.' },
+  {
+    campo: 'jurisdiccion',
+    tipo: 'texto | null',
+    descripcion: 'Nombre de la jurisdicción de la causa (por ejemplo, Santiago).',
+  },
+];
+
+const REGISTRO_ESTADO_DIARIO = {
+  id: 9001,
+  jurisdiccion: 'Santiago',
+  rol: 'C-1234-2025',
+  rol_unico: '1234-2025',
+  fecha_ingreso: '2025-03-10',
+  caratulado: 'PEREZ / GOMEZ',
+  tribunal: '1º Juzgado Civil de Santiago',
+  estado: 'Fallo',
+  tipo_causa: 'Ordinaria',
+  ubicacion: 'Archivo',
+  fecha_ubicacion: '2026-09-29',
+  corte: 'C.A. de Santiago',
+};
+
+const REGISTRO_MOVIMIENTOS = {
+  id: 9002,
+  jurisdiccion: 'Santiago',
+  materia: 'Civil',
+  rol: 'C-1234-2025',
+  era: null,
+  tribunal: '1º Juzgado Civil de Santiago',
+  corte: 'C.A. de Santiago',
+  caratulado: 'PEREZ / GOMEZ',
+  fecha_ingreso: '2025-03-10',
+  estado_causa: 'Tramitación',
+  institucion: 'Estudio Uno',
+  ubicacion: 'Mesón',
+  fecha_ubicacion: '2026-09-29',
+};
+
+const REGISTRO_AUDIENCIAS = {
+  id: 9003,
+  jurisdiccion: 'Santiago',
+  materia: 'Familia',
+  rol: 'C-55-2026',
+  ruc: null,
+  caratulado: 'LOPEZ / DIAZ',
+  tribunal: '2º Juzgado de Familia de Santiago',
+  sala: 'Sala 3',
+  tipo_audiencia: 'Preparatoria',
+  juez: 'María Rojas',
+  estado: null,
+  fecha_audiencia: '2026-10-05',
+  hora: '10:30:00',
+  clave_natural: '9f2c6a1b0e3d4c5b8a7f6e5d4c3b2a1908f7e6d5',
+};
+
+const DOC: Record<Exclude<PestanaDoc, 'firma'>, DocReporte> = {
+  mensaje: {
+    intro:
+      'Todos los avisos tienen la misma envoltura: qué ocurrió, de qué cliente y archivo, en qué ' +
+      'parte del envío va, y las filas importadas. Lo que cambia según el reporte está en las ' +
+      'otras pestañas.',
+    campos: [
+      {
+        campo: 'evento',
+        tipo: 'texto',
+        descripcion:
+          'Qué ocurrió: estado_diario.importado, movimientos.importado o audiencias.importado ' +
+          '(webhook.prueba en el envío de prueba).',
+      },
+      {
+        campo: 'evento_id',
+        tipo: 'texto (UUID)',
+        descripcion:
+          'Identifica la importación. Es el mismo en todos los lotes de un archivo y en sus ' +
+          'reintentos: úselo, junto con el lote, para no procesar dos veces el mismo aviso.',
+      },
+      {
+        campo: 'enviado_en',
+        tipo: 'fecha y hora (UTC)',
+        descripcion: 'Momento en que se armó este envío. En un reintento cambia.',
+      },
+      { campo: 'cliente.guid', tipo: 'texto', descripcion: 'Identificador del estudio en la plataforma.' },
+      { campo: 'cliente.nombre', tipo: 'texto', descripcion: 'Nombre del estudio.' },
+      {
+        campo: 'archivo.origen_id',
+        tipo: 'número',
+        descripcion: 'Identificador del archivo importado en la plataforma.',
+      },
+      {
+        campo: 'archivo.tipo',
+        tipo: 'texto',
+        descripcion: 'Reporte al que corresponde: estado_diario, movimientos o audiencias.',
+      },
+      {
+        campo: 'archivo.nombre',
+        tipo: 'texto',
+        descripcion: 'Nombre del adjunto que llegó por correo.',
+      },
+      {
+        campo: 'archivo.rut',
+        tipo: 'texto',
+        descripcion: 'RUT del abogado dueño del reporte, con guion (12345678-9).',
+      },
+      {
+        campo: 'archivo.fecha',
+        tipo: 'fecha (AAAA-MM-DD)',
+        descripcion: 'Fecha del reporte. En audiencias es el inicio del rango que cubre el archivo.',
+      },
+      {
+        campo: 'archivo.fecha_carga',
+        tipo: 'fecha y hora (UTC)',
+        descripcion: 'Cuándo se importó el archivo en la plataforma.',
+      },
+      {
+        campo: 'lote',
+        tipo: 'número',
+        descripcion:
+          'Un archivo grande se envía en partes de hasta 500 registros. Este es el número de la parte, desde 1.',
+      },
+      { campo: 'total_lotes', tipo: 'número', descripcion: 'Cuántas partes tiene el archivo en total.' },
+      {
+        campo: 'total_registros',
+        tipo: 'número',
+        descripcion: 'Filas del archivo completo, no solo de este lote.',
+      },
+      {
+        campo: 'registros',
+        tipo: 'lista',
+        descripcion:
+          'Las filas de este lote. Su contenido depende del reporte (ver las otras pestañas). ' +
+          'Va vacía en el envío de prueba.',
+      },
+    ],
+    nota: 'Las fechas van en formato ISO 8601. Los datos que el reporte no trae llegan como null.',
+    tituloEjemplo: 'Ejemplo de un aviso completo',
+    ejemplo: json({
+      evento: 'audiencias.importado',
+      evento_id: '0b7c1c0e-5d0a-4a43-9a3e-2f6f3f6f9a11',
+      enviado_en: '2026-09-30T14:05:12.345678+00:00',
+      cliente: { guid: 'a1b2c3', nombre: 'Estudio Uno' },
+      archivo: {
+        origen_id: 57,
+        tipo: 'audiencias',
+        nombre: 'audiencias_2026-10-05.xlsx',
+        rut: '12345678-9',
+        fecha: '2026-10-05',
+        fecha_carga: '2026-09-30T14:05:10.120000+00:00',
+      },
+      lote: 1,
+      total_lotes: 3,
+      total_registros: 1200,
+      registros: [REGISTRO_AUDIENCIAS],
+    }),
+  },
+
+  estado_diario: {
+    intro:
+      'Las causas con novedad en el día, tal como las informa el Poder Judicial. Cada elemento de ' +
+      '«registros» es una causa, con estos campos:',
+    campos: [
+      ...CAMPOS_BASE,
+      { campo: 'rol', tipo: 'texto | null', descripcion: 'Rol de la causa (por ejemplo, C-1234-2025).' },
+      { campo: 'rol_unico', tipo: 'texto | null', descripcion: 'Rol único nacional de la causa.' },
+      { campo: 'fecha_ingreso', tipo: 'fecha | null', descripcion: 'Fecha en que ingresó la causa al tribunal.' },
+      { campo: 'caratulado', tipo: 'texto | null', descripcion: 'Nombre de la causa: las partes (demandante / demandado).' },
+      { campo: 'tribunal', tipo: 'texto | null', descripcion: 'Tribunal donde se tramita.' },
+      { campo: 'estado', tipo: 'texto | null', descripcion: 'Estado de la causa según el reporte.' },
+      { campo: 'tipo_causa', tipo: 'texto | null', descripcion: 'Tipo de causa (por ejemplo, Ordinaria).' },
+      { campo: 'ubicacion', tipo: 'texto | null', descripcion: 'Dónde se encuentra la causa en su tramitación.' },
+      { campo: 'fecha_ubicacion', tipo: 'fecha | null', descripcion: 'Desde cuándo está en esa ubicación.' },
+      { campo: 'corte', tipo: 'texto | null', descripcion: 'Corte de Apelaciones a la que corresponde.' },
+    ],
+    tituloEjemplo: 'Ejemplo de un elemento de «registros»',
+    ejemplo: json(REGISTRO_ESTADO_DIARIO),
+  },
+
+  movimientos: {
+    intro:
+      'El universo de causas vigentes del abogado con su estado procesal. Cada elemento de ' +
+      '«registros» es una causa, con estos campos:',
+    campos: [
+      ...CAMPOS_BASE,
+      {
+        campo: 'materia',
+        tipo: 'texto | null',
+        descripcion:
+          'Materia de la causa: Civil, Familia, Laboral, Cobranza, Penal, Corte de Apelaciones o Corte Suprema.',
+      },
+      { campo: 'rol', tipo: 'texto | null', descripcion: 'Rol de la causa (RIT en primera instancia).' },
+      { campo: 'era', tipo: 'texto | null', descripcion: 'Solo en causas de Corte. En el resto llega null.' },
+      { campo: 'tribunal', tipo: 'texto | null', descripcion: 'Tribunal donde se tramita.' },
+      { campo: 'corte', tipo: 'texto | null', descripcion: 'Corte de Apelaciones a la que corresponde.' },
+      { campo: 'caratulado', tipo: 'texto | null', descripcion: 'Nombre de la causa: las partes.' },
+      { campo: 'fecha_ingreso', tipo: 'fecha | null', descripcion: 'Fecha en que ingresó la causa.' },
+      {
+        campo: 'estado_causa',
+        tipo: 'texto | null',
+        descripcion: 'Estado procesal: Tramitación, Concluido, Con sentencia, etc.',
+      },
+      {
+        campo: 'institucion',
+        tipo: 'texto | null',
+        descripcion: 'Identificador del cliente o gestión en el Poder Judicial.',
+      },
+      { campo: 'ubicacion', tipo: 'texto | null', descripcion: 'Dónde se encuentra la causa en su tramitación.' },
+      { campo: 'fecha_ubicacion', tipo: 'fecha | null', descripcion: 'Desde cuándo está en esa ubicación.' },
+    ],
+    tituloEjemplo: 'Ejemplo de un elemento de «registros»',
+    ejemplo: json(REGISTRO_MOVIMIENTOS),
+  },
+
+  audiencias: {
+    intro:
+      'Las audiencias que el tribunal agendó para el rango de fechas del archivo. Cada elemento de ' +
+      '«registros» es una audiencia, con estos campos:',
+    campos: [
+      ...CAMPOS_BASE,
+      { campo: 'materia', tipo: 'texto | null', descripcion: 'Materia: Familia, Laboral o Penal.' },
+      {
+        campo: 'rol',
+        tipo: 'texto | null',
+        descripcion: 'RIT de la causa. Las audiencias penales no lo traen: se identifican por RUC.',
+      },
+      { campo: 'ruc', tipo: 'texto | null', descripcion: 'RUC de la causa (Rol Único de Causa, propio del ámbito penal).' },
+      { campo: 'caratulado', tipo: 'texto | null', descripcion: 'Nombre de la causa: las partes.' },
+      { campo: 'tribunal', tipo: 'texto | null', descripcion: 'Tribunal donde se realiza.' },
+      { campo: 'sala', tipo: 'texto | null', descripcion: 'Sala de la audiencia.' },
+      { campo: 'tipo_audiencia', tipo: 'texto | null', descripcion: 'Clase de audiencia (por ejemplo, Preparatoria).' },
+      { campo: 'juez', tipo: 'texto | null', descripcion: 'Juez a cargo.' },
+      {
+        campo: 'estado',
+        tipo: 'texto | null',
+        descripcion: 'Estado de la audiencia (agendada, realizada…). Solo lo informan las audiencias penales.',
+      },
+      { campo: 'fecha_audiencia', tipo: 'fecha', descripcion: 'Día en que se realiza. Siempre viene.' },
+      {
+        campo: 'hora',
+        tipo: 'hora (HH:MM:SS) | null',
+        descripcion: 'Hora de inicio, en hora local del tribunal (Chile). Puede no venir.',
+      },
+      {
+        campo: 'clave_natural',
+        tipo: 'texto',
+        descripcion:
+          'Huella (SHA-1) que identifica la audiencia. La misma clave en archivos distintos es la ' +
+          'misma audiencia.',
+      },
+    ],
+    nota:
+      'Los archivos de audiencias se traslapan entre semanas, así que una misma audiencia puede ' +
+      'llegar en avisos distintos. Use clave_natural para actualizar la que ya tiene en lugar de ' +
+      'crear una repetida.',
+    tituloEjemplo: 'Ejemplo de un elemento de «registros»',
+    ejemplo: json(REGISTRO_AUDIENCIAS),
+  },
+};
+
+const ENCABEZADOS: { nombre: string; descripcion: string }[] = [
+  {
+    nombre: 'X-Webhook-Evento',
+    descripcion: 'El tipo de evento; es el mismo valor que el campo «evento» del cuerpo.',
+  },
+  {
+    nombre: 'X-Webhook-Id',
+    descripcion: 'Identificador del aviso (igual a «evento_id»). Sirve para descartar repetidos.',
+  },
+  {
+    nombre: 'X-Webhook-Lote',
+    descripcion: 'Parte del envío en formato lote/total, por ejemplo 2/3.',
+  },
+  {
+    nombre: 'X-Webhook-Timestamp',
+    descripcion: 'Momento del envío en segundos Unix. Forma parte de lo que se firma.',
+  },
+  {
+    nombre: 'X-Webhook-Signature',
+    descripcion: 'sha256= seguido de la firma HMAC-SHA256 hexadecimal.',
+  },
+];
+
 @Component({
   selector: 'app-cliente-webhook',
   standalone: true,
@@ -156,30 +462,6 @@ import { AdminWebhookService } from '../services/admin-webhook.service';
                 }
               </div>
 
-              <details class="text-sm text-neutral-700">
-                <summary class="cursor-pointer font-medium text-primary-700">
-                  Cómo verifica la firma el sistema receptor
-                </summary>
-                <div class="mt-2 space-y-2 text-neutral-600">
-                  <p>Cada petición es un POST con cuerpo JSON y estos encabezados:</p>
-                  <ul class="list-disc pl-5 space-y-0.5">
-                    <li><code>X-Webhook-Evento</code>: <code>estado_diario.importado</code>,
-                      <code>movimientos.importado</code> o <code>audiencias.importado</code></li>
-                    <li><code>X-Webhook-Id</code> y <code>X-Webhook-Lote</code> (<code>1/3</code>):
-                      identifican el aviso. Se entrega <strong>al menos una vez</strong>: descarte
-                      los repetidos con esta pareja.</li>
-                    <li><code>X-Webhook-Timestamp</code>: segundos Unix del envío.</li>
-                    <li><code>X-Webhook-Signature</code>: <code>sha256=</code> + HMAC-SHA256 del
-                      texto <code>&lt;timestamp&gt;.&lt;cuerpo exacto&gt;</code> con el secreto.</li>
-                  </ul>
-                  <p>
-                    Responda con un código 2xx para confirmar. Cualquier otro se reintenta. Un
-                    archivo grande llega en varios lotes; conviene rechazar timestamps de hace más
-                    de unos minutos.
-                  </p>
-                </div>
-              </details>
-
               @if (cfg.ultimo_envio) {
                 <div class="alert-info">
                   Último envío: {{ cfg.ultimo_envio | date: 'dd-MM-yyyy HH:mm' }}
@@ -224,6 +506,109 @@ import { AdminWebhookService } from '../services/admin-webhook.service';
                   {{ guardando() ? 'Guardando...' : 'Guardar webhook' }}
                 </button>
               </div>
+            </div>
+          </div>
+
+          <!-- ── Estructura de los datos ────────────────────────── -->
+          <div class="card max-w-3xl">
+            <div class="card-header">
+              <h2 class="font-semibold text-neutral-800">Estructura de los datos</h2>
+              <p class="text-sm text-neutral-500">
+                Así viajan los avisos hacia el sistema receptor. Conviene compartir esta sección
+                con quien lo programa.
+              </p>
+            </div>
+            <div class="border-b border-neutral-200 px-4">
+              <nav class="tabs-nav" role="tablist" aria-label="Estructura del aviso">
+                @for (t of pestanasDoc; track t.clave) {
+                  <button type="button" role="tab" class="tab-link"
+                          [attr.aria-selected]="tabDoc() === t.clave"
+                          [class.tab-link-activo]="tabDoc() === t.clave"
+                          (click)="tabDoc.set(t.clave)">
+                    {{ t.etiqueta }}
+                  </button>
+                }
+              </nav>
+            </div>
+            <div class="card-body space-y-4">
+              @if (tabDoc() === 'firma') {
+                <div class="space-y-3 text-sm text-neutral-700">
+                  <p>
+                    Cada aviso es una petición <code>POST</code> con cuerpo JSON (UTF-8) y estos
+                    encabezados:
+                  </p>
+                  <div class="table-wrapper">
+                    <table class="data-table">
+                      <thead>
+                        <tr><th scope="col">Encabezado</th><th scope="col">Qué contiene</th></tr>
+                      </thead>
+                      <tbody>
+                        @for (h of encabezados; track h.nombre) {
+                          <tr>
+                            <td class="whitespace-nowrap"><code>{{ h.nombre }}</code></td>
+                            <td>{{ h.descripcion }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  <p class="font-medium text-neutral-800">Cómo verificar la firma</p>
+                  <ol class="list-decimal pl-5 space-y-1">
+                    <li>Tome el cuerpo <strong>tal como llegó</strong>, antes de interpretarlo como JSON.</li>
+                    <li>Arme el texto <code>&lt;X-Webhook-Timestamp&gt;.&lt;cuerpo&gt;</code>.</li>
+                    <li>Calcule su HMAC-SHA256 con el secreto de firma y compárelo con el valor que
+                      viene después de <code>sha256=</code>.</li>
+                    <li>Rechace el aviso si la firma no calza o si el timestamp tiene más de unos
+                      minutos de antigüedad.</li>
+                  </ol>
+                  <p class="font-medium text-neutral-800">Qué responder y qué pasa si falla</p>
+                  <ul class="list-disc pl-5 space-y-1">
+                    <li>Un código <strong>2xx</strong> confirma la recepción. Cualquier otro se
+                      reintenta, con esperas crecientes, hasta 6 veces. Después queda como fallida
+                      hasta que se reintente a mano.</li>
+                    <li>La entrega es <strong>al menos una vez</strong>: un mismo aviso puede llegar
+                      repetido. Descártelo usando <code>X-Webhook-Id</code> junto con
+                      <code>X-Webhook-Lote</code>.</li>
+                    <li>No se siguen redirecciones: la URL configurada debe responder directamente.</li>
+                  </ul>
+                </div>
+              } @else {
+                <p class="text-sm text-neutral-700">{{ docActual().intro }}</p>
+
+                <div class="table-wrapper">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Campo</th>
+                        <th scope="col">Tipo</th>
+                        <th scope="col">Qué es</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (c of docActual().campos; track c.campo) {
+                        <tr>
+                          <td class="whitespace-nowrap font-medium"><code>{{ c.campo }}</code></td>
+                          <td class="whitespace-nowrap text-neutral-500">{{ c.tipo }}</td>
+                          <td class="text-sm">{{ c.descripcion }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+
+                @if (docActual().nota) {
+                  <p class="text-sm text-neutral-600">{{ docActual().nota }}</p>
+                }
+
+                <div>
+                  <div class="flex items-center justify-between gap-2 mb-1">
+                    <p class="text-sm font-medium text-neutral-800">{{ docActual().tituloEjemplo }}</p>
+                    <button type="button" class="btn-secondary btn-sm"
+                            (click)="copiar(docActual().ejemplo)">Copiar ejemplo</button>
+                  </div>
+                  <pre class="text-xs bg-neutral-50 border border-neutral-200 rounded-lg p-4 overflow-x-auto"><code>{{ docActual().ejemplo }}</code></pre>
+                </div>
+              }
             </div>
           </div>
 
@@ -399,6 +784,20 @@ export class ClienteWebhookComponent implements OnInit {
   filtro = signal<EstadoEnvio | ''>('');
 
   ocupado = computed(() => this.guardando() || this.probando() || this.rotando());
+
+  readonly pestanasDoc: { clave: PestanaDoc; etiqueta: string }[] = [
+    { clave: 'mensaje', etiqueta: 'El aviso' },
+    { clave: 'estado_diario', etiqueta: 'Estado diario' },
+    { clave: 'movimientos', etiqueta: 'Movimientos' },
+    { clave: 'audiencias', etiqueta: 'Audiencias' },
+    { clave: 'firma', etiqueta: 'Firma y entrega' },
+  ];
+  readonly encabezados = ENCABEZADOS;
+  tabDoc = signal<PestanaDoc>('mensaje');
+  docActual = computed<DocReporte>(() => {
+    const t = this.tabDoc();
+    return DOC[t === 'firma' ? 'mensaje' : t];
+  });
 
   ngOnInit(): void {
     if (!this.listo()) return;
