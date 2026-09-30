@@ -136,6 +136,18 @@ class AuthClienteService:
                 db_tenant.commit()
                 raise UnauthorizedException("Credenciales inválidas")
 
+            if registro.es_integracion:
+                # Cuenta de un sistema externo: entra con API key, nunca por
+                # acá. Su clave es aleatoria y nadie la conoce, así que esto ya
+                # no debería alcanzarse; queda como segundo cerrojo por si
+                # alguien se la reasigna desde administración.
+                auditoria.registrar(
+                    db_tenant, auditoria.MODULO_AUTH, auditoria.ACCION_LOGIN_FALLIDO,
+                    usuario_id=registro.id, ip=ip, detalle="cuenta de integración",
+                )
+                db_tenant.commit()
+                raise UnauthorizedException("Credenciales inválidas")
+
             if not registro.activo:
                 auditoria.registrar(
                     db_tenant, auditoria.MODULO_AUTH, auditoria.ACCION_LOGIN_FALLIDO,

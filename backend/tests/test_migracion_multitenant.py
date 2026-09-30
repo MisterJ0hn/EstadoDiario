@@ -146,6 +146,8 @@ def test_todas_las_tablas_del_tenant_se_copian_o_se_justifican():
     #   y no hay nada que copiar. Que nazca vacío no abre un hueco: la clave
     #   vigente se veta igual, porque sale del propio usuario y no del
     #   historial (ver `_hashes_vetados` en app/services/password_service.py).
+    # - `webhook_envio`: la cola del webhook es posterior a la migración; una
+    #   instalación vieja no tiene entregas pendientes que conservar.
     aparte = {
         "usuario",
         "log_actividades",
@@ -154,6 +156,7 @@ def test_todas_las_tablas_del_tenant_se_copian_o_se_justifican():
         "causa",
         "causa_corte",
         "usuario_password_historial",
+        "webhook_envio",
     }
     sin_cubrir = set(BaseTenant.metadata.tables) - set(TABLAS_A_COPIAR) - aparte
     assert not sin_cubrir, (

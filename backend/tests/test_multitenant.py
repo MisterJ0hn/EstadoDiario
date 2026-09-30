@@ -130,6 +130,11 @@ def test_la_base_principal_no_lleva_datos_operativos():
     # Si una tabla de causas apareciera acá, se estaría creando en la base
     # principal y todos los clientes la compartirían.
     assert sorted(BaseMaestra.metadata.tables) == [
+        # Credenciales de sistemas externos (hash, nunca la key) y su contador de
+        # límite por minuto. Van acá porque hay que resolver a qué cliente
+        # pertenece la key ANTES de abrir la base de ninguno.
+        "api_key",
+        "api_key_uso",
         "cliente",
         # Cada vez que un cliente pasó de activo a suspendido o al revés. Es
         # dato COMERCIAL de la plataforma —de ahí sale la serie mensual del
@@ -145,6 +150,7 @@ def test_la_base_principal_no_lleva_datos_operativos():
         # plata es la de la plataforma, no la del estudio. Una por cliente
         # significaría que un estudio se cobra a sí mismo.
         "configuracion_transbank",
+        "configuracion_webhook",
         "configuracion_whatsapp",
         # Facturación de la plataforma: es dato COMERCIAL, no operativo del
         # estudio. Quien lo mira es el administrador que factura, que nunca abre
@@ -192,13 +198,13 @@ def _credenciales(guid: str, cliente_id: int = 7, usuario_id: int = 3):
 
 
 def test_el_tenant_sale_del_token():
-    contexto = get_tenant_actual(_credenciales("guid-a"), x_cliente_guid=None)
+    contexto = get_tenant_actual(_credenciales("guid-a"), x_cliente_guid=None, x_api_key=None)
     assert contexto.guid == "guid-a"
     assert contexto.cliente_id == 7
 
 
 def test_header_que_calza_no_molesta():
-    contexto = get_tenant_actual(_credenciales("guid-a"), x_cliente_guid="guid-a")
+    contexto = get_tenant_actual(_credenciales("guid-a"), x_cliente_guid="guid-a", x_api_key=None)
     assert contexto.guid == "guid-a"
 
 
@@ -206,7 +212,7 @@ def test_header_de_otro_cliente_se_rechaza():
     # El caso peligroso: sesión válida + header cambiado a mano. Si esto
     # pasara, se leería la base de otro estudio.
     with pytest.raises(HTTPException) as e:
-        get_tenant_actual(_credenciales("guid-a"), x_cliente_guid="guid-de-otro")
+        get_tenant_actual(_credenciales("guid-a"), x_cliente_guid="guid-de-otro", x_api_key=None)
     assert e.value.status_code == 403
 
 
@@ -214,7 +220,7 @@ def test_token_sin_guid_no_rutea_a_ninguna_base():
     token = create_access_token({"sub": "3", "ambito": AMBITO_CLIENTE})
     credenciales = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
     with pytest.raises(HTTPException) as e:
-        get_tenant_actual(credenciales, x_cliente_guid=None)
+        get_tenant_actual(credenciales, x_cliente_guid=None, x_api_key=None)
     assert e.value.status_code == 401
 
 

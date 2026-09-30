@@ -71,6 +71,27 @@ class Settings(BaseSettings):
     ADMIN_INICIAL_USUARIO: str = "admin"
     ADMIN_INICIAL_PASSWORD: str = "admin123"
 
+    # API keys de sistemas externos (ver app/core/api_key.py). Límite de
+    # peticiones por minuto con el que nace una key si no se indica otro.
+    API_KEY_LIMITE_POR_MINUTO: int = 60
+
+    # Webhook de importación por correo (ver app/services/webhook_service.py).
+    # Tiempo máximo de cada entrega. Corto a propósito: se despacha desde el job
+    # de correo y desde un endpoint, y un receptor lento no debe colgarlos.
+    WEBHOOK_TIMEOUT_SEGUNDOS: int = 10
+    # Filas por petición. Un archivo más grande se reparte en varios lotes.
+    WEBHOOK_TAMANO_LOTE: int = 500
+    # Intentos antes de dejar la entrega como `fallido`.
+    WEBHOOK_MAX_INTENTOS: int = 6
+    # Tope de entregas por pasada del despachador: si el receptor está caído no
+    # se gasta la pasada entera esperando timeouts; el resto queda para la próxima.
+    WEBHOOK_MAX_ENVIOS_POR_PASADA: int = 50
+    # Por defecto solo https y solo hacia Internet pública. Un webhook con
+    # destino en la red interna es la forma clásica de hacer que el servidor
+    # consulte cosas que no debe (SSRF); se abre solo a propósito.
+    WEBHOOK_PERMITIR_HTTP: bool = False
+    WEBHOOK_PERMITIR_REDES_PRIVADAS: bool = False
+
     # JWT
     BACKEND_SECRET_KEY: str = "dev-secret-key"
     BACKEND_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

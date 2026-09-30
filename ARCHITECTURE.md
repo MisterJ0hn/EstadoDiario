@@ -344,6 +344,75 @@ El correo sale por la cuenta SMTP global del sistema (la misma de los
 informes), que vive en la base principal. Sin ella configurada y activa, el
 flujo responde que no se pudo enviar.
 
+### Webhook de importación por correo
+
+Cuando termina de importarse un archivo que llegó por correo, el sistema avisa a
+una URL configurada **por cliente** (`configuracion_webhook`, base principal).
+Un evento por archivo: `estado_diario.importado`, `movimientos.importado` o
+`audiencias.importado`, con los datos del archivo y sus filas. La cartera de
+causas no se envía. Lo implementa `app/services/webhook_service.py`, enganchado
+en `CorreoService` (`_procesar_adjunto` anota, `revisar` despacha).
+
+- **Importar y avisar son dos cosas.** Al importar solo se anota qué enviar
+  (`webhook_envio`, base del cliente, una fila por lote); el envío ocurre al
+  cerrar la casilla. Un receptor caído no rompe ni retrasa la importación.
+- **Reintentos**: espera creciente (1 min, 5 min, 30 min, 2 h, 6 h) y
+  `WEBHOOK_MAX_INTENTOS` intentos; después queda `fallido` hasta que el
+  administrador lo reintente. Los reintentos los dispara el mismo job de correo
+  (`revisar_correo`), así que su cadencia real es la del cron, y corren aunque la
+  casilla de ese cliente no toque revisarse.
+- **Entrega al menos una vez.** El receptor descarta repetidos por
+  `X-Webhook-Id` + `X-Webhook-Lote`. Dos despachadores simultáneos no duplican:
+  reclaman la fila con un UPDATE atómico.
+- **Lotes**: un archivo de más de `WEBHOOK_TAMANO_LOTE` filas va en varias
+  peticiones con el mismo `evento_id`. El cuerpo se arma al enviar, no se guarda.
+- **Firma**: `X-Webhook-Signature: sha256=` + HMAC-SHA256 con el secreto del
+  cliente de `"<X-Webhook-Timestamp>.<cuerpo exacto>"`. El receptor debería
+  rechazar timestamps viejos. El secreto se genera al guardar la configuración
+  por primera vez, se muestra una vez y se guarda cifrado.
+- **Destino**: solo https y solo direcciones públicas, validado al guardar y
+  antes de cada envío; sin seguir redirecciones. Se abre con
+  `WEBHOOK_PERMITIR_HTTP` y `WEBHOOK_PERMITIR_REDES_PRIVADAS`.
+- **Contrato de las filas**: lista explícita de campos por reporte. No salen
+  leído/pendiente, asistencia ni datos de Google.
+
+Se administra desde `admin_api` en `/api/v1/admin/clientes/{id}/webhook`:
+configurar, rotar secreto, probar, ver entregas y reintentar las fallidas. Hoy no
+hay pantalla en `admin_app`.
+
+### API keys para sistemas externos
+
+El login de personas exige reCAPTCHA y un servidor no puede producir ese token,
+así que un sistema externo entra por otra puerta: el header `X-API-Key`, sin
+login ni captcha. El login de las personas no cambia. Lo implementa
+`app/core/api_key.py`, enganchado en `get_tenant_actual` (`app/core/deps.py`):
+con key, el tenant sale de la fila `api_key` de la base principal y todos los
+endpoints existentes funcionan sin tocarlos.
+
+- **Se manda en cada request**, no se canjea por un JWT: la revocación es
+  inmediata y el límite y la auditoría son por request.
+- **Solo queda el hash** (SHA-256). La key en claro se muestra una vez, al
+  emitirla; si se pierde, se revoca y se emite otra.
+- **Deny por defecto.** Lee solo `PREFIJOS_LECTURA` (causas, estado diario,
+  movimientos, audiencias, reportes, dashboard, jurisdicciones). Escribe solo
+  con `permite_escritura` y solo bajo `prefijos_escritura`, que por defecto es
+  `/api/v1/causas`. Auth, pagos, facturas, configuración y Google quedan
+  cerrados aunque se agreguen endpoints nuevos.
+- **Límite por minuto por key**, con contador en la tabla `api_key_uso`
+  (ventana fija). Está en la base y no en memoria porque no se sabe cuántos
+  workers corren. Sin Redis, y compatible con PostgreSQL 9.2 (sin `ON CONFLICT`).
+- **Un usuario de integración por key** en la base del cliente
+  (`usuario.es_integracion`): no inicia sesión, no cuenta para el CAL y hace que
+  las causas cargadas y la bitácora digan qué sistema fue.
+- **Bitácora** (`auth` / `api_key_*`): cada escritura, cada denegación y el
+  primer exceso de límite de cada minuto. Las lecturas solo actualizan
+  `ultimo_uso` y `ultimo_ip`.
+
+Las keys las emite el administrador de la plataforma desde `admin_api`
+(`/api/v1/admin/clientes/{id}/api-keys`: listar, emitir, cambiar límite,
+revocar). Hoy no hay pantalla en `admin_app`; se usa desde `/docs` del puerto
+8092.
+
 ### reCAPTCHA v3 en los formularios públicos
 
 Son cuatro y no tienen límite de intentos: los dos logins,

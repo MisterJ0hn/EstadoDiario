@@ -98,6 +98,9 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # Clave provisoria del usuario del cliente. Los que ya existen tienen su
     # clave definitiva, así que el DEFAULT correcto es FALSE.
     ("usuario", "debe_cambiar_password", "BOOLEAN DEFAULT FALSE"),
+    # Cuenta de un sistema externo con API key. Los usuarios que ya existen son
+    # personas, de ahí el DEFAULT.
+    ("usuario", "es_integracion", "BOOLEAN DEFAULT FALSE"),
     # De qué reporte salió cada fila de la cartera. Las que ya están se
     # cargaron desde el Excel de Causas, de ahí el DEFAULT: marcarlas como
     # deducidas sería mentir sobre su procedencia.
@@ -213,6 +216,7 @@ TABLAS_TENANT = (
     "usuario",
     "usuario_password_historial",
     "usuario_rut",
+    "webhook_envio",
 )
 
 

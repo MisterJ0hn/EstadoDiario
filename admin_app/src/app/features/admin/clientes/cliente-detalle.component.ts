@@ -9,13 +9,14 @@ import { NotificationService } from '@core/services/notification.service';
 import { passwordCumplePolitica, reglasPassword } from '@core/utils/password';
 import { formatearRut, rutPlano, rutValido } from '@core/utils/rut';
 import { AdminClienteService } from '../services/admin-cliente.service';
+import { ClienteWebhookComponent } from './cliente-webhook.component';
 
-type Seccion = 'datos' | 'inbox' | 'usuarios';
+type Seccion = 'datos' | 'inbox' | 'webhook' | 'usuarios';
 
 @Component({
   selector: 'app-cliente-detalle',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, ClienteWebhookComponent],
   template: `
     <div class="space-y-6">
       <!-- Encabezado -->
@@ -468,6 +469,11 @@ type Seccion = 'datos' | 'inbox' | 'usuarios';
           }
         }
 
+        <!-- ── Webhook ────────────────────────────────────────────── -->
+        @if (seccion() === 'webhook') {
+          <app-cliente-webhook [clienteId]="clienteId" [listo]="c.aprovisionamiento === 'listo'" />
+        }
+
         <!-- ── Usuarios ───────────────────────────────────────────── -->
         @if (seccion() === 'usuarios') {
           <div class="card">
@@ -747,6 +753,7 @@ export class ClienteDetalleComponent implements OnInit {
   readonly secciones: { clave: Seccion; etiqueta: string }[] = [
     { clave: 'datos', etiqueta: 'Datos del cliente' },
     { clave: 'inbox', etiqueta: 'Correo PJUD' },
+    { clave: 'webhook', etiqueta: 'Webhook' },
     { clave: 'usuarios', etiqueta: 'Usuarios' },
   ];
 

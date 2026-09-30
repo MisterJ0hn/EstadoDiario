@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from admin_api.app.endpoints import (
     admin_sistema,
+    api_keys,
     auth_admin,
     clientes,
     configuracion_google,
@@ -11,6 +12,7 @@ from admin_api.app.endpoints import (
     facturacion,
     logs,
     pjud_logs,
+    webhook,
 )
 
 # Mismo prefijo que la API de los estudios a propósito: las rutas no cambiaron
@@ -21,6 +23,8 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_admin.router)
 api_router.include_router(admin_sistema.router)
 api_router.include_router(clientes.router)
+api_router.include_router(api_keys.router)
+api_router.include_router(webhook.router)
 api_router.include_router(facturacion.router)
 # Después de `clientes`: las dos cuelgan de /admin/clientes y la bitácora
 # usa una subruta fija (`/{id}/logs`), así que el orden no las cruza.

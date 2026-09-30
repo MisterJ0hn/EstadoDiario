@@ -33,6 +33,7 @@ from app.repositories.cliente_repository import ClienteRepository
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.correo_log_repository import CorreoLogRepository
 from app.repositories.usuario_repository import UsuarioRepository
+from app.services import webhook_service
 from app.services.correo_service import CorreoService
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,24 @@ def _primer_usuario(db_tenant) -> int | None:
     return None
 
 
+def _reintentar_webhooks(db_maestra) -> None:
+    """Una pasada sobre las entregas pendientes de todos los clientes.
+
+    Va en este job y no en uno propio para no pedir otra entrada de crontab: es
+    lo que hace que un aviso que falló se reintente solo, aunque la casilla de
+    ese cliente no toque revisarse ahora. Nunca hace fallar la corrida.
+    """
+    try:
+        r = webhook_service.despachar_todos(db_maestra)
+        if r["enviados"] or r["con_error"]:
+            logger.info(
+                "Webhook: %d enviados, %d con error (%d clientes)",
+                r["enviados"], r["con_error"], r["clientes"],
+            )
+    except Exception:
+        logger.exception("Falló la pasada de webhooks")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Revisa la casilla e importa los estados diarios")
     parser.add_argument(
@@ -115,6 +134,7 @@ def main() -> int:
         configs = ConfiguracionCorreoRepository(db_maestra).find_activas()
         if not configs:
             logger.info("Sin acción: no hay casillas de correo activas")
+            _reintentar_webhooks(db_maestra)
             return 0
 
         clientes = ClienteRepository(db_maestra)
@@ -166,6 +186,7 @@ def main() -> int:
                 logger.exception("Falló la revisión de la casilla del cliente %s", cliente.guid)
 
         logger.info("Revisión programada: %d casillas revisadas, %d con error", revisadas, con_error)
+        _reintentar_webhooks(db_maestra)
         return 1 if con_error else 0
     except Exception:
         logger.exception("La revisión programada falló")

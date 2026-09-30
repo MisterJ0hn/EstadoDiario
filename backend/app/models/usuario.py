@@ -55,6 +55,10 @@ class Usuario(BaseTenant):
     # Mientras esté puesta el usuario entra, pero el frontend lo manda derecho
     # a cambiarla (misma lógica que el administrador del sistema).
     debe_cambiar_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Cuenta de un sistema externo (ver `ApiKey`), no de una persona. No inicia
+    # sesión, no ocupa cupo del CAL y existe para que lo que hace una API key
+    # quede atribuido a ella en la bitácora.
+    es_integracion: Mapped[bool] = mapped_column(Boolean, default=False)
     fecha_creacion: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

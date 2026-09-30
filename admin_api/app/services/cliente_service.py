@@ -52,7 +52,8 @@ logger = logging.getLogger(__name__)
 _SQL_RESUMEN_CLIENTE = text(
     f"""
     SELECT
-        (SELECT COUNT(*) FROM usuario WHERE activo) AS usuarios_activos,
+        (SELECT COUNT(*) FROM usuario
+          WHERE activo AND NOT COALESCE(es_integracion, FALSE)) AS usuarios_activos,
         (SELECT COUNT(*) FROM causa
           WHERE estado_diario_origen_id = (
                 SELECT id FROM estado_diario_origen

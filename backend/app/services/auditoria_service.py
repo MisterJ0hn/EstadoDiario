@@ -62,6 +62,11 @@ ACCION_ENVIAR = "enviar"
 ACCION_MARCAR_LEIDO = "marcar_leido"
 ACCION_MARCAR_NO_LEIDO = "marcar_no_leido"
 ACCION_MARCAR_PENDIENTE = "marcar_pendiente"
+# Sistemas externos que entran con API key (ver `app/core/api_key.py`). Van en
+# el módulo `auth` porque son accesos, no acciones sobre un módulo de datos.
+ACCION_API_KEY_ESCRITURA = "api_key_escritura"
+ACCION_API_KEY_DENEGADO = "api_key_denegado"
+ACCION_API_KEY_LIMITE = "api_key_limite"
 ACCION_CONECTAR = "conectar"
 ACCION_DESCONECTAR = "desconectar"
 

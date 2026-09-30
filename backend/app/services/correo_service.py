@@ -31,7 +31,8 @@ from app.models.correo_log import (
 )
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.correo_log_repository import CorreoLogRepository
-from app.services import deteccion_archivo
+from app.models.maestra.cliente import Cliente
+from app.services import deteccion_archivo, webhook_service
 from app.services.import_service import ImportService
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,8 @@ class CorreoService:
     def __init__(self, db: Session, db_maestra: Session):
         # Base del cliente: acá se escribe lo importado y la bitácora.
         self.db = db
-        # Base principal: solo la configuración de la casilla.
+        # Base principal: la configuración de la casilla y la del webhook.
+        self.db_maestra = db_maestra
         self.config_repo = ConfiguracionCorreoRepository(db_maestra)
         self.log_repo = CorreoLogRepository(db)
         # Usuario de la base del cliente a nombre de quien queda lo importado.
@@ -73,6 +75,9 @@ class CorreoService:
         # de puntos: pasarlo por parámetro en todos ellos era mucha superficie
         # para olvidarse en uno.
         self._usuario_actual: Optional[int] = None
+        # Cliente dueño de la casilla que se está revisando. Lo necesita el aviso
+        # del webhook, que se dispara desde `_procesar_adjunto`.
+        self._cliente_id: Optional[int] = None
 
     # ── Conexión ──────────────────────────────────────────
 
@@ -155,6 +160,7 @@ class CorreoService:
         """
         config = self.config_repo.get_or_create(cliente_id)
         self._usuario_actual = usuario_id
+        self._cliente_id = cliente_id
 
         if not config.activo:
             return {"exito": False, "mensaje": "La ingesta por correo está desactivada", "procesados": 0}
@@ -224,7 +230,22 @@ class CorreoService:
         )
         self.config_repo.save(config)
 
+        # Con la casilla ya cerrada y el resultado guardado: un receptor lento
+        # no puede alargar la conexión IMAP ni perder el resumen de la corrida.
+        if resumen["importados"]:
+            self._despachar_webhook(cliente_id)
+
         return {"exito": True, "mensaje": config.ultimo_resultado, "procesados": procesados, **resumen}
+
+    def _despachar_webhook(self, cliente_id: int) -> None:
+        """Entrega lo que esta corrida dejó anotado. Nunca lanza: el correo ya
+        se importó, y que el aviso falle se reintenta en la próxima pasada."""
+        try:
+            cliente = self.db_maestra.get(Cliente, cliente_id)
+            if cliente is not None:
+                webhook_service.despachar(self.db, self.db_maestra, cliente)
+        except Exception:  # noqa: BLE001
+            logger.exception("Webhook: falló el despacho tras la ingesta (cliente %s)", cliente_id)
 
     def _procesar_mensaje(self, client, num, config, disparo, usuario_id, resumen) -> None:
         estado, datos = client.fetch(num, "(RFC822)")
@@ -429,6 +450,13 @@ class CorreoService:
             origen_id=resultado.get("origen_id"),
             movimientos=resultado.get("movimientos_importados"),
             disparo=disparo,
+        )
+
+        # Recién con el archivo importado y anotado en la bitácora. Solo se
+        # anota la entrega; el envío ocurre al terminar la corrida.
+        webhook_service.avisar_importacion(
+            self.db, self.db_maestra, self._cliente_id, detectado.tipo,
+            resultado.get("origen_id"),
         )
 
     @staticmethod

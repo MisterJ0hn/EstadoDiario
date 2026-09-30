@@ -8,6 +8,7 @@ aunque el proceso solo haya importado uno (los jobs, por ejemplo).
 """
 
 from app.models.maestra import (  # noqa: F401
+    api_key,
     cliente,
     cliente_estado_historial,
     configuracion_correo,
@@ -15,6 +16,7 @@ from app.models.maestra import (  # noqa: F401
     configuracion_sistema,
     configuracion_smtp,
     configuracion_transbank,
+    configuracion_webhook,
     configuracion_whatsapp,
     factura,
     pago,

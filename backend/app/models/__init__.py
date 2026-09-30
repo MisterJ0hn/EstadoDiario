@@ -1,6 +1,6 @@
 """Modelos de la base de un CLIENTE (tenant), declarados sobre `BaseTenant`.
 
-Son las 18 tablas que se crean en `estado_diario_<guid>` al dar de alta un
+Son las 19 tablas que se crean en `estado_diario_<guid>` al dar de alta un
 cliente. Los modelos de la base principal están en `app.models.maestra`.
 
 Importar cualquier submódulo (ej. `from app.models.usuario import Usuario`)
@@ -30,4 +30,5 @@ from app.models import (  # noqa: F401
     reporte_plantilla,
     usuario,
     usuario_rut,
+    webhook_envio,
 )
