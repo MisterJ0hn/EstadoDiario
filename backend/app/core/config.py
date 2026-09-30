@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     # API keys de sistemas externos (ver app/core/api_key.py). Límite de
     # peticiones por minuto con el que nace una key si no se indica otro.
     API_KEY_LIMITE_POR_MINUTO: int = 60
+    # Cuántos proxies confiables hay delante del backend (1 si solo está Nginx).
+    # De esto depende qué entrada de X-Forwarded-For se toma como IP del que
+    # llama; ver `api_key.ip_confiable`. Un valor mayor al real deja pasar una IP
+    # falseada; uno menor, deja fuera a todos.
+    API_KEY_PROXIES_CONFIABLES: int = 1
 
     # Webhook de importación por correo (ver app/services/webhook_service.py).
     # Tiempo máximo de cada entrega. Corto a propósito: se despacha desde el job

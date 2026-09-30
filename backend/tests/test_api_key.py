@@ -56,6 +56,7 @@ def base():
         db.commit()
         cliente_id = cliente.cliente_id
 
+    api_key._ultima_auditoria_ip.clear()
     with (
         patch.object(api_key, "engine_maestro", engine),
         patch.object(api_key, "SesionMaestra", Sesion),
@@ -530,9 +531,160 @@ def test_http_429_trae_retry_after(base, cliente_http):
     assert "retry-after" in r.headers
 
 
-def test_http_la_ip_sale_de_x_forwarded_for(base, cliente_http):
+def test_http_la_ip_es_la_que_agrego_el_proxy_no_la_primera(base, cliente_http):
     key = _emitir(base, permite_escritura=True)
+    # Nginx agrega la IP real al final: "<lo que mandó el cliente>, <IP real>".
     cliente_http.post(
         "/api/v1/causas/upload", headers={"X-API-Key": key, "X-Forwarded-For": "8.8.8.8, 10.0.0.1"}
     )
-    assert base.bitacora.call_args.kwargs["ip"] == "8.8.8.8"
+    assert base.bitacora.call_args.kwargs["ip"] == "10.0.0.1"
+
+
+# ── IPs permitidas ────────────────────────────────────────
+
+
+def test_normalizar_ips_deja_la_forma_canonica_y_quita_repetidas():
+    assert api_key.normalizar_ips(
+        [" 200.1.2.3 ", "200.1.2.3", "200.1.2.3/24", "", "2001:DB8::1"]
+    ) == ["200.1.2.3", "200.1.2.0/24", "2001:db8::1"]
+
+
+@pytest.mark.parametrize("malo", ["999.1.1.1", "abc", "200.1.2.3/40", "200.1.2", "1.2.3.4-1.2.3.9"])
+def test_normalizar_ips_rechaza_lo_que_no_es_una_ip(malo):
+    with pytest.raises(ValueError):
+        api_key.normalizar_ips(["200.1.2.3", malo])
+
+
+def _redes(texto):
+    return api_key.ips_de(ApiKey(id=1, ips_permitidas=texto))
+
+
+def test_una_ip_calza_con_ip_suelta_y_con_rango():
+    redes = _redes("200.1.2.3,10.0.0.0/8,2001:db8::/32")
+    assert api_key.ip_en_redes("200.1.2.3", redes)
+    assert api_key.ip_en_redes("10.9.9.9", redes)
+    assert api_key.ip_en_redes("2001:db8::55", redes)
+    assert not api_key.ip_en_redes("200.1.2.4", redes)
+    assert not api_key.ip_en_redes("11.0.0.1", redes)
+
+
+def test_una_ipv4_mapeada_en_ipv6_es_la_misma_maquina():
+    assert api_key.ip_en_redes("::ffff:200.1.2.3", _redes("200.1.2.3"))
+
+
+@pytest.mark.parametrize("ip", [None, "", "no-es-una-ip", "200.1.2"])
+def test_una_ip_ilegible_nunca_calza(ip):
+    assert not api_key.ip_en_redes(ip, _redes("200.1.2.3"))
+
+
+def test_sin_restriccion_la_lista_esta_vacia():
+    assert _redes(None) == [] and _redes("") == []
+
+
+def test_una_lista_corrupta_en_la_base_cierra_la_key_en_vez_de_abrirla():
+    redes = _redes("esto-no-es-una-ip")
+    assert redes  # sigue "con restricción"
+    assert not api_key.ip_en_redes("200.1.2.3", redes)
+
+
+class _Peticion:
+    def __init__(self, xff=None, host=None):
+        from types import SimpleNamespace
+
+        self.headers = {"x-forwarded-for": xff} if xff is not None else {}
+        self.client = SimpleNamespace(host=host) if host else None
+
+
+def test_la_ip_es_la_que_agrego_el_proxy_y_no_la_que_mando_el_cliente():
+    """El ataque: mandar `X-Forwarded-For` con una IP permitida. Nginx agrega la
+    real al final, así que la primera es del atacante y la última es de fiar."""
+    req = _Peticion(xff="200.1.2.3, 9.9.9.9")
+    assert api_key.ip_confiable(req) == "9.9.9.9"
+
+
+def test_con_dos_proxies_se_toma_la_entrada_que_dejan_a_la_derecha():
+    req = _Peticion(xff="200.1.2.3, 9.9.9.9, 172.18.0.2")
+    with patch.object(api_key.settings, "API_KEY_PROXIES_CONFIABLES", 2):
+        assert api_key.ip_confiable(req) == "9.9.9.9"
+
+
+def test_con_menos_entradas_que_proxies_se_usa_la_ip_del_socket():
+    # Llegó sin pasar por todos los proxies: no se le cree al encabezado.
+    req = _Peticion(xff="200.1.2.3", host="172.18.0.2")
+    with patch.object(api_key.settings, "API_KEY_PROXIES_CONFIABLES", 2):
+        assert api_key.ip_confiable(req) == "172.18.0.2"
+
+
+def test_sin_encabezado_se_usa_la_ip_del_socket():
+    assert api_key.ip_confiable(_Peticion(host="9.9.9.9")) == "9.9.9.9"
+    assert api_key.ip_confiable(_Peticion()) is None
+
+
+def test_desde_una_ip_permitida_entra(base):
+    key = _emitir(base, ips_permitidas="200.1.2.3,10.0.0.0/8")
+    assert api_key.autenticar(key, "GET", "/api/v1/causas", ip="200.1.2.3").guid == "guid-uno"
+    assert api_key.autenticar(key, "GET", "/api/v1/causas", ip="10.5.5.5").guid == "guid-uno"
+
+
+def test_desde_otra_ip_da_el_mismo_401_que_una_key_invalida(base):
+    key = _emitir(base, ips_permitidas="200.1.2.3")
+    with pytest.raises(HTTPException) as e:
+        api_key.autenticar(key, "GET", "/api/v1/causas", ip="6.6.6.6")
+    assert _status(e) == 401
+    # No dice "IP no permitida": le confirmaría a quien robó la key que sirve.
+    assert e.value.detail == api_key.MENSAJE_KEY_INVALIDA
+
+
+def test_sin_ip_conocida_con_restriccion_no_entra(base):
+    key = _emitir(base, ips_permitidas="200.1.2.3")
+    with pytest.raises(HTTPException) as e:
+        api_key.autenticar(key, "GET", "/api/v1/causas", ip=None)
+    assert _status(e) == 401
+
+
+def test_sin_restriccion_entra_desde_cualquier_ip(base):
+    key = _emitir(base)
+    assert api_key.autenticar(key, "GET", "/api/v1/causas", ip="6.6.6.6").guid == "guid-uno"
+
+
+def test_una_ip_rechazada_no_gasta_el_limite_de_la_key(base):
+    """Si gastara cupo, quien robó la key dejaría sin servicio al sistema legítimo."""
+    key = _emitir(base, limite_por_minuto=1, ips_permitidas="200.1.2.3")
+    for _ in range(5):
+        with pytest.raises(HTTPException) as e:
+            api_key.autenticar(key, "GET", "/api/v1/causas", ip="6.6.6.6")
+        assert _status(e) == 401
+    # El sistema legítimo sigue teniendo su cupo entero.
+    assert api_key.autenticar(key, "GET", "/api/v1/causas", ip="200.1.2.3").guid == "guid-uno"
+
+
+def test_el_rechazo_por_ip_se_registra_una_vez_por_minuto_no_por_intento(base):
+    key = _emitir(base, ips_permitidas="200.1.2.3")
+    for _ in range(10):
+        with pytest.raises(HTTPException):
+            api_key.autenticar(key, "GET", "/api/v1/causas", ip="6.6.6.6")
+    assert _acciones(base) == [auditoria.ACCION_API_KEY_DENEGADO]
+    detalle = base.bitacora.call_args.kwargs["detalle"]
+    assert "ip_no_permitida" in detalle and "6.6.6.6" in detalle
+
+
+def test_la_restriccion_de_ip_se_aplica_por_key(base):
+    cerrada = _emitir(base, ips_permitidas="200.1.2.3")
+    abierta = _emitir(base)
+    with pytest.raises(HTTPException):
+        api_key.autenticar(cerrada, "GET", "/api/v1/causas", ip="6.6.6.6")
+    assert api_key.autenticar(abierta, "GET", "/api/v1/causas", ip="6.6.6.6").guid == "guid-uno"
+
+
+def test_http_no_se_puede_falsear_la_ip_con_x_forwarded_for(base, cliente_http):
+    key = _emitir(base, ips_permitidas="8.8.8.8")
+    # El cliente se declara 8.8.8.8, pero el proxy agregó su IP real al final.
+    falsa = cliente_http.get(
+        "/api/v1/causas", headers={"X-API-Key": key, "X-Forwarded-For": "8.8.8.8, 6.6.6.6"}
+    )
+    assert falsa.status_code == 401
+    # Y cuando de verdad viene de esa IP (lo último que agregó el proxy), pasa.
+    real = cliente_http.get(
+        "/api/v1/causas", headers={"X-API-Key": key, "X-Forwarded-For": "1.1.1.1, 8.8.8.8"}
+    )
+    assert real.status_code == 200

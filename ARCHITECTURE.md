@@ -401,6 +401,13 @@ endpoints existentes funcionan sin tocarlos.
 - **Límite por minuto por key**, con contador en la tabla `api_key_uso`
   (ventana fija). Está en la base y no en memoria porque no se sabe cuántos
   workers corren. Sin Redis, y compatible con PostgreSQL 9.2 (sin `ON CONFLICT`).
+- **IPs permitidas (opcional, por key)**: lista de IP o rangos CIDR; vacía = cualquier
+  IP. Desde otra IP la key recibe el mismo 401 que una inválida y no gasta su límite.
+  **La IP no es la primera de `X-Forwarded-For`**: Nginx usa
+  `$proxy_add_x_forwarded_for`, que agrega la real al final de lo que mande el
+  cliente, así que la primera se puede falsear. Se toma la entrada que dejan a la
+  derecha los proxies propios (`API_KEY_PROXIES_CONFIABLES`, 1 si solo está Nginx;
+  ver `api_key.ip_confiable`). Si hay dos proxies en cadena, hay que subirlo a 2.
 - **Un usuario de integración por key** en la base del cliente
   (`usuario.es_integracion`): no inicia sesión, no cuenta para el CAL y hace que
   las causas cargadas y la bitácora digan qué sistema fue.

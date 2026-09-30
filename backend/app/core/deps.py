@@ -27,7 +27,6 @@ from app.core import api_key
 from app.core.database import crear_sesion_tenant, get_db_maestra
 from app.core.security import decode_token
 from app.models.usuario import Usuario
-from app.services import auditoria_service
 from app.services.auth_service import AMBITO_CLIENTE
 
 logger = logging.getLogger(__name__)
@@ -105,7 +104,7 @@ def get_tenant_actual(
             x_api_key,
             request.method,
             request.url.path,
-            ip=auditoria_service.ip_de(request),
+            ip=api_key.ip_confiable(request),
         )
         guid, cliente_id, usuario_id = (
             identidad.guid,

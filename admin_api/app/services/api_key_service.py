@@ -72,6 +72,7 @@ class ApiKeyService:
             permite_escritura=fila.permite_escritura,
             prefijos_escritura=list(prefijos_de_escritura(fila)) if fila.permite_escritura else [],
             limite_por_minuto=fila.limite_por_minuto,
+            ips_permitidas=[i.strip() for i in (fila.ips_permitidas or "").split(",") if i.strip()],
             activa=fila.activa and fila.revocada_en is None,
             fecha_creacion=fila.fecha_creacion,
             expira_en=fila.expira_en,
@@ -109,6 +110,7 @@ class ApiKeyService:
                     ",".join(datos.prefijos_escritura) if datos.prefijos_escritura else None
                 ),
                 limite_por_minuto=datos.limite_por_minuto or settings.API_KEY_LIMITE_POR_MINUTO,
+                ips_permitidas=",".join(datos.ips_permitidas) if datos.ips_permitidas else None,
                 creada_por=creada_por,
                 expira_en=datos.expira_en,
             )
@@ -134,6 +136,8 @@ class ApiKeyService:
             fila.nombre = datos.nombre.strip()
         if datos.limite_por_minuto is not None:
             fila.limite_por_minuto = datos.limite_por_minuto
+        if datos.ips_permitidas is not None:
+            fila.ips_permitidas = ",".join(datos.ips_permitidas) or None
         self.db.commit()
         self.db.refresh(fila)
         return self.a_response(fila)

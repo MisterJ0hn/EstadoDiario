@@ -48,6 +48,11 @@ class ApiKey(BaseMaestra):
     # acotarlo por key sin tocar código.
     prefijos_escritura: Mapped[Optional[str]] = mapped_column(Text)
 
+    # IP o rangos (CIDR) desde los que la key puede usarse, separados por coma.
+    # Nulo o vacío = desde cualquier IP. Es una capa ADICIONAL: quien tiene la
+    # key y no está en la lista recibe el mismo 401 que con una key inválida.
+    ips_permitidas: Mapped[Optional[str]] = mapped_column(Text)
+
     limite_por_minuto: Mapped[int] = mapped_column(Integer, nullable=False)
 
     activa: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -26,6 +26,10 @@ la base principal; ningún header ni parámetro lo decide.
 - Escribir solo si la key tiene `permite_escritura` Y la ruta está en los
   prefijos de escritura (por defecto, `PREFIJOS_ESCRITURA_DEFECTO`: causas).
 
+- Usarse solo desde las IPs de `ips_permitidas`, si la key las tiene (ver
+  `ip_confiable` para de dónde sale la IP y por qué no es la primera de
+  `X-Forwarded-For`).
+
 **Qué queda registrado.** Cada escritura, cada denegación y el primer exceso de
 límite de cada minuto dejan una línea en la bitácora del cliente (`auth`,
 `api_key_*`) con la IP y el prefijo de la key. Las lecturas no: serían una fila
@@ -34,6 +38,7 @@ por request y nadie las miraría; para saber si una key sigue en uso están
 """
 
 import hashlib
+import ipaddress
 import logging
 import random
 import secrets
@@ -41,10 +46,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import settings
 from app.core.database import SesionMaestra, engine_maestro
 from app.models.maestra.api_key import ApiKey
 from app.models.maestra.cliente import Cliente
@@ -156,6 +162,93 @@ def motivo_de_denegacion(
     if not _bajo_prefijo(path, prefijos_escritura):
         return "escritura_no_permitida_en_la_ruta"
     return None
+
+
+# ── IPs permitidas ────────────────────────────────────────
+
+
+def normalizar_ips(valores) -> list[str]:
+    """Valida una lista de IP o rangos (CIDR) y la deja en forma canónica.
+
+    Acepta IPv4 e IPv6, sueltas (`200.1.2.3`) o en rango (`200.1.2.0/24`). Lanza
+    `ValueError` con la entrada que no se entiende: una lista mal escrita que se
+    aceptara en silencio dejaría la key sin protección o, peor, sin poder usarse.
+    """
+    salida: list[str] = []
+    for bruto in valores or []:
+        texto = (bruto or "").strip()
+        if not texto:
+            continue
+        try:
+            if "/" in texto:
+                # strict=False: `200.1.2.3/24` se entiende como la red 200.1.2.0/24.
+                canonico = str(ipaddress.ip_network(texto, strict=False))
+            else:
+                canonico = str(ipaddress.ip_address(texto))
+        except ValueError:
+            raise ValueError(f"'{texto}' no es una IP ni un rango válido")
+        if canonico not in salida:
+            salida.append(canonico)
+    return salida
+
+
+def ips_de(api_key: ApiKey) -> list:
+    """Las redes permitidas de la key, ya como objetos. Vacío = cualquier IP."""
+    if not api_key.ips_permitidas:
+        return []
+    redes = []
+    for texto in api_key.ips_permitidas.split(","):
+        texto = texto.strip()
+        if not texto:
+            continue
+        try:
+            redes.append(ipaddress.ip_network(texto, strict=False))
+        except ValueError:
+            # Un valor corrupto en la base no puede abrir la key a cualquiera. Se
+            # deja un `None` en su lugar, que no calza con ninguna IP: la lista
+            # sigue "con restricción" y, si era la única entrada, la key queda
+            # cerrada en vez de abierta.
+            logger.error("API key %s: IP permitida ilegible %r", api_key.id, texto)
+            redes.append(None)
+    return redes
+
+
+def ip_en_redes(ip: Optional[str], redes: list) -> bool:
+    """¿`ip` está en alguna de las redes? Una entrada ilegible (`None`) nunca calza."""
+    if not ip:
+        return False
+    try:
+        direccion = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    # `::ffff:200.1.2.3` es la misma máquina que `200.1.2.3`.
+    if direccion.version == 6 and direccion.ipv4_mapped is not None:
+        direccion = direccion.ipv4_mapped
+    return any(red is not None and direccion in red for red in redes)
+
+
+def ip_confiable(request: Request) -> Optional[str]:
+    """La IP de quien llama, sacada de donde no la puede falsear.
+
+    **No es la primera de `X-Forwarded-For`.** Nginx está configurado con
+    `$proxy_add_x_forwarded_for`, que AGREGA la IP que ve al final de lo que el
+    cliente haya mandado: quien escriba `X-Forwarded-For: 200.1.2.3` llega con
+    `200.1.2.3, <su IP real>`, y leer la primera le da la IP que quiera. Para una
+    lista de IPs permitidas eso sería una puerta abierta.
+
+    Lo que sí es de fiar es lo que agregaron NUESTROS proxies, que están a la
+    derecha. `API_KEY_PROXIES_CONFIABLES` dice cuántos hay delante del backend
+    (1 si solo está Nginx): se toma la entrada que ese número de saltos deja a la
+    derecha. Con menos entradas de las esperadas (alguien llegó sin pasar por el
+    proxy) se usa la IP del socket, que no va a estar en ninguna lista.
+    """
+    saltos = max(1, settings.API_KEY_PROXIES_CONFIABLES)
+    reenviada = request.headers.get("x-forwarded-for")
+    if reenviada:
+        entradas = [e.strip() for e in reenviada.split(",") if e.strip()]
+        if len(entradas) >= saltos:
+            return entradas[-saltos][:45]
+    return request.client.host[:45] if request.client else None
 
 
 # ── Límite de velocidad ───────────────────────────────────
@@ -281,6 +374,25 @@ def _auditar(identidad: IdentidadApiKey, accion: str, ip: Optional[str], detalle
     )
 
 
+# Cuándo se dejó la última línea de "IP no permitida" de cada key (por proceso).
+# Sin esto, quien tenga la key y pruebe desde otra IP llenaría la bitácora del
+# cliente con una fila por intento, y esos intentos no consumen el límite.
+_ultima_auditoria_ip: dict[int, datetime] = {}
+_ESPERA_AUDITORIA_IP = timedelta(seconds=60)
+
+
+def _rechazar_por_ip(identidad: "IdentidadApiKey", ip: Optional[str], ahora: datetime) -> HTTPException:
+    ultima = _ultima_auditoria_ip.get(identidad.api_key_id)
+    if ultima is None or ahora - ultima >= _ESPERA_AUDITORIA_IP:
+        _ultima_auditoria_ip[identidad.api_key_id] = ahora
+        _auditar(
+            identidad, auditoria.ACCION_API_KEY_DENEGADO, ip, f"ip_no_permitida ({ip or 'desconocida'})"
+        )
+    # El mismo 401 de siempre: un 403 le diría a quien tiene una key robada que
+    # la key sí sirve y que solo le falta la IP.
+    return _rechazar_key("ip_no_permitida", ip, identidad.prefijo)
+
+
 def _rechazar_key(motivo: str, ip: Optional[str], prefijo: Optional[str] = None) -> HTTPException:
     logger.warning(
         "API key rechazada (motivo=%s prefijo=%s ip=%s)", motivo, prefijo or "-", ip
@@ -333,8 +445,14 @@ def autenticar(
         limite = fila.limite_por_minuto
         permite_escritura = fila.permite_escritura
         prefijos = prefijos_de_escritura(fila)
+        redes = ips_de(fila)
     finally:
         db.close()
+
+    # ANTES del límite: una petición de una IP no permitida no debe gastar el
+    # cupo de la key, o quien la robó podría dejar sin servicio al sistema legítimo.
+    if redes and not ip_en_redes(ip, redes):
+        raise _rechazar_por_ip(identidad, ip, ahora)
 
     dentro, contador, reintentar_en = consumir_cupo(identidad.api_key_id, limite, ahora)
     if not dentro:

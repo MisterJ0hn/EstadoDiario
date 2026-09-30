@@ -16,6 +16,8 @@ export interface ApiKey {
   /** Rutas donde puede escribir. Vacío si la key es solo de lectura. */
   prefijos_escritura: string[];
   limite_por_minuto: number;
+  /** IP o rangos desde los que puede usarse. Vacía = desde cualquier IP. */
+  ips_permitidas: string[];
   /** False cuando fue revocada. Un vencimiento no la marca: se calcula con `expira_en`. */
   activa: boolean;
   fecha_creacion: string;
@@ -37,11 +39,15 @@ export interface ApiKeyCreate {
   limite_por_minuto: number | null;
   /** ISO 8601. Nulo = no vence. */
   expira_en: string | null;
+  /** Vacía = desde cualquier IP. */
+  ips_permitidas: string[];
 }
 
 export interface ApiKeyUpdate {
   nombre?: string;
   limite_por_minuto?: number;
+  /** Omitido = no cambiar. Lista vacía = quitar la restricción. */
+  ips_permitidas?: string[];
 }
 
 /** La única respuesta que trae la key en claro: no se puede volver a ver. */

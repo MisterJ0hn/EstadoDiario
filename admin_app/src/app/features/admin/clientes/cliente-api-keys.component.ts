@@ -112,6 +112,16 @@ type EstadoKey = 'activa' | 'vencida' | 'revocada';
                           } @else {
                             Solo lectura
                           }
+                          <span class="block text-xs text-neutral-500"
+                                [title]="k.ips_permitidas.join(', ')">
+                            @if (k.ips_permitidas.length === 0) {
+                              Desde cualquier IP
+                            } @else if (k.ips_permitidas.length === 1) {
+                              Solo desde {{ k.ips_permitidas[0] }}
+                            } @else {
+                              Desde {{ k.ips_permitidas.length }} IP o rangos
+                            }
+                          </span>
                         </td>
                         <td class="whitespace-nowrap">{{ k.limite_por_minuto }} / min</td>
                         <td>
@@ -174,6 +184,10 @@ type EstadoKey = 'activa' | 'vencida' | 'revocada';
               <li>
                 No puede iniciar sesión, cambiar contraseñas, ver facturas, hacer pagos ni tocar la
                 configuración del estudio.
+              </li>
+              <li>
+                Si la key tiene <strong>IPs permitidas</strong>, solo funciona desde ellas: desde
+                cualquier otra recibe el mismo <code>401</code> que una key inválida.
               </li>
               <li>
                 Si supera el límite por minuto, recibe <code>429</code> con un encabezado
@@ -241,6 +255,20 @@ type EstadoKey = 'activa' | 'vencida' | 'revocada';
                        [(ngModel)]="nueva.vence" />
                 <p class="text-xs text-neutral-500 mt-1">Vacío = no vence.</p>
               </div>
+            </div>
+
+            <div>
+              <label class="form-label" for="key-ips">IPs permitidas (opcional)</label>
+              <textarea id="key-ips" rows="2" class="form-input" [(ngModel)]="nueva.ips"
+                        placeholder="200.1.2.3, 200.1.2.0/24" autocomplete="off" spellcheck="false"></textarea>
+              <p class="text-xs text-neutral-500 mt-1">
+                Separadas por coma o en líneas distintas; acepta rangos (<code>200.1.2.0/24</code>)
+                e IPv6. Vacío = la key funciona desde cualquier IP.
+              </p>
+              <p class="text-xs text-neutral-500 mt-1">
+                Es la IP con la que el sistema externo llega al servidor (la de salida a Internet de
+                su red), no la de su computador.
+              </p>
             </div>
 
             @if (errorModal()) {
@@ -315,6 +343,15 @@ type EstadoKey = 'activa' | 'vencida' | 'revocada';
               <input id="edit-limite" type="number" min="1" max="10000" class="form-input"
                      [(ngModel)]="edicion.limite" />
             </div>
+            <div>
+              <label class="form-label" for="edit-ips">IPs permitidas</label>
+              <textarea id="edit-ips" rows="2" class="form-input" [(ngModel)]="edicion.ips"
+                        placeholder="200.1.2.3, 200.1.2.0/24" autocomplete="off" spellcheck="false"></textarea>
+              <p class="text-xs text-neutral-500 mt-1">
+                Vacío = desde cualquier IP. Si se equivoca y deja afuera al sistema, corríjalas
+                aquí: el sistema recibirá 401 hasta entonces.
+              </p>
+            </div>
             <p class="text-xs text-neutral-500">
               Los permisos y el vencimiento no se cambian: para otros permisos, emita una key nueva y
               revoque esta.
@@ -388,7 +425,7 @@ export class ClienteApiKeysComponent implements OnInit {
   creada = signal<ApiKeyCreada | null>(null);
 
   editando = signal<ApiKey | null>(null);
-  edicion = { nombre: '', limite: null as number | null };
+  edicion = { nombre: '', limite: null as number | null, ips: '' };
 
   revocando = signal<ApiKey | null>(null);
 
@@ -402,6 +439,7 @@ export class ClienteApiKeysComponent implements OnInit {
       permite_escritura: false,
       limite: null as number | null,
       vence: '',
+      ips: '',
     };
   }
 
@@ -418,6 +456,37 @@ export class ClienteApiKeysComponent implements OnInit {
         this.error.set(this.mensajeError(e));
       },
     });
+  }
+
+  // ── IPs permitidas ─────────────────────────────────────────────────────
+
+  /** Separa por coma, punto y coma, espacios o saltos de línea, sin repetidas. */
+  private parsearIps(texto: string): string[] {
+    const partes = texto
+      .split(/[\s,;]+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    return Array.from(new Set(partes));
+  }
+
+  /** Valida IPv4/IPv6 con o sin máscara. Devuelve el primer valor malo, o null.
+   *  El backend vuelve a validar (y normaliza): esto solo evita el viaje de ida y
+   *  vuelta por un error de tipeo. */
+  private ipInvalida(ips: string[]): string | null {
+    const v4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+    const v6 = /^[0-9a-fA-F:.]+$/;
+    for (const item of ips) {
+      const [ip, mascara, ...resto] = item.split('/');
+      if (resto.length > 0) return item;
+      const esV4 = v4.test(ip);
+      const esV6 = !esV4 && ip.includes(':') && v6.test(ip);
+      if (!esV4 && !esV6) return item;
+      if (mascara !== undefined) {
+        const n = Number(mascara);
+        if (!/^\d{1,3}$/.test(mascara) || n > (esV4 ? 32 : 128)) return item;
+      }
+    }
+    return null;
   }
 
   // ── Crear ──────────────────────────────────────────────────────────────
@@ -447,6 +516,12 @@ export class ClienteApiKeysComponent implements OnInit {
       this.errorModal.set('El límite debe ser un número entero entre 1 y 10.000');
       return;
     }
+    const ips = this.parsearIps(this.nueva.ips);
+    const mala = this.ipInvalida(ips);
+    if (mala) {
+      this.errorModal.set(`«${mala}» no es una IP ni un rango válido`);
+      return;
+    }
     // Fin del día elegido, en hora local: «vence el 30» significa que sirve todo el 30.
     const vence = this.nueva.vence ? new Date(`${this.nueva.vence}T23:59:59`).toISOString() : null;
 
@@ -458,6 +533,7 @@ export class ClienteApiKeysComponent implements OnInit {
         permite_escritura: this.nueva.permite_escritura,
         limite_por_minuto: limite,
         expira_en: vence,
+        ips_permitidas: ips,
       })
       .subscribe({
         next: (r) => {
@@ -476,7 +552,11 @@ export class ClienteApiKeysComponent implements OnInit {
   // ── Editar ─────────────────────────────────────────────────────────────
 
   abrirEditar(k: ApiKey): void {
-    this.edicion = { nombre: k.nombre, limite: k.limite_por_minuto };
+    this.edicion = {
+      nombre: k.nombre,
+      limite: k.limite_por_minuto,
+      ips: k.ips_permitidas.join(', '),
+    };
     this.errorModal.set('');
     this.editando.set(k);
   }
@@ -495,9 +575,19 @@ export class ClienteApiKeysComponent implements OnInit {
       return;
     }
 
+    const ips = this.parsearIps(this.edicion.ips);
+    const mala = this.ipInvalida(ips);
+    if (mala) {
+      this.errorModal.set(`«${mala}» no es una IP ni un rango válido`);
+      return;
+    }
+
     this.guardando.set(true);
     this.errorModal.set('');
-    this.service.update(this.clienteId(), k.id, { nombre, limite_por_minuto: limite }).subscribe({
+    // Lista vacía = quitar la restricción; el backend la distingue de "no cambiar".
+    this.service
+      .update(this.clienteId(), k.id, { nombre, limite_por_minuto: limite, ips_permitidas: ips })
+      .subscribe({
       next: () => {
         this.guardando.set(false);
         this.editando.set(null);

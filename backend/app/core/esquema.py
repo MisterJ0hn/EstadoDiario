@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 # (tabla, columna, tipo SQL). Lo que create_all() no puede agregar a una tabla
 # que ya existe: en la base principal, y en CADA base de cliente ya creada.
 COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
+    # IPs desde las que puede usarse una API key. Nula = cualquiera.
+    ("api_key", "ips_permitidas", "TEXT"),
     # Estado del aprovisionamiento: distingue un alta completa de una que
     # falló a la mitad. Las filas anteriores son clientes que sí quedaron
     # operativos, por eso el DEFAULT las deja en 'listo'.

@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.api_key import normalizar_ips
+
 PREFIJO_API = "/api/v1/"
 
 
@@ -26,6 +28,12 @@ class ApiKeyCreate(BaseModel):
         default=None, ge=1, le=10000, description="Nulo = el valor por defecto del sistema."
     )
     expira_en: datetime | None = None
+    ips_permitidas: list[str] | None = Field(
+        default=None,
+        description=(
+            "IP o rangos (CIDR) desde los que puede usarse. Nulo o vacío = desde cualquier IP."
+        ),
+    )
 
     @field_validator("prefijos_escritura")
     @classmethod
@@ -40,10 +48,29 @@ class ApiKeyCreate(BaseModel):
                 )
         return limpios or None
 
+    @field_validator("ips_permitidas")
+    @classmethod
+    def _ips_validas(cls, valor):
+        return None if valor is None else (_validar_ips(valor) or None)
+
+
+def _validar_ips(valor: list[str]) -> list[str]:
+    try:
+        return normalizar_ips(valor)
+    except ValueError as e:
+        raise ValueError(str(e))
+
 
 class ApiKeyUpdate(BaseModel):
     nombre: str | None = Field(default=None, min_length=1, max_length=100)
     limite_por_minuto: int | None = Field(default=None, ge=1, le=10000)
+    # Nulo = no cambiar. Lista vacía = quitar la restricción (cualquier IP).
+    ips_permitidas: list[str] | None = None
+
+    @field_validator("ips_permitidas")
+    @classmethod
+    def _ips_validas(cls, valor):
+        return None if valor is None else _validar_ips(valor)
 
 
 class ApiKeyResponse(BaseModel):
@@ -55,6 +82,8 @@ class ApiKeyResponse(BaseModel):
     permite_escritura: bool
     prefijos_escritura: list[str]
     limite_por_minuto: int
+    # Vacía = desde cualquier IP.
+    ips_permitidas: list[str] = []
     activa: bool
     fecha_creacion: datetime
     expira_en: datetime | None = None
