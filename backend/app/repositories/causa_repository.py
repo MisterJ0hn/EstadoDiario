@@ -15,6 +15,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.estados_causa import FINALIZADAS, VIGENTES, condicion_vigencia
+from app.core.filtro_roles import RolFiltro, filtrar_por_roles
 from app.models.audiencia import Audiencia
 from app.models.causa import Causa
 from app.models.estado_diario_origen import EstadoDiarioOrigen
@@ -139,6 +140,7 @@ class CausaRepository:
         busqueda: Optional[str],
         origen_id: Optional[int],
         vigencia: Optional[str] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ):
         if materia == SIN_MATERIA:
             query = query.filter(Causa.materia.is_(None))
@@ -163,7 +165,7 @@ class CausaRepository:
         condicion = cls._condicion_vigencia(vigencia)
         if condicion is not None:
             query = query.filter(condicion)
-        return query
+        return filtrar_por_roles(query, Causa.rol, Causa.tribunal, roles)
 
     def _acotar_a_la_cartera(self, origen_id: Optional[int]) -> Optional[int]:
         """El origen por el que hay que filtrar: el pedido, o el último.
@@ -228,6 +230,7 @@ class CausaRepository:
         sin_actividad_meses: Optional[int] = None,
         con_audiencia_hasta: Optional[date] = None,
         orden: Optional[str] = None,
+        roles: Optional[list[RolFiltro]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -237,7 +240,8 @@ class CausaRepository:
         def armar(consulta):
             consulta = self._con_audiencia(consulta, prox)
             consulta = self._aplicar_filtros(
-                consulta, materia, estado_causa, tribunal, busqueda, origen_id, vigencia
+                consulta, materia, estado_causa, tribunal, busqueda, origen_id, vigencia,
+                roles,
             )
             if sin_actividad_meses:
                 # **Sin fecha NO cuenta como dormida.** Que una causa no aparezca
@@ -298,6 +302,7 @@ class CausaRepository:
         busqueda: Optional[str] = None,
         origen_id: Optional[int] = None,
         vigencia: Optional[str] = None,
+        roles: Optional[list[RolFiltro]] = None,
     ) -> list[tuple[Optional[str], int]]:
         """(materia, total) para las pestañas del listado.
 
@@ -309,7 +314,7 @@ class CausaRepository:
         query = self._aplicar_filtros(
             self.db.query(Causa.materia, func.count(Causa.id)),
             None, estado_causa, tribunal, busqueda,
-            self._acotar_a_la_cartera(origen_id), vigencia,
+            self._acotar_a_la_cartera(origen_id), vigencia, roles,
         )
         return [
             (fila[0], int(fila[1] or 0))

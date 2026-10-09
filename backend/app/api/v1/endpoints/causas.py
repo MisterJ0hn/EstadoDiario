@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
 from app.core.database import get_db_maestra
+from app.core.filtro_roles import DESC_ROLES, parse_roles
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
@@ -217,6 +218,7 @@ def resumen(
     vigencia: str | None = Query(
         VIGENTES, description="vigentes | finalizadas | vacío para todas"
     ),
+    roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
@@ -226,6 +228,7 @@ def resumen(
     conteos = repo.contar_por_materia(
         estado_causa=estado_causa, tribunal=tribunal,
         busqueda=busqueda, origen_id=origen_id, vigencia=_vigencia(vigencia),
+        roles=parse_roles(roles),
     )
     return CausaResumenResponse(
         total=sum(t for _, t in conteos),
@@ -262,6 +265,7 @@ def listar(
     orden: str | None = Query(
         None, description="actividad | audiencia. Por defecto, fecha de ingreso.",
     ),
+    roles: str | None = Query(None, description=DESC_ROLES),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
@@ -281,7 +285,7 @@ def listar(
             if con_audiencia_dias is not None
             else None
         ),
-        orden=orden,
+        orden=orden, roles=parse_roles(roles),
         page=page, limit=limit,
     )
     causas_resp = [CausaResponse.from_model(c) for c in items]
