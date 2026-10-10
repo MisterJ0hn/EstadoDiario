@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
 from app.core.database import get_db_maestra
+from app.core.credenciales_pjud import Sellador, sellador_solicitado
 from app.core.filtro_roles import DESC_ROLES, parse_roles
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.usuario import Usuario
@@ -272,6 +273,7 @@ def listar(
     db_maestra: Session = Depends(get_db_maestra),
     tenant: TenantContexto = Depends(get_tenant_actual),
     current_user: Usuario = Depends(get_usuario_actual),
+    sellador: Sellador | None = Depends(sellador_solicitado),
 ):
     """Sin `origen_id`, devuelve **solo el último archivo de causas**: el
     reporte trae la cartera completa cada vez, y sumar todos los que se
@@ -308,11 +310,19 @@ def listar(
                 r.pjud_estado = llamado.resultado
                 r.pjud_fecha_sincronizacion = llamado.fecha_hora
 
+    credenciales = None
+    if sellador is not None:
+        entrega = sellador.entregar(db, [r.rut for r in causas_resp])
+        for r, ref in zip(causas_resp, entrega.refs):
+            r.credencial_ref = ref
+        credenciales = entrega.credenciales_pjud
+
     return CausaListResponse(
         total=total,
         page=pagina,
         total_pages=total_pages,
         causas=causas_resp,
+        credenciales_pjud=credenciales,
     )
 
 

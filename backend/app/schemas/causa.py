@@ -50,6 +50,9 @@ class CausaResponse(BaseModel):
     # Fecha/hora de ese último llamado (cualquiera sea su resultado). Null si
     # nunca se consultó.
     pjud_fecha_sincronizacion: datetime | None = None
+    # Solo con `?incluir_credenciales=true` y una API key autorizada: clave de
+    # `credenciales_pjud` (en la lista) con las credenciales del abogado dueño.
+    credencial_ref: str | None = None
 
     @classmethod
     def from_model(cls, c) -> "CausaResponse":
@@ -83,6 +86,9 @@ class CausaListResponse(BaseModel):
     page: int = 1
     total_pages: int = 1
     causas: list[CausaResponse]
+    # ref → sello (RSA-OAEP + AES-GCM) con {rut, clave, metodo_login} del OJV.
+    # Ver `app/core/credenciales_pjud.py`. Ausente si no se pidió.
+    credenciales_pjud: dict[str, str] | None = None
 
 
 class ConteoMateria(BaseModel):

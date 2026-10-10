@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
 from app.core.database import get_db_maestra
+from app.core.credenciales_pjud import Sellador, sellador_solicitado
 from app.core.filtro_roles import DESC_ROLES, parse_roles
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
@@ -266,6 +267,19 @@ def eliminar_origen(
 
 # ── Movimientos filtrados ─────────────────────────────────
 
+def _con_credenciales(resultado: dict, db: Session, sellador: Sellador | None) -> dict:
+    """Si la request las pidió y la key puede recibirlas, agrega el sello de las
+    credenciales del OJV de los abogados dueños y la referencia en cada fila."""
+    if sellador is None:
+        return resultado
+    filas = resultado["movimientos"]
+    entrega = sellador.entregar(db, [f.get("rut") for f in filas])
+    for fila, ref in zip(filas, entrega.refs):
+        fila["credencial_ref"] = ref
+    resultado["credenciales_pjud"] = entrega.credenciales_pjud
+    return resultado
+
+
 @router.get(
     "/no-leidos",
     response_model=MovimientoListResponse,
@@ -281,12 +295,14 @@ def no_leidos(
     roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
+    sellador: Sellador | None = Depends(sellador_solicitado),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_no_leidos(
+    resultado = service.get_movimientos_no_leidos(
         jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit,
         parse_roles(roles),
     )
+    return _con_credenciales(resultado, db, sellador)
 
 
 @router.get(
@@ -304,12 +320,14 @@ def leidos(
     roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
+    sellador: Sellador | None = Depends(sellador_solicitado),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_leidos(
+    resultado = service.get_movimientos_leidos(
         jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit,
         parse_roles(roles),
     )
+    return _con_credenciales(resultado, db, sellador)
 
 
 @router.get(
@@ -327,12 +345,14 @@ def pendientes(
     roles: str | None = Query(None, description=DESC_ROLES),
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
+    sellador: Sellador | None = Depends(sellador_solicitado),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimientos_pendientes(
+    resultado = service.get_movimientos_pendientes(
         jurisdiccion, fecha_desde, fecha_hasta, rut, page, limit,
         parse_roles(roles),
     )
+    return _con_credenciales(resultado, db, sellador)
 
 
 @router.get(
@@ -419,9 +439,15 @@ def detalle_movimiento(
     estado_diario_id: int,
     db: Session = Depends(get_db_tenant),
     current_user: Usuario = Depends(get_usuario_actual),
+    sellador: Sellador | None = Depends(sellador_solicitado),
 ):
     service = EstadoDiarioService(db)
-    return service.get_movimiento_detalle(estado_diario_id)
+    resultado = service.get_movimiento_detalle(estado_diario_id)
+    if sellador is not None:
+        entrega = sellador.entregar(db, [resultado["movimiento"].get("rut")])
+        resultado["movimiento"]["credencial_ref"] = entrega.refs[0]
+        resultado["credenciales_pjud"] = entrega.credenciales_pjud
+    return resultado
 
 
 # ── Acciones ──────────────────────────────────────────────

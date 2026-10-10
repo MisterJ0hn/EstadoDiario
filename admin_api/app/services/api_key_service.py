@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.core.api_key import generar_key, prefijos_de_escritura
+from app.core.api_key import generar_key, ips_de, prefijos_de_escritura
+from app.core.sello_rsa import huella
 from app.core.config import settings
 from app.core.database import sesion_tenant
 from app.core.exceptions import BadRequestException, NotFoundException
@@ -73,6 +74,8 @@ class ApiKeyService:
             prefijos_escritura=list(prefijos_de_escritura(fila)) if fila.permite_escritura else [],
             limite_por_minuto=fila.limite_por_minuto,
             ips_permitidas=[i.strip() for i in (fila.ips_permitidas or "").split(",") if i.strip()],
+            expone_credenciales_pjud=fila.expone_credenciales_pjud,
+            llave_publica_huella=huella(fila.llave_publica_pem) if fila.llave_publica_pem else None,
             activa=fila.activa and fila.revocada_en is None,
             fecha_creacion=fila.fecha_creacion,
             expira_en=fila.expira_en,
@@ -111,6 +114,8 @@ class ApiKeyService:
                 ),
                 limite_por_minuto=datos.limite_por_minuto or settings.API_KEY_LIMITE_POR_MINUTO,
                 ips_permitidas=",".join(datos.ips_permitidas) if datos.ips_permitidas else None,
+                expone_credenciales_pjud=datos.expone_credenciales_pjud,
+                llave_publica_pem=datos.llave_publica_pem,
                 creada_por=creada_por,
                 expira_en=datos.expira_en,
             )
@@ -138,6 +143,25 @@ class ApiKeyService:
             fila.limite_por_minuto = datos.limite_por_minuto
         if datos.ips_permitidas is not None:
             fila.ips_permitidas = ",".join(datos.ips_permitidas) or None
+        if datos.llave_publica_pem is not None:
+            fila.llave_publica_pem = datos.llave_publica_pem
+        if datos.expone_credenciales_pjud is not None:
+            fila.expone_credenciales_pjud = datos.expone_credenciales_pjud
+        # Se valida el estado RESULTANTE, no solo lo recibido: quitar las IPs o
+        # la llave de una key que entrega credenciales la dejaría entregándolas
+        # sin esa capa.
+        if fila.expone_credenciales_pjud:
+            if not ips_de(fila):
+                self.db.rollback()
+                raise BadRequestException(
+                    "Una key que entrega credenciales del PJUD debe tener ips_permitidas. "
+                    "Apague primero expone_credenciales_pjud."
+                )
+            if not fila.llave_publica_pem:
+                self.db.rollback()
+                raise BadRequestException(
+                    "Una key que entrega credenciales del PJUD debe tener llave_publica_pem."
+                )
         self.db.commit()
         self.db.refresh(fila)
         return self.a_response(fila)

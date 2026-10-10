@@ -67,6 +67,7 @@ ACCION_MARCAR_PENDIENTE = "marcar_pendiente"
 ACCION_API_KEY_ESCRITURA = "api_key_escritura"
 ACCION_API_KEY_DENEGADO = "api_key_denegado"
 ACCION_API_KEY_LIMITE = "api_key_limite"
+ACCION_API_KEY_CREDENCIALES = "api_key_credenciales"
 ACCION_CONECTAR = "conectar"
 ACCION_DESCONECTAR = "desconectar"
 

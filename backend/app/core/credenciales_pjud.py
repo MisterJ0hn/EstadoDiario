@@ -1,0 +1,218 @@
+"""Entrega, a un sistema externo, de las credenciales del OJV de los abogados.
+
+El sistema externo necesita entrar al Poder Judicial como el abogado dueño de
+cada causa. Son datos que no deberían salir nunca, así que esto es lo contrario
+de un campo más en la respuesta: cada capa existe porque la anterior puede
+fallar.
+
+1. **Permiso por key.** Solo una key con `expone_credenciales_pjud` (apagado por
+   defecto, lo enciende la consola de administración) y solo si además la pide
+   la request con `?incluir_credenciales=true`. Una sesión de persona (JWT) no
+   puede: esto es para sistemas, no para el navegador.
+2. **IPs obligatorias.** Sin `ips_permitidas` la key no entrega credenciales,
+   aunque lea todo lo demás. Una key robada que se use desde otro lado recibe
+   el 401 de siempre antes de llegar acá (ver `api_key.autenticar`).
+3. **La clave nunca viaja en claro.** Sale sellada con la llave pública RSA del
+   sistema externo (RSA-OAEP + AES-256-GCM). Lo que quede en un log, un proxy o
+   un caché del camino es un texto que solo su llave privada abre.
+4. **Quedan registradas** cada entrega (quién, desde dónde, de cuántos
+   abogados), y jamás el contenido.
+
+**De quién son.** El dueño de una causa es el abogado cuyo RUT trae el archivo
+del que salió (ver `UsuarioRut`). No se cae al "usuario que subió el archivo":
+si lo cargó otra persona, se entregaría la clave de quien no es. Si el RUT no
+calza con nadie, o calza con más de un usuario, no se entrega nada — ante la
+duda, la causa va sin credencial.
+"""
+
+import logging
+from dataclasses import dataclass
+from typing import Optional, Sequence
+
+from fastapi import Depends, Header, HTTPException, Query, Request, Response, status
+from sqlalchemy.orm import Session
+
+from app.core import api_key
+from app.core.database import SesionMaestra
+from app.core.sello_rsa import sellar
+from app.core.deps import TenantContexto, get_tenant_actual
+from app.models.maestra.api_key import ApiKey
+from app.models.usuario import Usuario
+from app.models.usuario_rut import UsuarioRut, limpiar_rut
+from app.services import auditoria_service as auditoria
+
+logger = logging.getLogger(__name__)
+
+DESC_INCLUIR = (
+    "Opcional, solo con API key autorizada. Agrega `credenciales_pjud` (RUT, "
+    "clave y método de login del OJV de los abogados dueños, sellados con la "
+    "llave pública de la key) y `credencial_ref` en cada fila. Ver `sello`."
+)
+
+
+# ── Dueño de la causa ────────────────────────────────────
+
+
+def _duenos_por_rut(db: Session, ruts: set[str]) -> dict[str, Optional[Usuario]]:
+    """RUT normalizado del archivo → el único usuario activo que lo tiene.
+
+    El PJUD emite la mitad de los archivos sin dígito verificador, así que se
+    compara contra el RUT completo y contra su cuerpo (igual que `UsuarioRut`).
+    Con 0 o 2+ coincidencias el valor es `None`.
+    """
+    candidatos = (
+        db.query(UsuarioRut, Usuario)
+        .join(Usuario, Usuario.id == UsuarioRut.usuario_id)
+        .filter(Usuario.activo.is_(True), Usuario.es_integracion.is_(False))
+        .all()
+    )
+    resultado: dict[str, Optional[Usuario]] = {}
+    for rut in ruts:
+        usuarios = {
+            u.id: u for ur, u in candidatos if rut in (ur.rut_normalizado, ur.cuerpo)
+        }
+        resultado[rut] = next(iter(usuarios.values())) if len(usuarios) == 1 else None
+    return resultado
+
+
+# ── Quién pide y qué entrega ─────────────────────────────
+
+
+@dataclass(frozen=True)
+class Entrega:
+    """Resultado de `Sellador.entregar`: `refs` va alineada con los RUT recibidos."""
+
+    refs: list[Optional[str]]
+    credenciales_pjud: dict[str, str]
+
+
+@dataclass(frozen=True)
+class Sellador:
+    api_key_id: int
+    prefijo: str
+    guid: str
+    usuario_id: int
+    ip: Optional[str]
+    ruta: str
+    llave_publica_pem: str
+
+    def entregar(self, db: Session, ruts: Sequence[Optional[str]]) -> Entrega:
+        """Sella las credenciales de los dueños de `ruts` (los de las filas de la
+        respuesta). Un sello por abogado, no por fila: las filas lo referencian
+        con `credencial_ref`, un número de la respuesta que no es ningún id."""
+        normalizados = [limpiar_rut(r) if r else None for r in ruts]
+        duenos = _duenos_por_rut(db, {n for n in normalizados if n})
+
+        ref_por_usuario: dict[int, str] = {}
+        sellos: dict[str, str] = {}
+        refs: list[Optional[str]] = []
+        ids_entregados: list[int] = []
+
+        for n in normalizados:
+            usuario = duenos.get(n) if n else None
+            if usuario is None or not usuario.pjud_configurado:
+                refs.append(None)
+                continue
+            ref = ref_por_usuario.get(usuario.id)
+            if ref is None:
+                try:
+                    contenido = {
+                        "rut": usuario.pjud_rut,
+                        "clave": usuario.pjud_clave,
+                        "metodo_login": usuario.pjud_metodo_login,
+                    }
+                    sello = sellar(self.llave_publica_pem, contenido)
+                except ValueError:
+                    # Clave ilegible (cambió la llave de cifrado) o llave pública
+                    # dañada. Sin el mensaje de la excepción por si trae algo.
+                    logger.error(
+                        "API key %s: no se pudo sellar la credencial del usuario %s",
+                        self.prefijo, usuario.id,
+                    )
+                    refs.append(None)
+                    continue
+                ref = f"c{len(sellos) + 1}"
+                ref_por_usuario[usuario.id] = ref
+                sellos[ref] = sello
+                ids_entregados.append(usuario.id)
+            refs.append(ref)
+
+        if ids_entregados:
+            # Aparte y no en la transacción del endpoint: la entrega ocurrió
+            # aunque el resto de la request falle después.
+            auditoria.registrar_aparte(
+                self.guid,
+                auditoria.MODULO_AUTH,
+                auditoria.ACCION_API_KEY_CREDENCIALES,
+                usuario_id=self.usuario_id,
+                ip=self.ip,
+                detalle=(
+                    f"{self.ruta} key={self.prefijo} entregadas={len(ids_entregados)} "
+                    f"usuarios={','.join(str(i) for i in ids_entregados)}"
+                ),
+            )
+        return Entrega(refs=refs, credenciales_pjud=sellos)
+
+
+def _denegar(tenant: TenantContexto, request: Request, motivo: str, prefijo: Optional[str]):
+    auditoria.registrar_aparte(
+        tenant.guid,
+        auditoria.MODULO_AUTH,
+        auditoria.ACCION_API_KEY_DENEGADO,
+        usuario_id=tenant.usuario_id,
+        ip=api_key.ip_confiable(request),
+        detalle=f"{request.url.path} credenciales_pjud ({motivo}) key={prefijo or '-'}",
+    )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Esta API key no está autorizada para recibir credenciales del PJUD",
+    )
+
+
+def sellador_solicitado(
+    request: Request,
+    response: Response,
+    incluir_credenciales: bool = Query(False, description=DESC_INCLUIR),
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+) -> Optional[Sellador]:
+    """`None` si no se pidieron credenciales; el `Sellador` si se pidieron y la
+    key puede recibirlas; 403 si se pidieron y no puede.
+
+    Depende de `get_tenant_actual` para correr DESPUÉS de la autenticación de la
+    key (que ya validó revocación, vencimiento, IP y límite): acá solo se decide
+    el permiso extra.
+    """
+    if not incluir_credenciales:
+        return None
+
+    if not x_api_key:
+        # Una sesión de persona nunca recibe claves ajenas.
+        _denegar(tenant, request, "sin_api_key", None)
+
+    db = SesionMaestra()
+    try:
+        fila = db.query(ApiKey).filter(ApiKey.key_hash == api_key.hash_key(x_api_key)).first()
+        if fila is None:  # no debería pasar: autenticar ya la resolvió
+            _denegar(tenant, request, "key_no_encontrada", None)
+        if not fila.expone_credenciales_pjud:
+            _denegar(tenant, request, "no_autorizada", fila.prefijo)
+        if not api_key.ips_de(fila):
+            _denegar(tenant, request, "sin_ips_permitidas", fila.prefijo)
+        if not fila.llave_publica_pem:
+            _denegar(tenant, request, "sin_llave_publica", fila.prefijo)
+        sellador = Sellador(
+            api_key_id=fila.id,
+            prefijo=fila.prefijo,
+            guid=tenant.guid,
+            usuario_id=tenant.usuario_id,
+            ip=api_key.ip_confiable(request),
+            ruta=request.url.path,
+            llave_publica_pem=fila.llave_publica_pem,
+        )
+    finally:
+        db.close()
+
+    # Lo sellado no tiene por qué quedar en el caché de nadie.
+    response.headers["Cache-Control"] = "no-store"
+    return sellador

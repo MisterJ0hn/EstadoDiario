@@ -63,6 +63,9 @@ class MovimientoResponse(BaseModel):
     usuario_pendiente: str | None = None
     rut: str | None = None
     fecha_estado_diario: date | None = None
+    # Solo con `?incluir_credenciales=true` y una API key autorizada: clave de
+    # `credenciales_pjud` con las credenciales del abogado dueño.
+    credencial_ref: str | None = None
 
     class Config:
         from_attributes = True
@@ -74,6 +77,9 @@ class MovimientoListResponse(BaseModel):
     page: int = 1
     total_pages: int = 1
     movimientos: list[MovimientoResponse]
+    # ref → sello (RSA-OAEP + AES-GCM) con {rut, clave, metodo_login} del OJV.
+    # Ver `app/core/credenciales_pjud.py`. Ausente si no se pidió.
+    credenciales_pjud: dict[str, str] | None = None
 
 
 class MarcarLeidoRequest(BaseModel):

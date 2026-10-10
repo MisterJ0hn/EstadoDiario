@@ -420,6 +420,53 @@ Las keys las emite el administrador de la plataforma desde `admin_api`
 (`/api/v1/admin/clientes/{id}/api-keys`: listar, emitir, cambiar límite,
 revocar), y desde `admin_app` en la pestaña **API keys** de la ficha del cliente.
 
+#### Credenciales del OJV para el sistema externo
+
+Un sistema externo puede necesitar entrar al Poder Judicial como el abogado dueño
+de cada causa. Se entrega el RUT, la clave y el método de login (`pjud_*` del
+`Usuario`), pero nunca en claro y solo a una key autorizada. Lo implementan
+`app/core/credenciales_pjud.py` (permisos, dueño, auditoría) y
+`app/core/sello_rsa.py` (cifrado, sin base de datos; lo usa también `admin_api`).
+
+**Cómo se pide.** `?incluir_credenciales=true` en `GET /causas`,
+`/estado-diario/no-leidos|leidos|pendientes` y `/estado-diario/{id}`. Sin el
+parámetro la respuesta no cambia. Con él, la respuesta agrega
+`credenciales_pjud` (`{ref: sello}`, un sello por abogado) y cada fila trae
+`credencial_ref` (`c1`, `c2`…, no es ningún id; `null` si no hay credencial).
+
+**Capas de protección**, cada una cubre la falla de la anterior:
+
+1. **Permiso por key**: `api_key.expone_credenciales_pjud`, apagado por defecto.
+   Una sesión de persona (JWT) recibe 403.
+2. **IPs obligatorias**: sin `ips_permitidas` no se entrega nada. `admin_api`
+   rechaza encender el flag sin IPs y sin llave, y rechaza quitarlas después.
+3. **Sellado con la llave pública RSA del integrador** (`api_key.llave_publica_pem`,
+   mínimo 2048 bits). Un log, proxy o caché del camino no ve la clave. La consola
+   solo muestra la huella SHA-256 de la llave.
+4. **Auditoría**: cada entrega deja `auth` / `api_key_credenciales` con key, IP e
+   ids de los abogados (nunca el contenido); cada rechazo, `api_key_denegado`.
+   La respuesta lleva `Cache-Control: no-store`, y los sellos se agregan después
+   de que el servicio guarda su log, así que no quedan en `api_llamado_estado_diario`.
+
+**Formato del sello**: `v1.<llave AES>.<nonce>.<cifrado>`, cada parte en base64
+URL-safe sin relleno.
+
+- La llave AES-256 es nueva por sello y va cifrada con RSA-OAEP (SHA-256, MGF1-SHA-256, sin label).
+- El texto va cifrado con AES-256-GCM, nonce de 12 bytes, AAD
+  `estado-diario/credenciales-pjud/v1`.
+- El contenido es JSON: `{"rut": "...", "clave": "...", "metodo_login": 1|2}`
+  (1 = Clave del Poder Judicial, 2 = ClaveÚnica).
+
+**Quién es el dueño de una causa.** El usuario activo cuyo `UsuarioRut` coincide
+con el RUT del archivo de origen (completo, o por cuerpo si el archivo viene sin
+dígito verificador). No se cae al usuario que subió el archivo: podría ser otra
+persona. Con 0 o 2+ coincidencias, o si el abogado no tiene credenciales
+cargadas, la causa va sin credencial.
+
+Para activarlo: `PUT /api/v1/admin/clientes/{id}/api-keys/{key_id}` con
+`ips_permitidas`, `llave_publica_pem` y `expone_credenciales_pjud: true`.
+`admin_app` todavía no tiene pantalla para esos campos.
+
 ### reCAPTCHA v3 en los formularios públicos
 
 Son cuatro y no tienen límite de intentos: los dos logins,

@@ -53,6 +53,18 @@ class ApiKey(BaseMaestra):
     # key y no está en la lista recibe el mismo 401 que con una key inválida.
     ips_permitidas: Mapped[Optional[str]] = mapped_column(Text)
 
+    # La key puede pedir (`?incluir_credenciales=true`) el RUT, la clave y el
+    # método de login del OJV de los abogados dueños de las causas, para que el
+    # sistema externo entre al PJUD por su cuenta. Apagado por defecto. Solo
+    # se puede encender con `ips_permitidas` y `llave_publica_pem` cargadas, y
+    # la clave sale siempre sellada con esa llave (ver
+    # `app/core/credenciales_pjud.py`): nunca en claro en la respuesta.
+    expone_credenciales_pjud: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    # Llave pública RSA (PEM) del sistema externo. La privada la tiene solo él.
+    llave_publica_pem: Mapped[Optional[str]] = mapped_column(Text)
+
     limite_por_minuto: Mapped[int] = mapped_column(Integer, nullable=False)
 
     activa: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

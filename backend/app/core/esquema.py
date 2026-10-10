@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     # IPs desde las que puede usarse una API key. Nula = cualquiera.
     ("api_key", "ips_permitidas", "TEXT"),
+    # Entrega de credenciales del OJV al sistema externo. Apagado por defecto.
+    ("api_key", "expone_credenciales_pjud", "BOOLEAN DEFAULT FALSE NOT NULL"),
+    ("api_key", "llave_publica_pem", "TEXT"),
     # Estado del aprovisionamiento: distingue un alta completa de una que
     # falló a la mitad. Las filas anteriores son clientes que sí quedaron
     # operativos, por eso el DEFAULT las deja en 'listo'.
