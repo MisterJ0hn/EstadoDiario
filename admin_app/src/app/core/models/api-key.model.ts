@@ -18,6 +18,10 @@ export interface ApiKey {
   limite_por_minuto: number;
   /** IP o rangos desde los que puede usarse. Vacía = desde cualquier IP. */
   ips_permitidas: string[];
+  /** Puede pedir las credenciales del OJV de los abogados (selladas con su llave). */
+  expone_credenciales_pjud: boolean;
+  /** Huella SHA-256 de la llave pública cargada. La llave misma no se devuelve. */
+  llave_publica_huella: string | null;
   /** False cuando fue revocada. Un vencimiento no la marca: se calcula con `expira_en`. */
   activa: boolean;
   fecha_creacion: string;
@@ -48,6 +52,10 @@ export interface ApiKeyUpdate {
   limite_por_minuto?: number;
   /** Omitido = no cambiar. Lista vacía = quitar la restricción. */
   ips_permitidas?: string[];
+  /** Omitido = no cambiar. Exige IPs permitidas y llave pública. */
+  expone_credenciales_pjud?: boolean;
+  /** PEM de la llave pública RSA (mín. 2048 bits). Omitido = conservar la actual. */
+  llave_publica_pem?: string;
 }
 
 /** La única respuesta que trae la key en claro: no se puede volver a ver. */

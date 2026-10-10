@@ -122,6 +122,12 @@ type EstadoKey = 'activa' | 'vencida' | 'revocada';
                               Desde {{ k.ips_permitidas.length }} IP o rangos
                             }
                           </span>
+                          @if (k.expone_credenciales_pjud) {
+                            <span class="badge-warning mt-1"
+                                  title="Puede pedir el RUT y la clave del PJUD de los abogados, selladas con su llave">
+                              Entrega credenciales PJUD
+                            </span>
+                          }
                         </td>
                         <td class="whitespace-nowrap">{{ k.limite_por_minuto }} / min</td>
                         <td>
@@ -352,6 +358,47 @@ type EstadoKey = 'activa' | 'vencida' | 'revocada';
                 aquí: el sistema recibirá 401 hasta entonces.
               </p>
             </div>
+            <fieldset class="border border-neutral-200 rounded-lg p-3 space-y-3">
+              <legend class="px-1 text-sm font-medium text-neutral-800">Credenciales del PJUD</legend>
+              <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" class="mt-1" [(ngModel)]="edicion.expone" />
+                <span>
+                  <span class="font-medium text-neutral-800">Entregar RUT, clave y método de login</span>
+                  <span class="block text-sm text-neutral-500">
+                    El sistema podrá pedir (<code>?incluir_credenciales=true</code>) las credenciales del
+                    Poder Judicial del abogado dueño de cada causa. La clave sale cifrada con la llave
+                    pública de abajo: solo el sistema, con su llave privada, puede leerla.
+                  </span>
+                </span>
+              </label>
+              @if (edicion.expone) {
+                @if (!edicion.ips.trim()) {
+                  <div class="alert-warning text-sm">
+                    Exige <strong>IPs permitidas</strong>: complételas arriba para poder guardar.
+                  </div>
+                }
+                <div>
+                  <label class="form-label" for="edit-llave">Llave pública RSA (PEM)</label>
+                  <textarea id="edit-llave" rows="5" class="form-input font-mono text-xs"
+                            [(ngModel)]="edicion.llave" spellcheck="false" autocomplete="off"
+                            placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"></textarea>
+                  @if (k.llave_publica_huella) {
+                    <p class="text-xs text-neutral-500 mt-1">
+                      Llave cargada, huella <code class="break-all">{{ k.llave_publica_huella }}</code>.
+                      Déjelo vacío para conservarla o pegue otra para reemplazarla.
+                    </p>
+                  } @else {
+                    <p class="text-xs text-neutral-500 mt-1">
+                      Mínimo 2048 bits. Es la llave <strong>pública</strong>: nunca pegue la privada.
+                    </p>
+                  }
+                </div>
+              }
+              <p class="text-xs text-neutral-500">
+                Cada entrega queda en el log del cliente (módulo <em>auth</em>) con la IP y los
+                abogados involucrados, nunca con la clave.
+              </p>
+            </fieldset>
             <p class="text-xs text-neutral-500">
               Los permisos y el vencimiento no se cambian: para otros permisos, emita una key nueva y
               revoque esta.
@@ -425,7 +472,7 @@ export class ClienteApiKeysComponent implements OnInit {
   creada = signal<ApiKeyCreada | null>(null);
 
   editando = signal<ApiKey | null>(null);
-  edicion = { nombre: '', limite: null as number | null, ips: '' };
+  edicion = { nombre: '', limite: null as number | null, ips: '', expone: false, llave: '' };
 
   revocando = signal<ApiKey | null>(null);
 
@@ -556,6 +603,8 @@ export class ClienteApiKeysComponent implements OnInit {
       nombre: k.nombre,
       limite: k.limite_por_minuto,
       ips: k.ips_permitidas.join(', '),
+      expone: k.expone_credenciales_pjud,
+      llave: '',
     };
     this.errorModal.set('');
     this.editando.set(k);
@@ -582,11 +631,35 @@ export class ClienteApiKeysComponent implements OnInit {
       return;
     }
 
+    const llave = this.edicion.llave.trim();
+    if (this.edicion.expone) {
+      // El backend vuelve a exigirlo sobre el estado resultante; esto ahorra el viaje.
+      if (ips.length === 0) {
+        this.errorModal.set('Para entregar credenciales del PJUD la key debe tener IPs permitidas');
+        return;
+      }
+      if (!llave && !k.llave_publica_huella) {
+        this.errorModal.set('Pegue la llave pública RSA del sistema (PEM)');
+        return;
+      }
+    }
+    if (llave && (!llave.includes('BEGIN PUBLIC KEY') || llave.includes('PRIVATE KEY'))) {
+      this.errorModal.set('Pegue la llave PÚBLICA en formato PEM (-----BEGIN PUBLIC KEY-----)');
+      return;
+    }
+
     this.guardando.set(true);
     this.errorModal.set('');
     // Lista vacía = quitar la restricción; el backend la distingue de "no cambiar".
     this.service
-      .update(this.clienteId(), k.id, { nombre, limite_por_minuto: limite, ips_permitidas: ips })
+      .update(this.clienteId(), k.id, {
+        nombre,
+        limite_por_minuto: limite,
+        ips_permitidas: ips,
+        expone_credenciales_pjud: this.edicion.expone,
+        // Vacía = conservar la que ya está: se omite en vez de mandar "".
+        ...(llave ? { llave_publica_pem: llave } : {}),
+      })
       .subscribe({
       next: () => {
         this.guardando.set(false);

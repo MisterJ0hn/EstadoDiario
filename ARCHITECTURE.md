@@ -463,9 +463,12 @@ dígito verificador). No se cae al usuario que subió el archivo: podría ser ot
 persona. Con 0 o 2+ coincidencias, o si el abogado no tiene credenciales
 cargadas, la causa va sin credencial.
 
-Para activarlo: `PUT /api/v1/admin/clientes/{id}/api-keys/{key_id}` con
-`ips_permitidas`, `llave_publica_pem` y `expone_credenciales_pjud: true`.
-`admin_app` todavía no tiene pantalla para esos campos.
+Para activarlo: en `admin_app`, pestaña **API keys** de la ficha del cliente →
+**Editar** la key → sección *Credenciales del PJUD* (interruptor y llave pública
+PEM; exige tener IPs permitidas). No está en el formulario de emisión a propósito:
+la key nace sin acceso a credenciales y se enciende de forma deliberada. Por API:
+`PUT /api/v1/admin/clientes/{id}/api-keys/{key_id}` con `ips_permitidas`,
+`llave_publica_pem` y `expone_credenciales_pjud: true`.
 
 ### reCAPTCHA v3 en los formularios públicos
 
