@@ -66,12 +66,6 @@ _MENSAJE_ERROR_SYNC = (
     "Puedes reintentarla."
 )
 
-_MENSAJE_SIN_CREDENCIALES = (
-    "Para consultar esta causa por primera vez hay que iniciar sesión en el "
-    "Poder Judicial con tu clave. Configúrala en Mi Perfil → Clave del Poder "
-    "Judicial."
-)
-
 
 class PjudApiError(Exception):
     """Cualquier motivo por el que no se pudo traer el detalle de una causa.
@@ -308,22 +302,39 @@ class PjudService:
 
     # ── Flujo completo ───────────────────────────────────────────
 
-    def _sincronizar(
-        self, cuerpo_causa: dict, credenciales: dict, competencia: str = "civil"
-    ) -> str:
-        """Encola el scrape en el proveedor. `/sincronizar_<competencia>` INICIA
-        SESIÓN en el OJV como la persona, así que el cuerpo lleva además su rut,
-        clave y método de login (1 = Clave del Poder Judicial, 2 = ClaveÚnica).
+    @staticmethod
+    def _con_credenciales(cuerpo: dict, credenciales: Optional[dict]) -> dict:
+        """Agrega `rut`, `clave` y `metodo_login` del abogado dueño de la causa.
 
-        Best-effort: un 409 (ya en curso) o cualquier otra falla acá no corta la
-        pantalla. Devuelve una nota corta de qué pasó, para el log de
-        diagnóstico (no se le muestra al usuario)."""
-        cuerpo = {
-            **cuerpo_causa,
+        Los tres campos son opcionales en api-pjud (`consultar_*`,
+        `consultar_movimientos_*` y `sincronizar_*`): sin ellos extrae desde
+        consultas unificadas y no hace login. Por eso, si el dueño no tiene
+        credenciales —o la causa no tiene dueño— el cuerpo va **sin** los tres
+        campos, nunca con nulos o vacíos. 1 = Clave del Poder Judicial,
+        2 = ClaveÚnica.
+
+        Nada de esto se escribe en logs ni en el diagnóstico.
+        """
+        if not (credenciales and credenciales.get("rut") and credenciales.get("clave")):
+            return cuerpo
+        return {
+            **cuerpo,
             "rut": credenciales["rut"],
             "clave": credenciales["clave"],
             "metodo_login": credenciales.get("metodo_login") or 1,
         }
+
+    def _sincronizar(
+        self, cuerpo_causa: dict, credenciales: Optional[dict], competencia: str = "civil"
+    ) -> str:
+        """Encola el scrape en el proveedor. Con credenciales del dueño de la
+        causa, `/sincronizar_<competencia>` inicia sesión en el OJV como él; sin
+        ellas, api-pjud igual sincroniza (ver `_con_credenciales`).
+
+        Best-effort: un 409 (ya en curso) o cualquier otra falla acá no corta la
+        pantalla. Devuelve una nota corta de qué pasó, para el log de
+        diagnóstico (no se le muestra al usuario)."""
+        cuerpo = self._con_credenciales(cuerpo_causa, credenciales)
         ruta = f"/sincronizar_{competencia}"
         try:
             self._request("POST", ruta, json=cuerpo)
@@ -342,14 +353,11 @@ class PjudService:
         causa,
         forzar_sincronizacion: bool = False,
         cuaderno_id: Optional[int] = None,
-        credenciales_pjud: Optional[dict] = None,
+        credenciales_dueno: Optional[dict] = None,
     ) -> dict:
         """Detalle completo de una `Causa` (materia Civil) desde el PJUD.
 
         Devuelve siempre un dict con `estado`:
-          - `"sin_credenciales"`: hay que sincronizar la causa (nunca vista, o
-            todavía en proceso) pero la persona no cargó su clave del OJV. La
-            pantalla la manda a Mi Perfil.
           - `"sincronizando"`: el proveedor está scrapeando la causa. Se
             devuelve lo que ya haya expuesto (cabecera de la causa y, si hay
             cuadernos, la historia); puede venir todo vacío al principio. La
@@ -364,8 +372,10 @@ class PjudService:
         legible con el progreso ("Procesando cuaderno 2 de 3") o el motivo del
         fallo. Puede venir vacío.
 
-        `credenciales_pjud`: `{"rut", "clave", "metodo_login"}` de la persona;
-        sin ellas no se puede llamar a `/sincronizar_civil`.
+        `credenciales_dueno`: `{"rut", "clave", "metodo_login"}` del abogado
+        dueño de la causa (ver `credenciales_pjud.credenciales_del_dueno`). Van en
+        `consultar_*`, movimientos y `sincronizar_*`; sin ellas se llama igual,
+        sin esos campos.
 
         `forzar_sincronizacion` pide un scrape nuevo antes de consultar (botón
         "Actualizar desde el PJUD").
@@ -403,26 +413,20 @@ class PjudService:
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
-        puede_sincronizar = bool(
-            credenciales_pjud
-            and credenciales_pjud.get("rut")
-            and credenciales_pjud.get("clave")
-        )
-
         # Notas técnicas de cada paso, para el log de la consola. No se le
         # muestran al usuario; sirven para responder "¿y por qué sigue
         # sincronizando?" sin tener que abrir los logs del servidor de api-pjud.
         diag: list[str] = [f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"]
-        if not puede_sincronizar:
-            diag.append("sin clave del OJV cargada")
-
-        if forzar_sincronizacion and puede_sincronizar:
-            diag.append("forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud))
+        if forzar_sincronizacion:
+            diag.append("forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno))
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
         try:
-            detalle = self._request("POST", "/consultar_civil", json=cuerpo_causa)["causa"]
+            detalle = self._request(
+                "POST", "/consultar_civil",
+                json=self._con_credenciales(cuerpo_causa, credenciales_dueno),
+            )["causa"]
             estado_raw = detalle.get("estado")
             detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
             ultimo_error = (detalle.get("ultimo_error") or "").strip() or None
@@ -461,18 +465,10 @@ class PjudService:
             or not cuadernos
         )
 
-        if esta_sincronizando and not puede_sincronizar:
-            return {
-                "estado": "sin_credenciales",
-                "mensaje": _MENSAJE_SIN_CREDENCIALES,
-                "detalle_estado": detalle_estado,
-                "diagnostico": " · ".join(diag),
-            }
-
         # `forzar` ya disparó el sync arriba; sin `forzar` se dispara acá para
         # que el worker del proveedor siga avanzando entre reintentos.
         if esta_sincronizando and not forzar_sincronizacion:
-            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud))
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno))
 
         # Se responde con TODO lo que el proveedor ya haya alcanzado a exponer:
         # mientras sincroniza, `/consultar_civil` va poblando primero la
@@ -499,7 +495,9 @@ class PjudService:
             try:
                 movimientos = self._request(
                     "POST", "/consultar_movimientos_civil",
-                    json={"identificador": identificador, "cuadeno": cuaderno["id"]},
+                    json=self._con_credenciales(
+                        {"identificador": identificador, "cuadeno": cuaderno["id"]}, credenciales_dueno
+                    ),
                 )
             except PjudApiError as e:
                 # Durante la sincronización los movimientos de un cuaderno
@@ -536,15 +534,13 @@ class PjudService:
         self,
         causa,
         forzar_sincronizacion: bool = False,
-        credenciales_pjud: Optional[dict] = None,
+        credenciales_dueno: Optional[dict] = None,
     ) -> dict:
         """Detalle completo de una `Causa` de materia Familia desde el PJUD.
 
         Mismo flujo asíncrono que `obtener_detalle` (Civil): la primera consulta
         encola el scrape (`/sincronizar_familia`) y devuelve `sincronizando`;
-        `error` si el scrape del proveedor terminó mal; `sin_credenciales` si
-        hay que sincronizar y la persona no cargó su clave del OJV; `listo`
-        cuando está todo.
+        `error` si el scrape del proveedor terminó mal; `listo` cuando está todo.
 
         Cambia respecto a Civil:
           - la sección de trámites se llama `movimientos` (no `historia`);
@@ -566,25 +562,19 @@ class PjudService:
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
-        puede_sincronizar = bool(
-            credenciales_pjud
-            and credenciales_pjud.get("rut")
-            and credenciales_pjud.get("clave")
-        )
-
         diag: list[str] = [f"tipo={tipo} rol={rol} anio={anio}"]
-        if not puede_sincronizar:
-            diag.append("sin clave del OJV cargada")
-
-        if forzar_sincronizacion and puede_sincronizar:
+        if forzar_sincronizacion:
             diag.append(
-                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "familia")
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno, "familia")
             )
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
         try:
-            data = self._request("POST", "/consultar_familia", json=cuerpo_causa)
+            data = self._request(
+                "POST", "/consultar_familia",
+                json=self._con_credenciales(cuerpo_causa, credenciales_dueno),
+            )
             # El proveedor devuelve la causa bajo `causa`; se tolera también que
             # venga en la raíz por si el envoltorio cambia.
             detalle = data.get("causa", data)
@@ -615,16 +605,8 @@ class PjudService:
         # A diferencia de Civil, no se mira `cuadernos`: Familia no los expone.
         esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
 
-        if esta_sincronizando and not puede_sincronizar:
-            return {
-                "estado": "sin_credenciales",
-                "mensaje": _MENSAJE_SIN_CREDENCIALES,
-                "detalle_estado": detalle_estado,
-                "diagnostico": " · ".join(diag),
-            }
-
         if esta_sincronizando and not forzar_sincronizacion:
-            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "familia"))
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "familia"))
 
         identificador = (detalle or {}).get("identificador")
         causa_out = detalle if identificador else None
@@ -651,7 +633,9 @@ class PjudService:
             try:
                 mov = self._request(
                     "POST", "/consultar_movimientos_familia",
-                    json={"identificador": identificador, "cuadeno": 1},
+                    json=self._con_credenciales(
+                        {"identificador": identificador, "cuadeno": 1}, credenciales_dueno
+                    ),
                 )
             except PjudApiError as e:
                 # Durante la sincronización los movimientos pueden no estar
@@ -779,14 +763,12 @@ class PjudService:
         self,
         causa,
         forzar_sincronizacion: bool = False,
-        credenciales_pjud: Optional[dict] = None,
+        credenciales_dueno: Optional[dict] = None,
     ) -> dict:
         """Detalle completo de una `Causa` de materia Laboral desde el PJUD.
 
         Mismo flujo asíncrono que Civil/Familia: `sincronizando` mientras el
-        proveedor scrapea, `error` si el scrape terminó mal, `sin_credenciales`
-        si hay que sincronizar y la persona no cargó su clave del OJV, `listo`
-        cuando está todo.
+        proveedor scrapea, `error` si el scrape terminó mal, `listo` cuando está todo.
 
         A diferencia de Familia (que manda `corte`/`tribunal` en 0 porque su
         búsqueda privada filtra solo por Rit/Rol/Año), Laboral SÍ necesita los
@@ -839,24 +821,18 @@ class PjudService:
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
-        puede_sincronizar = bool(
-            credenciales_pjud
-            and credenciales_pjud.get("rut")
-            and credenciales_pjud.get("clave")
-        )
-
-        if not puede_sincronizar:
-            diag.append("sin clave del OJV cargada")
-
-        if forzar_sincronizacion and puede_sincronizar:
+        if forzar_sincronizacion:
             diag.append(
-                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "laboral")
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno, "laboral")
             )
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
         try:
-            data = self._request("POST", "/consultar_laboral", json=cuerpo_causa)
+            data = self._request(
+                "POST", "/consultar_laboral",
+                json=self._con_credenciales(cuerpo_causa, credenciales_dueno),
+            )
             # Igual que Familia: se tolera que la causa venga bajo `causa` o en
             # la raíz, por si el envoltorio cambia.
             detalle = data.get("causa", data)
@@ -887,16 +863,8 @@ class PjudService:
         # Como Familia, no se mira `cuadernos`: Laboral no los expone.
         esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
 
-        if esta_sincronizando and not puede_sincronizar:
-            return {
-                "estado": "sin_credenciales",
-                "mensaje": _MENSAJE_SIN_CREDENCIALES,
-                "detalle_estado": detalle_estado,
-                "diagnostico": " · ".join(diag),
-            }
-
         if esta_sincronizando and not forzar_sincronizacion:
-            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "laboral"))
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "laboral"))
 
         identificador = (detalle or {}).get("identificador")
         causa_out = detalle if identificador else None
@@ -921,7 +889,9 @@ class PjudService:
             try:
                 mov = self._request(
                     "POST", "/consultar_movimientos_laboral",
-                    json={"identificador": identificador, "cuadeno": 1},
+                    json=self._con_credenciales(
+                        {"identificador": identificador, "cuadeno": 1}, credenciales_dueno
+                    ),
                 )
             except PjudApiError as e:
                 # Durante la sincronización el movimiento puede no estar listo
@@ -974,14 +944,13 @@ class PjudService:
         causa,
         forzar_sincronizacion: bool = False,
         cuaderno_id: Optional[int] = None,
-        credenciales_pjud: Optional[dict] = None,
+        credenciales_dueno: Optional[dict] = None,
     ) -> dict:
         """Detalle completo de una `Causa` de materia Cobranza desde el PJUD.
 
         Mismo flujo asíncrono que Civil/Familia/Laboral: `sincronizando`
-        mientras el proveedor scrapea, `error` si el scrape terminó mal,
-        `sin_credenciales` si hay que sincronizar y la persona no cargó su
-        clave del OJV, `listo` cuando está todo.
+        mientras el proveedor scrapea, `error` si el scrape terminó mal, `listo`
+        cuando está todo.
 
         Como Civil (y a diferencia de Familia/Laboral), Cobranza SÍ expone
         `cuadernos` en la cabecera y necesita los IDs numéricos del catálogo
@@ -1023,23 +992,18 @@ class PjudService:
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
-        puede_sincronizar = bool(
-            credenciales_pjud
-            and credenciales_pjud.get("rut")
-            and credenciales_pjud.get("clave")
-        )
-        if not puede_sincronizar:
-            diag.append("sin clave del OJV cargada")
-
-        if forzar_sincronizacion and puede_sincronizar:
+        if forzar_sincronizacion:
             diag.append(
-                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "cobranza")
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno, "cobranza")
             )
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
         try:
-            data = self._request("POST", "/consultar_cobranza", json=cuerpo_causa)
+            data = self._request(
+                "POST", "/consultar_cobranza",
+                json=self._con_credenciales(cuerpo_causa, credenciales_dueno),
+            )
             # Igual que Familia/Laboral: se tolera que la causa venga bajo
             # `causa` o en la raíz, por si el envoltorio cambia.
             detalle = data.get("causa", data)
@@ -1075,16 +1039,8 @@ class PjudService:
             or not cuadernos
         )
 
-        if esta_sincronizando and not puede_sincronizar:
-            return {
-                "estado": "sin_credenciales",
-                "mensaje": _MENSAJE_SIN_CREDENCIALES,
-                "detalle_estado": detalle_estado,
-                "diagnostico": " · ".join(diag),
-            }
-
         if esta_sincronizando and not forzar_sincronizacion:
-            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "cobranza"))
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "cobranza"))
 
         # El proveedor manda `doc_demanda.ruta` en vez de `.url` (los demás
         # documentos de la cabecera sí usan `url`); se remapea acá antes de
@@ -1116,7 +1072,9 @@ class PjudService:
             try:
                 movimientos = self._request(
                     "POST", "/consultar_movimientos_cobranza",
-                    json={"identificador": identificador, "cuadeno": cuaderno["id"]},
+                    json=self._con_credenciales(
+                        {"identificador": identificador, "cuadeno": cuaderno["id"]}, credenciales_dueno
+                    ),
                 )
             except PjudApiError as e:
                 if not esta_sincronizando:
@@ -1194,12 +1152,12 @@ class PjudService:
         causa,
         forzar_sincronizacion: bool = False,
         cuaderno_id: Optional[int] = None,
-        credenciales_pjud: Optional[dict] = None,
+        credenciales_dueno: Optional[dict] = None,
     ) -> dict:
         """Detalle completo de una `Causa` de materia Penal desde el PJUD.
 
         Mismo flujo asíncrono que Civil/Familia/Laboral/Cobranza
-        (`sincronizando` / `error` / `sin_credenciales` / `listo`).
+        (`sincronizando` / `error` / `listo`).
 
         Como Laboral y Cobranza, Penal necesita los IDs reales del catálogo
         (`/catalogo/tribunales?competencia=penal`, árbol propio). Cambia además:
@@ -1249,23 +1207,18 @@ class PjudService:
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
-        puede_sincronizar = bool(
-            credenciales_pjud
-            and credenciales_pjud.get("rut")
-            and credenciales_pjud.get("clave")
-        )
-        if not puede_sincronizar:
-            diag.append("sin clave del OJV cargada")
-
-        if forzar_sincronizacion and puede_sincronizar:
+        if forzar_sincronizacion:
             diag.append(
-                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_pjud, "penal")
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno, "penal")
             )
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
         try:
-            data = self._request("POST", "/consultar_penal", json=cuerpo_causa)
+            data = self._request(
+                "POST", "/consultar_penal",
+                json=self._con_credenciales(cuerpo_causa, credenciales_dueno),
+            )
             # Se tolera que la causa venga bajo `causa` o en la raíz.
             detalle = data.get("causa", data)
             estado_raw = detalle.get("estado")
@@ -1299,16 +1252,8 @@ class PjudService:
             or not cuadernos
         )
 
-        if esta_sincronizando and not puede_sincronizar:
-            return {
-                "estado": "sin_credenciales",
-                "mensaje": _MENSAJE_SIN_CREDENCIALES,
-                "detalle_estado": detalle_estado,
-                "diagnostico": " · ".join(diag),
-            }
-
         if esta_sincronizando and not forzar_sincronizacion:
-            diag.append(self._sincronizar(cuerpo_causa, credenciales_pjud, "penal"))
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "penal"))
 
         identificador = (detalle or {}).get("identificador")
         causa_out = self._normalizar_cabecera_penal(detalle) if identificador else None
@@ -1332,7 +1277,9 @@ class PjudService:
             try:
                 mov = self._request(
                     "POST", "/consultar_movimientos_penal",
-                    json={"identificador": identificador, "cuaderno": cuaderno["id"]},
+                    json=self._con_credenciales(
+                        {"identificador": identificador, "cuaderno": cuaderno["id"]}, credenciales_dueno
+                    ),
                 )
             except PjudApiError as e:
                 if not esta_sincronizando:

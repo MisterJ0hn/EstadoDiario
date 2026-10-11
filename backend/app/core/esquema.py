@@ -117,6 +117,9 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # cargadas hasta que corra el cruce: no se puede deducir de la nada.
     ("causa", "ultima_actividad", "DATE"),
     ("causa", "origen_actividad", "VARCHAR(20)"),
+    # Abogado de una causa dada de alta por API. Nulo en todo lo existente: esas
+    # filas toman el RUT de su archivo y nunca leen esta columna.
+    ("causa", "rut_asignado", "VARCHAR(20)"),
     # Cartera armada por el cruce porque el estudio no ha cargado el reporte de
     # Causas. FALSE en todo lo que ya existe: esos archivos los subió alguien.
     ("estado_diario_origen", "deducida", "BOOLEAN DEFAULT FALSE"),

@@ -63,6 +63,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.causa import (
+    ORIGEN_DATO_API,
     ORIGEN_DATO_AUDIENCIAS,
     ORIGEN_DATO_CAUSAS,
     ORIGEN_DATO_ESTADO_DIARIO,
@@ -138,6 +139,8 @@ class ResultadoSync:
         self.cortes_creadas = 0
         self.cortes_actualizadas = 0
         self.estados_cambiados = 0
+        # Causas dadas de alta por API a las que un estado diario les puso abogado.
+        self.ruts_asignados = 0
         # Filas de origen que no se pudieron identificar (les falta el rol o el
         # tribunal). Se cuentan y se informan en vez de descartarlas en
         # silencio: un número alto acá suele delatar datos mal clasificados.
@@ -153,7 +156,8 @@ class ResultadoSync:
     @property
     def hubo_cambios(self) -> bool:
         return bool(
-            self.causas_creadas or self.causas_actualizadas
+            self.ruts_asignados
+            or self.causas_creadas or self.causas_actualizadas
             or self.cortes_creadas or self.cortes_actualizadas
         )
 
@@ -177,7 +181,8 @@ class ResultadoSync:
             # la última actividad se calcula en su propia pasada, después del
             # cruce. Sin este número, correr el job para rellenar la columna de
             # Mis Causas no dejaba ninguna señal de que hubiera hecho algo.
-            f"{self.actividad_calculada} últimas actividades{omitidas}{deducida}"
+            f"{self.actividad_calculada} últimas actividades · "
+            f"{self.ruts_asignados} RUT asignados a causas de API{omitidas}{deducida}"
         )
 
     def como_aviso(self) -> Optional[str]:
@@ -408,6 +413,8 @@ class CarteraSyncService:
                     if self._aplicar(causa, datos, origen, fecha_cartera,
                                      _CAMPOS_VOLATILES_CAUSA, resultado):
                         resultado.causas_actualizadas += 1
+                    if procedencia == ORIGEN_DATO_ESTADO_DIARIO:
+                        self._asignar_rut_desde_estado_diario(causa, origen, resultado)
             else:
                 causa = Causa(
                     estado_diario_origen_id=origen_cartera.id,
@@ -418,6 +425,30 @@ class CarteraSyncService:
                 self.db.add(causa)
                 indice[clave] = [causa]
                 resultado.causas_creadas += 1
+
+    @staticmethod
+    def _asignar_rut_desde_estado_diario(
+        causa: Causa, origen: EstadoDiarioOrigen, resultado: ResultadoSync
+    ) -> None:
+        """Le pone abogado a una causa dada de alta por API.
+
+        **Solo el estado diario asigna**, y a propósito: es el único reporte que
+        dice "esta causa le llegó a este abogado" (su archivo trae el RUT del
+        abogado que lo emitió). Movimientos y audiencias no asignan, aunque
+        mencionen la causa. Una vez asignada no se reasigna: el primer abogado
+        cuyo estado diario la trae (el cruce recorre del más viejo al más
+        nuevo) se queda con ella, aunque después aparezca en el de otro.
+
+        Si el archivo no trae RUT no se asigna nada: la causa sigue sin abogado
+        en vez de quedar con uno inventado.
+        """
+        if causa.origen_dato != ORIGEN_DATO_API or causa.rut_asignado:
+            return
+        rut = (origen.rut or "").strip()
+        if not rut:
+            return
+        causa.rut_asignado = rut
+        resultado.ruts_asignados += 1
 
     def _fuentes_materia(self):
         """Las filas de Movimientos y Estado Diario, de la más vieja a la más nueva.

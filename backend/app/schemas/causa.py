@@ -7,7 +7,7 @@ diario: acá no hay nada que despachar.
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CausaResponse(BaseModel):
@@ -70,7 +70,7 @@ class CausaResponse(BaseModel):
             estado_causa=c.estado_causa,
             institucion=c.institucion,
             jurisdiccion_id=c.jurisdiccion_id,
-            rut=origen.rut if origen else None,
+            rut=c.rut_efectivo,
             fecha_archivo=origen.fecha if origen else None,
             nombre_archivo=origen.nombre_archivo if origen else None,
             ultima_actividad=c.ultima_actividad,
@@ -78,6 +78,34 @@ class CausaResponse(BaseModel):
             # La cuelga el repositorio sobre el objeto; en otros usos no está.
             proxima_audiencia=getattr(c, "proxima_audiencia", None),
         )
+
+
+class CrearCausaRequest(BaseModel):
+    """Alta individual por API.
+
+    **No hay campo de RUT, y `extra="forbid"` hace que mandar uno sea un 422** y
+    no algo que se ignora en silencio: la causa nace sin abogado y se le asigna
+    cuando llega un estado diario que la trae.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    materia: str = Field(description="Civil | Familia | Laboral | Cobranza | Penal")
+    rol: str = Field(min_length=1, max_length=100, description="Rol (o RIT en Penal/Familia)")
+    tribunal: str = Field(min_length=1, max_length=255)
+    tipo_causa: str | None = Field(None, max_length=100)
+    ruc: str | None = Field(None, max_length=100)
+    fecha_ingreso: date | None = None
+    caratulado: str | None = Field(None, max_length=500)
+    estado_causa: str | None = Field(None, max_length=255)
+    institucion: str | None = Field(None, max_length=255)
+
+
+class CrearCausaResponse(BaseModel):
+    exito: bool = True
+    # False = ya estaba en Mis Causas; se devuelve sin cambios.
+    creada: bool
+    causa: CausaResponse
 
 
 class CausaListResponse(BaseModel):

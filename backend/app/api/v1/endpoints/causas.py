@@ -21,7 +21,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import UPLOAD_DIR, settings
 from app.core.database import get_db_maestra
-from app.core.credenciales_pjud import Sellador, sellador_solicitado
+from app.core.credenciales_pjud import (
+    Sellador,
+    credenciales_del_dueno,
+    sellador_solicitado,
+)
 from app.core.filtro_roles import DESC_ROLES, parse_roles
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.usuario import Usuario
@@ -36,6 +40,8 @@ from app.schemas.causa import (
     CausaResponse,
     CausaResumenResponse,
     ConteoMateria,
+    CrearCausaRequest,
+    CrearCausaResponse,
 )
 from app.schemas.pjud import (
     PjudCobranzaMovimientosResponse,
@@ -46,6 +52,7 @@ from app.schemas.pjud import (
     PjudMovimientosResponse,
     PjudPorRolResponse,
 )
+from app.services.causa_api_service import CausaApiService, materia_canonica
 from app.services.causa_import_service import CausaImportService, parse_nombre_archivo
 from app.services.pjud_service import PjudApiError, PjudNoEncontrado, PjudService
 
@@ -67,6 +74,40 @@ def _vigencia(valor: str | None) -> str | None:
 
 
 # ── Carga ─────────────────────────────────────────────────
+
+
+@router.post(
+    "",
+    response_model=CrearCausaResponse,
+    summary="Dar de alta una causa (solo sistemas externos con API key)",
+)
+def crear_causa(
+    body: CrearCausaRequest,
+    db: Session = Depends(get_db_tenant),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Crea UNA causa en Mis Causas **sin abogado asignado** (`rut` null).
+
+    El abogado se asigna solo, cuando llega un estado diario que trae la causa
+    (ver `CarteraSyncService`). No se puede indicar acá. Si el `rol + tribunal`
+    ya está en Mis Causas se devuelve esa causa sin tocarla (`creada: false`).
+    """
+    if not current_user.es_integracion:
+        raise HTTPException(
+            status_code=403,
+            detail="El alta individual de causas es solo para sistemas externos (API key)",
+        )
+    materia = materia_canonica(body.materia)
+    if materia is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Materia inválida: use Civil, Familia, Laboral, Cobranza o Penal",
+        )
+    causa, creada = CausaApiService(db).crear(
+        materia=materia, usuario_id=current_user.id,
+        **body.model_dump(exclude={"materia"}),
+    )
+    return CrearCausaResponse(creada=creada, causa=CausaResponse.from_model(causa))
 
 
 @router.post(
@@ -451,11 +492,7 @@ def pjud_movimientos(
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
-    credenciales_pjud = {
-        "rut": current_user.pjud_rut,
-        "clave": current_user.pjud_clave,
-        "metodo_login": current_user.pjud_metodo_login,
-    }
+    credenciales_dueno = credenciales_del_dueno(db, causa)
 
     inicio = time.monotonic()
     resultado_log = "error"
@@ -467,7 +504,7 @@ def pjud_movimientos(
             causa,
             forzar_sincronizacion=forzar,
             cuaderno_id=cuaderno,
-            credenciales_pjud=credenciales_pjud,
+            credenciales_dueno=credenciales_dueno,
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -527,11 +564,7 @@ def pjud_familia(
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
-    credenciales_pjud = {
-        "rut": current_user.pjud_rut,
-        "clave": current_user.pjud_clave,
-        "metodo_login": current_user.pjud_metodo_login,
-    }
+    credenciales_dueno = credenciales_del_dueno(db, causa)
 
     inicio = time.monotonic()
     resultado_log = "error"
@@ -542,7 +575,7 @@ def pjud_familia(
         resultado = PjudService().obtener_detalle_familia(
             causa,
             forzar_sincronizacion=forzar,
-            credenciales_pjud=credenciales_pjud,
+            credenciales_dueno=credenciales_dueno,
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -597,11 +630,7 @@ def pjud_laboral(
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
-    credenciales_pjud = {
-        "rut": current_user.pjud_rut,
-        "clave": current_user.pjud_clave,
-        "metodo_login": current_user.pjud_metodo_login,
-    }
+    credenciales_dueno = credenciales_del_dueno(db, causa)
 
     inicio = time.monotonic()
     resultado_log = "error"
@@ -612,7 +641,7 @@ def pjud_laboral(
         resultado = PjudService().obtener_detalle_laboral(
             causa,
             forzar_sincronizacion=forzar,
-            credenciales_pjud=credenciales_pjud,
+            credenciales_dueno=credenciales_dueno,
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -668,11 +697,7 @@ def pjud_cobranza(
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
-    credenciales_pjud = {
-        "rut": current_user.pjud_rut,
-        "clave": current_user.pjud_clave,
-        "metodo_login": current_user.pjud_metodo_login,
-    }
+    credenciales_dueno = credenciales_del_dueno(db, causa)
 
     inicio = time.monotonic()
     resultado_log = "error"
@@ -684,7 +709,7 @@ def pjud_cobranza(
             causa,
             forzar_sincronizacion=forzar,
             cuaderno_id=cuaderno,
-            credenciales_pjud=credenciales_pjud,
+            credenciales_dueno=credenciales_dueno,
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -738,11 +763,7 @@ def pjud_penal(
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
 
-    credenciales_pjud = {
-        "rut": current_user.pjud_rut,
-        "clave": current_user.pjud_clave,
-        "metodo_login": current_user.pjud_metodo_login,
-    }
+    credenciales_dueno = credenciales_del_dueno(db, causa)
 
     inicio = time.monotonic()
     resultado_log = "error"
@@ -754,7 +775,7 @@ def pjud_penal(
             causa,
             forzar_sincronizacion=forzar,
             cuaderno_id=cuaderno,
-            credenciales_pjud=credenciales_pjud,
+            credenciales_dueno=credenciales_dueno,
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)

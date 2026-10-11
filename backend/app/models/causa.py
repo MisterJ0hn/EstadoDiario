@@ -16,6 +16,11 @@ ORIGEN_DATO_ESTADO_DIARIO = "estado_diario"
 # Las audiencias no dan de alta causas —no traen la cartera— pero sí cuentan
 # como señal de vida: una audiencia celebrada es actividad de esa causa.
 ORIGEN_DATO_AUDIENCIAS = "audiencias"
+# Alta individual por un sistema externo (`POST /causas`). **No tiene abogado**:
+# el RUT de una causa sale del archivo del que vino y esta no vino de ninguno.
+# Se asigna recién cuando un estado diario de un abogado la trae (ver
+# `Causa.rut_efectivo` y `CarteraSyncService._asignar_rut_desde_estado_diario`).
+ORIGEN_DATO_API = "api"
 
 
 class Causa(BaseTenant):
@@ -66,6 +71,11 @@ class Causa(BaseTenant):
     estado_causa: Mapped[Optional[str]] = mapped_column(String(255))
     institucion: Mapped[Optional[str]] = mapped_column(String(255))
 
+    # RUT del abogado al que se le asignó una causa dada de alta por API. Solo lo
+    # usan las filas con `origen_dato == "api"`; en el resto el RUT es el del
+    # archivo de origen. Nulo = todavía sin abogado.
+    rut_asignado: Mapped[Optional[str]] = mapped_column(String(20))
+
     # Jurisdicción deducida de la materia, para que el filtro de las pantallas
     # sea el mismo catálogo que usan estado diario y movimientos.
     jurisdiccion_id: Mapped[Optional[int]] = mapped_column(
@@ -98,3 +108,19 @@ class Causa(BaseTenant):
 
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="causas")
     jurisdiccion = relationship("Jurisdiccion")
+
+    @property
+    def rut_efectivo(self) -> Optional[str]:
+        """RUT del abogado dueño de la causa, o None si no tiene.
+
+        Una causa del Excel hereda el RUT de su archivo. Una dada de alta por API
+        **no puede heredarlo**: vive dentro del archivo de la cartera vigente
+        (para aparecer en Mis Causas) pero ese archivo es de otro abogado, o de
+        ninguno si es una cartera deducida. Por eso se mira `origen_dato` antes
+        que el origen, y todo lo que muestre o entregue el RUT de una causa debe
+        pasar por acá y no por `estado_diario_origen.rut`.
+        """
+        if self.origen_dato == ORIGEN_DATO_API:
+            return self.rut_asignado
+        origen = self.estado_diario_origen
+        return origen.rut if origen else None

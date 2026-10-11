@@ -470,6 +470,42 @@ la key nace sin acceso a credenciales y se enciende de forma deliberada. Por API
 `PUT /api/v1/admin/clientes/{id}/api-keys/{key_id}` con `ips_permitidas`,
 `llave_publica_pem` y `expone_credenciales_pjud: true`.
 
+#### Credenciales del dueño hacia api-pjud
+
+"Detalle PJUD" (`/causas/{id}/pjud/*`) manda `rut`, `clave` y `metodo_login` del
+**abogado dueño de la causa** —no del usuario logueado— en `consultar_*`,
+`consultar_movimientos_*` y `sincronizar_*`. Lo resuelve
+`credenciales_pjud.credenciales_del_dueno` (por `Causa.rut_efectivo`) y lo aplica
+`PjudService._con_credenciales`. En api-pjud los tres campos son opcionales: si el
+dueño no tiene la clave cargada, o la causa no tiene dueño (por ejemplo una dada de
+alta por API todavía sin abogado), se omiten y se llama igual, porque api-pjud
+consulta y sincroniza sin login. Por eso el estado `sin_credenciales` ya no se
+produce desde el backend. La clave no se escribe en el diagnóstico ni en los logs.
+
+#### Alta individual de causas por API
+
+`POST /api/v1/causas` (solo usuario de integración; una persona recibe 403) da de
+alta UNA causa en Mis Causas. Campos: `materia`, `rol`, `tribunal` (obligatorios) y
+`tipo_causa`, `ruc`, `fecha_ingreso`, `caratulado`, `estado_causa`, `institucion`.
+Necesita `permite_escritura` en la key. Si el `rol + tribunal` ya está en la cartera
+devuelve esa causa sin tocarla (`creada: false`).
+
+**Nace sin abogado, y no hay forma de indicarlo**: el body no tiene RUT y un campo
+extra es 422. El RUT de una causa del Excel es el de su archivo, pero esta vive
+dentro del archivo de la cartera vigente (de otro abogado, o de ninguno), así que
+`Causa.rut_efectivo` mira `origen_dato == "api"` y devuelve `rut_asignado` (nulo) en
+vez del RUT del origen. Todo lo que muestre o entregue el RUT de una causa debe usar
+`rut_efectivo`; sin RUT, `incluir_credenciales` no entrega credencial para ella.
+
+**Se asigna cuando llega un estado diario** que la trae (`rol + tribunal`): el cruce
+(`CarteraSyncService._asignar_rut_desde_estado_diario`) copia el RUT de ese archivo a
+`rut_asignado`. Solo el estado diario asigna (no movimientos ni audiencias), el
+primero en traerla gana, y un archivo sin RUT no asigna.
+
+**Sobrevive a una carga del Excel de Causas**: `CausaImportService` las vuelve a
+poner en la cartera nueva con su abogado, salvo que el Excel ya las traiga (entonces
+son del Excel y de su abogado). Se facturan como cualquier causa vigente de la cartera.
+
 ### reCAPTCHA v3 en los formularios públicos
 
 Son cuatro y no tienen límite de intentos: los dos logins,

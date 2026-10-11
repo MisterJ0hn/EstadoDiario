@@ -40,18 +40,21 @@ class TestObtenerDetallePenal:
             "/consultar_penal": PjudNoEncontrado("no está"),
             "/sincronizar_penal": {"exito": True},
         })
-        r = servicio.obtener_detalle_penal(_causa(), credenciales_pjud=_CREDS)
+        r = servicio.obtener_detalle_penal(_causa(), credenciales_dueno=_CREDS)
         assert r["estado"] == "sincronizando"
         cuerpo = self.cuerpos["/sincronizar_penal"]
         assert (cuerpo["corte"], cuerpo["tribunal"]) == (90, 387)
         assert (cuerpo["tipo"], cuerpo["rol"], cuerpo["anio"]) == ("Ordinaria", 1, 2025)
         assert cuerpo["rut"] == "12345678-9"
 
-    def test_sin_clave_devuelve_sin_credenciales(self, monkeypatch):
-        servicio = self._servicio(monkeypatch, {"/consultar_penal": PjudNoEncontrado("no está")})
-        r = servicio.obtener_detalle_penal(_causa(), credenciales_pjud=None)
-        assert r["estado"] == "sin_credenciales"
-        assert "/sincronizar_penal" not in self.cuerpos
+    def test_sin_credenciales_del_dueno_sincroniza_igual(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_penal": PjudNoEncontrado("no está"),
+            "/sincronizar_penal": {"exito": True},
+        })
+        r = servicio.obtener_detalle_penal(_causa(), credenciales_dueno=None)
+        assert r["estado"] == "sincronizando"
+        assert "/sincronizar_penal" in self.cuerpos
 
     def test_tipo_viene_del_tipo_causa_y_tolera_acentos_y_mayusculas(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
@@ -59,18 +62,18 @@ class TestObtenerDetallePenal:
             "/sincronizar_penal": {"exito": True},
         })
         servicio.obtener_detalle_penal(
-            _causa(rol="1-2025", tipo_causa="EXTRADICION"), credenciales_pjud=_CREDS,
+            _causa(rol="1-2025", tipo_causa="EXTRADICION"), credenciales_dueno=_CREDS,
         )
         assert self.cuerpos["/sincronizar_penal"]["tipo"] == "Extradición"
 
     def test_tipo_causa_desconocido_falla_claro(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {})
         with pytest.raises(PjudApiError, match="no es uno de los del PJUD Penal"):
-            servicio.obtener_detalle_penal(_causa(tipo_causa="Otra"), credenciales_pjud=_CREDS)
+            servicio.obtener_detalle_penal(_causa(tipo_causa="Otra"), credenciales_dueno=_CREDS)
 
     def test_tribunal_fuera_del_catalogo_es_error_con_diagnostico(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {})
-        r = servicio.obtener_detalle_penal(_causa(tribunal="Otro"), credenciales_pjud=_CREDS)
+        r = servicio.obtener_detalle_penal(_causa(tribunal="Otro"), credenciales_dueno=_CREDS)
         assert r["estado"] == "error"
         assert "catálogo Penal" in r["ultimo_error"]
 
@@ -90,14 +93,16 @@ class TestObtenerDetallePenal:
                 "Relaciones": [{"nombre": "NN"}],
             },
         })
-        r = servicio.obtener_detalle_penal(_causa(), cuaderno_id=2, credenciales_pjud=_CREDS)
+        r = servicio.obtener_detalle_penal(_causa(), cuaderno_id=2, credenciales_dueno=_CREDS)
         assert r["estado"] == "listo" and r["cuaderno_consultado_id"] == 2
         assert r["causa"]["rol"] == "1-2025" and r["causa"]["estado_adm"] == "Sin archivar"
         assert r["causa"]["acumulada"] is None
         assert r["historia"][0]["documentos"] == [{"url": "https://h/a.pdf", "color": "#ffddee"}]
         assert r["historia"][0]["anexo"][0]["doc"].endswith("/public/abc/1/b.pdf")
         assert r["relaciones"] == [{"nombre": "NN"}]
-        assert self.cuerpos["/consultar_movimientos_penal"] == {"identificador": "abc", "cuaderno": 2}
+        assert self.cuerpos["/consultar_movimientos_penal"] == {
+            "identificador": "abc", "cuaderno": 2, **_CREDS,
+        }
 
     def test_rol_de_penal_es_rol_anio_y_tolera_prefijo(self):
         assert PjudService.parsear_rol_penal("1653-2023") == (1653, 2023)

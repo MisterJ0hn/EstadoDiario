@@ -33,12 +33,14 @@ import xlrd
 from sqlalchemy.orm import Session
 
 from app.core.estados_causa import esta_finalizada
-from app.models.causa import Causa
+from app.models.causa import ORIGEN_DATO_API, Causa
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.causa_repository import CausaRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
+from app.repositories.causa_repository import ultimo_origen_causas_id
 from app.services import auditoria_service as auditoria
+from app.services.causa_api_service import copiar_causa_de_api
 from app.services.cartera_sync_service import sincronizar_cartera
 from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
 from app.utils.excel_pjud import (
@@ -244,6 +246,28 @@ class CausaImportService:
         self.repo = CausaRepository(db)
         self.jurisdiccion_repo = JurisdiccionRepository(db)
 
+    def _causas_api_de_la_cartera(self) -> list[Causa]:
+        """Las causas de API de la cartera vigente.
+
+        Se leen antes de que se borre la cartera deducida (que puede contenerlas)
+        y se reinsertan como filas nuevas: no se reusan los objetos borrados.
+        """
+        origen_id = ultimo_origen_causas_id(self.db)
+        if origen_id is None:
+            return []
+        filas = (
+            self.db.query(Causa)
+            .filter(
+                Causa.estado_diario_origen_id == origen_id,
+                Causa.origen_dato == ORIGEN_DATO_API,
+            )
+            .all()
+        )
+        # Copias desligadas: el borrado en cascada no puede llevárselas.
+        for fila in filas:
+            self.db.expunge(fila)
+        return filas
+
     def _descartar_cartera_deducida(self) -> None:
         """Borra la cartera que el cruce armó sola, si la hay.
 
@@ -372,6 +396,9 @@ class CausaImportService:
         # comprobación de duplicados porque si no, una cartera deducida creada
         # hoy bloquearía la carga del reporte de hoy con un "ya existe" que el
         # usuario no puede entender ni resolver (ese archivo no lo subió nadie).
+        # Las dadas de alta por API no vienen en ningún Excel: se leen ANTES de
+        # descartar nada y se vuelven a poner en la cartera nueva.
+        causas_api = self._causas_api_de_la_cartera()
         self._descartar_cartera_deducida()
 
         existente = self.repo.find_origen(rut, fecha)
@@ -475,6 +502,15 @@ class CausaImportService:
             if clave:
                 vistas_materia[clave] = causa
             por_materia[materia] = por_materia.get(materia, 0) + 1
+
+        # Una causa de API que el Excel ya trae pasa a ser del Excel (y de su
+        # abogado); las demás siguen, con el abogado que tuvieran.
+        for causa_api in causas_api:
+            clave = self._clave_materia(
+                {"rol": causa_api.rol, "tribunal": causa_api.tribunal}
+            )
+            if clave is None or clave not in vistas_materia:
+                copiar_causa_de_api(self.db, causa_api, origen.id)
 
         # La carga de Causas reemplaza la foto de la cartera, así que el cruce
         # se rehace sobre el origen recién creado: lo enriquecido antes colgaba

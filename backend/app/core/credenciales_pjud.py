@@ -75,6 +75,39 @@ def _duenos_por_rut(db: Session, ruts: set[str]) -> dict[str, Optional[Usuario]]
     return resultado
 
 
+def credenciales_del_dueno(db: Session, causa) -> Optional[dict]:
+    """`{"rut", "clave", "metodo_login"}` del abogado dueño de `causa`, o None.
+
+    Es lo que se manda a api-pjud en `consultar_*`, `consultar_movimientos_*` y
+    `sincronizar_*` (ver `PjudService._con_credenciales`); no pasa por el sello
+    RSA porque no sale hacia ningún sistema externo.
+
+    El dueño se resuelve por `Causa.rut_efectivo`, no por el RUT del archivo:
+    una causa dada de alta por API que todavía no tiene abogado no tiene dueño,
+    y entonces se llama a api-pjud sin credenciales en vez de usar las de quien
+    esté mirando la pantalla. Lo mismo si el RUT no calza con nadie o calza con
+    más de un usuario (ver `_duenos_por_rut`), o si el abogado no tiene la clave
+    del OJV cargada.
+    """
+    rut = limpiar_rut(causa.rut_efectivo or "")
+    if not rut:
+        return None
+    usuario = _duenos_por_rut(db, {rut}).get(rut)
+    if usuario is None or not usuario.pjud_configurado:
+        return None
+    try:
+        return {
+            "rut": usuario.pjud_rut,
+            "clave": usuario.pjud_clave,
+            "metodo_login": usuario.pjud_metodo_login,
+        }
+    except ValueError:
+        # Clave ilegible (cambió la llave de cifrado). Sin el mensaje de la
+        # excepción por si trae algo.
+        logger.error("No se pudo leer la clave del OJV del usuario %s", usuario.id)
+        return None
+
+
 # ── Quién pide y qué entrega ─────────────────────────────
 
 

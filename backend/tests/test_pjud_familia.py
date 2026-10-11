@@ -38,18 +38,19 @@ class TestObtenerDetalleFamilia:
             "/consultar_familia": PjudNoEncontrado("no está"),
             "/sincronizar_familia": {"exito": True},
         })
-        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert "/sincronizar_familia" in self.llamadas
         assert "consultar_familia: 404" in resultado["diagnostico"]
 
-    def test_sin_clave_del_ojv_devuelve_sin_credenciales_y_no_sincroniza(self, monkeypatch):
+    def test_sin_credenciales_del_dueno_sincroniza_igual(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
             "/consultar_familia": PjudNoEncontrado("no está"),
+            "/sincronizar_familia": {"exito": True},
         })
-        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_pjud=None)
-        assert resultado["estado"] == "sin_credenciales"
-        assert "/sincronizar_familia" not in self.llamadas
+        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_dueno=None)
+        assert resultado["estado"] == "sincronizando"
+        assert "/sincronizar_familia" in self.llamadas
 
     def test_sincronizar_manda_rut_clave_y_metodo(self, monkeypatch):
         cuerpos: list[dict] = []
@@ -65,7 +66,7 @@ class TestObtenerDetalleFamilia:
             return original(metodo, ruta, **kwargs)
 
         monkeypatch.setattr(servicio, "_request", espia)
-        servicio.obtener_detalle_familia(_causa_familia(), credenciales_pjud=_CREDS)
+        servicio.obtener_detalle_familia(_causa_familia(), credenciales_dueno=_CREDS)
         assert cuerpos and cuerpos[0]["rut"] == "12345678-9"
         assert cuerpos[0]["clave"] == "secreta"
         assert cuerpos[0]["metodo_login"] == 1
@@ -79,7 +80,7 @@ class TestObtenerDetalleFamilia:
                 "ultimo_error": "clave incorrecta",
             }},
         })
-        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "error"
         assert resultado["ultimo_error"] == "clave incorrecta"
         assert "/sincronizar_familia" not in self.llamadas
@@ -105,7 +106,7 @@ class TestObtenerDetalleFamilia:
             },
         })
         # Una causa lista NO necesita credenciales: no se sincroniza.
-        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_pjud=None)
+        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_dueno=None)
         assert resultado["estado"] == "listo"
         assert resultado["causa"]["ruc"] == "23-2-4049306-3"
         assert resultado["movimientos"][0]["documentos"] == [
@@ -124,7 +125,7 @@ class TestObtenerDetalleFamilia:
             "/sincronizar_familia": {"exito": True},
             "/consultar_movimientos_familia": PjudNoEncontrado("aún no"),
         })
-        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert resultado["causa"]["identificador"] == "guid-1"
         assert resultado["movimientos"] == []
@@ -136,7 +137,7 @@ class TestObtenerDetalleFamilia:
             },
             "/consultar_movimientos_familia": {"movimientos": []},
         })
-        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_pjud=None)
+        resultado = servicio.obtener_detalle_familia(_causa_familia(), credenciales_dueno=None)
         assert resultado["estado"] == "listo"
         assert resultado["causa"]["identificador"] == "guid-1"
 

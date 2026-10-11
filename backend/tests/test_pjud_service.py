@@ -144,20 +144,22 @@ class TestObtenerDetalle:
             "/consultar_civil": PjudNoEncontrado("no está"),
             "/sincronizar_civil": {"exito": True},
         })
-        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert "/sincronizar_civil" in self.llamadas
         # El diagnóstico explica el 404 y el resultado del sync, para la consola.
         assert "consultar_civil: 404" in resultado["diagnostico"]
         assert "sincronizar_civil: 200" in resultado["diagnostico"]
 
-    def test_sin_clave_del_ojv_devuelve_sin_credenciales_y_no_sincroniza(self, monkeypatch):
+    def test_sin_credenciales_del_dueno_sincroniza_igual(self, monkeypatch):
+        """api-pjud sincroniza sin login: sin clave NO se corta el flujo."""
         servicio = self._servicio(monkeypatch, {
             "/consultar_civil": PjudNoEncontrado("no está"),
+            "/sincronizar_civil": {"exito": True},
         })
-        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=None)
-        assert resultado["estado"] == "sin_credenciales"
-        assert "/sincronizar_civil" not in self.llamadas
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=None)
+        assert resultado["estado"] == "sincronizando"
+        assert "/sincronizar_civil" in self.llamadas
 
     def test_sincronizar_manda_rut_clave_y_metodo(self, monkeypatch):
         cuerpos: list[dict] = []
@@ -173,7 +175,7 @@ class TestObtenerDetalle:
             return original(metodo, ruta, **kwargs)
 
         monkeypatch.setattr(servicio, "_request", espia)
-        servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        servicio.obtener_detalle(_causa_civil(), credenciales_dueno=_CREDS)
         assert cuerpos and cuerpos[0]["rut"] == "17314741"
         assert cuerpos[0]["clave"] == "secreta"
         assert cuerpos[0]["metodo_login"] == 1
@@ -186,7 +188,7 @@ class TestObtenerDetalle:
             }},
             "/sincronizar_civil": {"exito": True},
         })
-        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert resultado["detalle_estado"] == "Procesando cuaderno 2 de 3"
 
@@ -207,7 +209,7 @@ class TestObtenerDetalle:
                 "escritos_resolver": [], "exhortos": [],
             },
         })
-        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert resultado["causa"]["identificador"] == "abc"
         assert resultado["cuaderno_consultado_id"] == 1
@@ -222,7 +224,7 @@ class TestObtenerDetalle:
             "/sincronizar_civil": {"exito": True},
             "/consultar_movimientos_civil": PjudNoEncontrado("aún no"),
         })
-        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "sincronizando"
         assert resultado["causa"]["identificador"] == "abc"
         assert resultado["historia"] == []
@@ -234,7 +236,7 @@ class TestObtenerDetalle:
                 "detalle_estado": "No se pudo iniciar sesión en el OJV: clave incorrecta",
             }},
         })
-        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=_CREDS)
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=_CREDS)
         assert resultado["estado"] == "error"
         assert "clave incorrecta" in resultado["detalle_estado"]
         # No reintenta solo: no llama a /sincronizar_civil.
@@ -259,7 +261,7 @@ class TestObtenerDetalle:
             },
         })
         # Una causa lista NO necesita credenciales: no se sincroniza.
-        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_pjud=None)
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=None)
         assert resultado["estado"] == "listo"
         assert resultado["cuaderno_consultado_id"] == 1
         assert resultado["historia"][0]["documentos"] == [
