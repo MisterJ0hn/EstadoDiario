@@ -23,6 +23,7 @@ job de Playwright y responde al instante— y esperar unos minutos. Por eso
 como un estado normal para que la pantalla muestre "Reintentar", no un 502.
 """
 
+import json
 import logging
 import re
 import threading
@@ -313,7 +314,7 @@ class PjudService:
         campos, nunca con nulos o vacíos. 1 = Clave del Poder Judicial,
         2 = ClaveÚnica.
 
-        Nada de esto se escribe en logs ni en el diagnóstico.
+        La clave no se escribe en logs ni en el diagnóstico (ver `_cuerpo_para_log`).
         """
         if not (credenciales and credenciales.get("rut") and credenciales.get("clave")):
             return cuerpo
@@ -323,6 +324,15 @@ class PjudService:
             "clave": credenciales["clave"],
             "metodo_login": credenciales.get("metodo_login") or 1,
         }
+
+    def _cuerpo_para_log(self, cuerpo_causa: dict, credenciales: Optional[dict]) -> str:
+        """El cuerpo que realmente viaja a api-pjud, con la `clave` tapada, para
+        el diagnóstico. Sirve para compararlo campo a campo con lo que funciona
+        a mano en Postman."""
+        cuerpo = self._con_credenciales(cuerpo_causa, credenciales)
+        if "clave" in cuerpo:
+            cuerpo = {**cuerpo, "clave": "***"}
+        return json.dumps(cuerpo, ensure_ascii=False, sort_keys=True)
 
     def _sincronizar(
         self, cuerpo_causa: dict, credenciales: Optional[dict], competencia: str = "civil"
@@ -336,17 +346,18 @@ class PjudService:
         diagnóstico (no se le muestra al usuario)."""
         cuerpo = self._con_credenciales(cuerpo_causa, credenciales)
         ruta = f"/sincronizar_{competencia}"
+        enviado = f"body={self._cuerpo_para_log(cuerpo_causa, credenciales)}"
         try:
             self._request("POST", ruta, json=cuerpo)
-            return f"sincronizar_{competencia}: 200 (encolado)"
+            return f"sincronizar_{competencia}: 200 (encolado) {enviado}"
         except PjudConflicto:
             # Ya hay un job en curso, o se pidió otro antes del intervalo mínimo
             # del proveedor (30 min). Si esto se repite en cada intento y la
             # causa nunca queda lista, el job del proveedor está pegado o falló.
-            return f"sincronizar_{competencia}: 409 (ya en curso / muy pronto)"
+            return f"sincronizar_{competencia}: 409 (ya en curso / muy pronto) {enviado}"
         except PjudApiError as e:
             logger.warning("PJUD: %s falló, se sigue igual: %s", ruta, e)
-            return f"sincronizar_{competencia}: error ({e})"
+            return f"sincronizar_{competencia}: error ({e}) {enviado}"
 
     def obtener_detalle(
         self,
@@ -422,6 +433,9 @@ class PjudService:
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
+        diag.append(
+            "consultar_civil: body=" + self._cuerpo_para_log(cuerpo_causa, credenciales_dueno)
+        )
         try:
             detalle = self._request(
                 "POST", "/consultar_civil",
@@ -570,6 +584,9 @@ class PjudService:
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
+        diag.append(
+            "consultar_familia: body=" + self._cuerpo_para_log(cuerpo_causa, credenciales_dueno)
+        )
         try:
             data = self._request(
                 "POST", "/consultar_familia",
@@ -828,6 +845,9 @@ class PjudService:
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
+        diag.append(
+            "consultar_laboral: body=" + self._cuerpo_para_log(cuerpo_causa, credenciales_dueno)
+        )
         try:
             data = self._request(
                 "POST", "/consultar_laboral",
@@ -999,6 +1019,9 @@ class PjudService:
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
+        diag.append(
+            "consultar_cobranza: body=" + self._cuerpo_para_log(cuerpo_causa, credenciales_dueno)
+        )
         try:
             data = self._request(
                 "POST", "/consultar_cobranza",
@@ -1214,6 +1237,9 @@ class PjudService:
 
         detalle_estado: Optional[str] = None
         ultimo_error: Optional[str] = None
+        diag.append(
+            "consultar_penal: body=" + self._cuerpo_para_log(cuerpo_causa, credenciales_dueno)
+        )
         try:
             data = self._request(
                 "POST", "/consultar_penal",
