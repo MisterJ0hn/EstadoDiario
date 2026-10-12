@@ -23,6 +23,7 @@ job de Playwright y responde al instante— y esperar unos minutos. Por eso
 como un estado normal para que la pantalla muestre "Reintentar", no un 502.
 """
 
+import functools
 import json
 import logging
 import re
@@ -76,6 +77,9 @@ class PjudApiError(Exception):
     catálogo, o la API misma respondiendo un error.
     """
 
+    # Lo que se alcanzó a hacer antes de fallar (ver `_diagnostico_en_error`).
+    diagnostico: Optional[str] = None
+
 
 class PjudNoEncontrado(PjudApiError):
     """La API respondió 404: la causa no está (todavía) en su base.
@@ -89,6 +93,24 @@ class PjudConflicto(PjudApiError):
     """La API respondió 409: ya hay una sincronización en curso para esa causa,
     o se pidió otra antes del intervalo mínimo. No es un error para el usuario:
     significa "espera"."""
+
+
+def _diagnostico_en_error(metodo):
+    """Si `metodo` termina en `PjudApiError`, adjunta a la excepción el
+    diagnóstico acumulado hasta ahí (`self._diag`), para que el log de consultas
+    muestre qué se envió aun cuando la consulta falló y no hay resultado."""
+
+    @functools.wraps(metodo)
+    def envoltura(self, *args, **kwargs):
+        try:
+            return metodo(self, *args, **kwargs)
+        except PjudApiError as e:
+            diag = getattr(self, "_diag", None)
+            if diag and e.diagnostico is None:
+                e.diagnostico = " · ".join(diag) + f" · FALLÓ: {e}"
+            raise
+
+    return envoltura
 
 
 def _normalizar(texto: str) -> str:
@@ -359,6 +381,7 @@ class PjudService:
             logger.warning("PJUD: %s falló, se sigue igual: %s", ruta, e)
             return f"sincronizar_{competencia}: error ({e}) {enviado}"
 
+    @_diagnostico_en_error
     def obtener_detalle(
         self,
         causa,
@@ -427,7 +450,7 @@ class PjudService:
         # Notas técnicas de cada paso, para el log de la consola. No se le
         # muestran al usuario; sirven para responder "¿y por qué sigue
         # sincronizando?" sin tener que abrir los logs del servidor de api-pjud.
-        diag: list[str] = [f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"]
+        diag = self._diag = [f"corte={corte_id} tribunal={tribunal_id} tipo={tipo} rol={rol} anio={anio}"]
         if forzar_sincronizacion:
             diag.append("forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno))
 
@@ -544,6 +567,7 @@ class PjudService:
 
     # ── Familia ─────────────────────────────────────────────────
 
+    @_diagnostico_en_error
     def obtener_detalle_familia(
         self,
         causa,
@@ -576,7 +600,7 @@ class PjudService:
             "tipo": tipo, "rol": rol, "anio": anio,
         }
 
-        diag: list[str] = [f"tipo={tipo} rol={rol} anio={anio}"]
+        diag = self._diag = [f"tipo={tipo} rol={rol} anio={anio}"]
         if forzar_sincronizacion:
             diag.append(
                 "forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno, "familia")
@@ -776,6 +800,7 @@ class PjudService:
 
     # ── Laboral ─────────────────────────────────────────────────
 
+    @_diagnostico_en_error
     def obtener_detalle_laboral(
         self,
         causa,
@@ -811,7 +836,7 @@ class PjudService:
             )
 
         tipo, rol, anio = self.parsear_rol_civil(causa.rol)
-        diag: list[str] = [f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"]
+        diag = self._diag = [f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"]
         try:
             corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "laboral")
         except PjudApiError as e:
@@ -959,6 +984,7 @@ class PjudService:
 
     # ── Cobranza ────────────────────────────────────────────────
 
+    @_diagnostico_en_error
     def obtener_detalle_cobranza(
         self,
         causa,
@@ -991,7 +1017,7 @@ class PjudService:
             )
 
         tipo, rol, anio = self.parsear_rol_civil(causa.rol)
-        diag: list[str] = [f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"]
+        diag = self._diag = [f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"]
         try:
             corte_id, tribunal_id = self.resolver_tribunal(causa.tribunal or "", "cobranza")
         except PjudApiError as e:
@@ -1170,6 +1196,7 @@ class PjudService:
     # del proveedor para tolerar mayúsculas/acentos ("EXTRADICION").
     _TIPOS_PENAL = ("Ordinaria", "Exhorto", "Administrativa", "Extradición", "Militar")
 
+    @_diagnostico_en_error
     def obtener_detalle_penal(
         self,
         causa,
@@ -1207,7 +1234,7 @@ class PjudService:
                 f"«{causa.rol}» no es uno de los del PJUD Penal "
                 f"({', '.join(self._TIPOS_PENAL)})."
             )
-        diag: list[str] = [
+        diag = self._diag = [
             f"tipo={tipo} rol={rol} anio={anio} tribunal_nombre={causa.tribunal!r}"
         ]
         try:

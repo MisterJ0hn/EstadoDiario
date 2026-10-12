@@ -524,6 +524,7 @@ def pjud_movimientos(
         return PjudMovimientosResponse(**resultado)
     except PjudApiError as e:
         mensaje_log = str(e)
+        diagnostico_log = e.diagnostico
         raise HTTPException(status_code=502, detail=mensaje_log)
     finally:
         _registrar_llamado_pjud(
@@ -590,6 +591,7 @@ def pjud_familia(
         return PjudFamiliaMovimientosResponse(**resultado)
     except PjudApiError as e:
         mensaje_log = str(e)
+        diagnostico_log = e.diagnostico
         raise HTTPException(status_code=502, detail=mensaje_log)
     finally:
         _registrar_llamado_pjud(
@@ -656,6 +658,7 @@ def pjud_laboral(
         return PjudLaboralMovimientosResponse(**resultado)
     except PjudApiError as e:
         mensaje_log = str(e)
+        diagnostico_log = e.diagnostico
         raise HTTPException(status_code=502, detail=mensaje_log)
     finally:
         _registrar_llamado_pjud(
@@ -722,6 +725,7 @@ def pjud_cobranza(
         return PjudCobranzaMovimientosResponse(**resultado)
     except PjudApiError as e:
         mensaje_log = str(e)
+        diagnostico_log = e.diagnostico
         raise HTTPException(status_code=502, detail=mensaje_log)
     finally:
         _registrar_llamado_pjud(
@@ -790,6 +794,7 @@ def pjud_penal(
         return PjudPenalMovimientosResponse(**resultado)
     except PjudApiError as e:
         mensaje_log = str(e)
+        diagnostico_log = e.diagnostico
         raise HTTPException(status_code=502, detail=mensaje_log)
     finally:
         _registrar_llamado_pjud(
