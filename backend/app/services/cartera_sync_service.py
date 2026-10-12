@@ -182,7 +182,7 @@ class ResultadoSync:
             # cruce. Sin este número, correr el job para rellenar la columna de
             # Mis Causas no dejaba ninguna señal de que hubiera hecho algo.
             f"{self.actividad_calculada} últimas actividades · "
-            f"{self.ruts_asignados} RUT asignados a causas de API{omitidas}{deducida}"
+            f"{self.ruts_asignados} RUT asignados a causas sin abogado{omitidas}{deducida}"
         )
 
     def como_aviso(self) -> Optional[str]:
@@ -414,7 +414,9 @@ class CarteraSyncService:
                                      _CAMPOS_VOLATILES_CAUSA, resultado):
                         resultado.causas_actualizadas += 1
                     if procedencia == ORIGEN_DATO_ESTADO_DIARIO:
-                        self._asignar_rut_desde_estado_diario(causa, origen, resultado)
+                        self._asignar_rut_desde_estado_diario(
+                            causa, origen, origen_cartera, resultado
+                        )
             else:
                 causa = Causa(
                     estado_diario_origen_id=origen_cartera.id,
@@ -422,27 +424,42 @@ class CarteraSyncService:
                     enriquecida_en=self.ahora,
                     **datos,
                 )
+                if procedencia == ORIGEN_DATO_ESTADO_DIARIO:
+                    # Nace en la cartera deducida (sin RUT): el abogado es el del
+                    # estado diario que la trajo.
+                    self._asignar_rut_desde_estado_diario(
+                        causa, origen, origen_cartera, resultado
+                    )
                 self.db.add(causa)
                 indice[clave] = [causa]
                 resultado.causas_creadas += 1
 
     @staticmethod
     def _asignar_rut_desde_estado_diario(
-        causa: Causa, origen: EstadoDiarioOrigen, resultado: ResultadoSync
+        causa: Causa,
+        origen: EstadoDiarioOrigen,
+        origen_cartera: EstadoDiarioOrigen,
+        resultado: ResultadoSync,
     ) -> None:
-        """Le pone abogado a una causa dada de alta por API.
+        """Le pone abogado a una causa que todavía no tiene.
 
-        **Solo el estado diario asigna**, y a propósito: es el único reporte que
-        dice "esta causa le llegó a este abogado" (su archivo trae el RUT del
-        abogado que lo emitió). Movimientos y audiencias no asignan, aunque
-        mencionen la causa. Una vez asignada no se reasigna: el primer abogado
-        cuyo estado diario la trae (el cruce recorre del más viejo al más
-        nuevo) se queda con ella, aunque después aparezca en el de otro.
+        Una causa no tiene abogado cuando la dio de alta la API, o cuando entró a
+        la cartera deducida (que no tiene RUT) desde un reporte. **Solo el estado
+        diario asigna**, y a propósito: es el único reporte que dice "esta causa
+        le llegó a este abogado" (su archivo trae el RUT del abogado que lo
+        emitió). Movimientos y audiencias no asignan, aunque mencionen la causa.
+
+        Nunca pisa a un dueño: una causa del Excel de Causas hereda el RUT de su
+        archivo (`origen_cartera.rut`) y se queda con él; una ya asignada no se
+        reasigna, el primer abogado cuyo estado diario la trae (el cruce recorre
+        del más viejo al más nuevo) se queda con ella.
 
         Si el archivo no trae RUT no se asigna nada: la causa sigue sin abogado
         en vez de quedar con uno inventado.
         """
-        if causa.origen_dato != ORIGEN_DATO_API or causa.rut_asignado:
+        if causa.rut_asignado:
+            return
+        if causa.origen_dato != ORIGEN_DATO_API and (origen_cartera.rut or "").strip():
             return
         rut = (origen.rut or "").strip()
         if not rut:

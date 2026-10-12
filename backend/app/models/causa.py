@@ -71,9 +71,10 @@ class Causa(BaseTenant):
     estado_causa: Mapped[Optional[str]] = mapped_column(String(255))
     institucion: Mapped[Optional[str]] = mapped_column(String(255))
 
-    # RUT del abogado al que se le asignó una causa dada de alta por API. Solo lo
-    # usan las filas con `origen_dato == "api"`; en el resto el RUT es el del
-    # archivo de origen. Nulo = todavía sin abogado.
+    # RUT del abogado al que se le asignó una causa que no tenía: la dada de alta
+    # por API, o la que entró a la cartera deducida (sin RUT) desde un reporte.
+    # Si está, manda sobre el del archivo; en el resto el RUT es el del archivo
+    # de origen. Nulo = sin asignar.
     rut_asignado: Mapped[Optional[str]] = mapped_column(String(20))
 
     # Jurisdicción deducida de la materia, para que el filtro de las pantallas
@@ -120,7 +121,7 @@ class Causa(BaseTenant):
         que el origen, y todo lo que muestre o entregue el RUT de una causa debe
         pasar por acá y no por `estado_diario_origen.rut`.
         """
-        if self.origen_dato == ORIGEN_DATO_API:
+        if self.rut_asignado or self.origen_dato == ORIGEN_DATO_API:
             return self.rut_asignado
         origen = self.estado_diario_origen
         return origen.rut if origen else None
