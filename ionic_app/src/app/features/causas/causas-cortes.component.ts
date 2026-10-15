@@ -64,14 +64,6 @@ import { CausaService } from './services/causa.service';
             (keyup.enter)="aplicarDesdeCampo()"
           />
         </div>
-        <div>
-          <label class="form-label" for="cc-tipo">Tipo de corte</label>
-          <select id="cc-tipo" class="form-select" [(ngModel)]="filtroTipo">
-            @for (op of opciones; track op.valor) {
-              <option [ngValue]="op.valor">{{ op.etiqueta }}</option>
-            }
-          </select>
-        </div>
         @if (cortesDisponibles().length) {
           <div>
             <label class="form-label" for="cc-corte">Corte</label>
@@ -84,6 +76,28 @@ import { CausaService } from './services/causa.service';
           </div>
         }
       </app-filtros-panel>
+
+      <!-- Pestañas por tipo de corte, igual que las de materia en Mis Causas -->
+      <div class="border-b border-neutral-200">
+        <nav class="-mb-px flex gap-1 overflow-x-auto" role="tablist">
+          @for (op of opciones; track op.valor) {
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="filtroTipo === op.valor"
+              (click)="seleccionarTipo(op.valor)"
+              class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors"
+              [class]="
+                filtroTipo === op.valor
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+              "
+            >
+              {{ op.etiqueta }}
+            </button>
+          }
+        </nav>
+      </div>
 
       <div class="card">
         <div class="card-body">
@@ -268,7 +282,6 @@ export class CausasCortesComponent implements OnInit {
     // Vuelve a Vigentes, que es el valor por defecto de la pantalla.
     this.filtroVigencia = 'vigentes';
     this.filtroBusqueda = '';
-    this.filtroTipo = '';
     this.filtroCorte = '';
     this.onFiltrar();
   }
@@ -286,13 +299,16 @@ export class CausasCortesComponent implements OnInit {
       case 'busqueda':
         this.filtroBusqueda = '';
         break;
-      case 'tipo':
-        this.filtroTipo = '';
-        break;
       case 'corte':
         this.filtroCorte = '';
         break;
     }
+    this.onFiltrar();
+  }
+
+  seleccionarTipo(tipo: TipoCorteCausa | ''): void {
+    if (this.filtroTipo === tipo) return;
+    this.filtroTipo = tipo;
     this.onFiltrar();
   }
 
@@ -314,10 +330,6 @@ export class CausasCortesComponent implements OnInit {
     }
     if (this.filtroBusqueda) {
       chips.push({ clave: 'busqueda', etiqueta: 'Búsqueda', valor: this.filtroBusqueda });
-    }
-    if (this.filtroTipo) {
-      const op = this.opciones.find((o) => o.valor === this.filtroTipo);
-      chips.push({ clave: 'tipo', etiqueta: 'Tipo', valor: op?.etiqueta ?? this.filtroTipo });
     }
     if (this.filtroCorte) {
       chips.push({ clave: 'corte', etiqueta: 'Corte', valor: this.filtroCorte });
