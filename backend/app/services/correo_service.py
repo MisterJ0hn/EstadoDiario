@@ -31,6 +31,7 @@ from app.models.correo_log import (
 )
 from app.repositories.configuracion_correo_repository import ConfiguracionCorreoRepository
 from app.repositories.correo_log_repository import CorreoLogRepository
+from app.core.credenciales_pjud import usuario_dueno_de_rut
 from app.models.maestra.cliente import Cliente
 from app.services import deteccion_archivo, webhook_service
 from app.services.import_service import ImportService
@@ -410,9 +411,16 @@ class CorreoService:
             )
             return
 
+        # El archivo queda a nombre del abogado cuyo RUT trae, no de quien
+        # disparó la revisión (o del cron, que usa el primer usuario activo).
+        # Si el RUT no identifica a nadie —o a más de uno— se mantiene el
+        # usuario de la corrida.
+        dueno = usuario_dueno_de_rut(self.db, detectado.rut)
+        usuario_archivo = dueno.id if dueno is not None else usuario_id
+
         try:
             resultado = servicio.import_file(
-                destino, detectado.rut, detectado.fecha, usuario_id, nombre_original
+                destino, detectado.rut, detectado.fecha, usuario_archivo, nombre_original
             )
         except Exception as e:
             self.db.rollback()

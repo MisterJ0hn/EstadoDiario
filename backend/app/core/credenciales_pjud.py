@@ -75,6 +75,19 @@ def _duenos_por_rut(db: Session, ruts: set[str]) -> dict[str, Optional[Usuario]]
     return resultado
 
 
+def usuario_dueno_de_rut(db: Session, rut: Optional[str]) -> Optional[Usuario]:
+    """El único usuario activo que recibe archivos del PJUD con ese RUT, o None.
+
+    Es lo que decide a nombre de quién queda un archivo que llega por correo:
+    el reporte se emite a nombre del abogado que lo pidió, así que su RUT dice
+    de quién es. `None` si el RUT no viene, no lo tiene nadie o lo tienen dos.
+    """
+    limpio = limpiar_rut(rut or "")
+    if not limpio:
+        return None
+    return _duenos_por_rut(db, {limpio}).get(limpio)
+
+
 def credenciales_del_dueno(db: Session, causa) -> Optional[dict]:
     """`{"rut", "clave", "metodo_login"}` del abogado dueño de `causa`, o None.
 
