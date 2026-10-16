@@ -111,13 +111,10 @@ export const routes: Routes = [
         ],
       },
       {
-        // Carga del Excel de causas. Va aparte de "Cargar Archivo" porque este
-        // reporte no trae fecha: es una foto de la cartera, no de un día.
+        // La carga de causas pasó a "Cargar Archivo". Se conserva la ruta para
+        // los enlaces y favoritos que aún apuntan acá.
         path: 'causas/cargar',
-        loadComponent: () =>
-          import('./features/causas/cargar-causas.component').then(
-            (m) => m.CargarCausasComponent
-          ),
+        redirectTo: 'estado-diario/upload?tipo=causas',
       },
       {
         // Las causas de corte viven en otra tabla y tienen otras columnas:

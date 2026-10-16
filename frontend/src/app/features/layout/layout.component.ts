@@ -79,7 +79,6 @@ const MENU_CLIENTE: GrupoMenu[] = [
           { ruta: '/movimientos/cortes', etiqueta: 'Corte', icono: ICONO.balanza },
         ],
       },
-      { ruta: '/causas/cargar', etiqueta: 'Cargar Causas', icono: ICONO.subir },
       {
         etiqueta: 'Mis Causas',
         icono: ICONO.carpeta,

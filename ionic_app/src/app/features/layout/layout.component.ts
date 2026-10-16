@@ -62,7 +62,6 @@ const MENU_CLIENTE: GrupoMenu[] = [
       { ruta: '/dashboard', etiqueta: 'Dashboard', icono: ICONO.grafico },
       { ruta: '/estado-diario', etiqueta: 'Bitácora', icono: ICONO.carpeta, exacto: true },
       { ruta: '/estado-diario/upload', etiqueta: 'Cargar Archivo', icono: ICONO.subir },
-      { ruta: '/causas/cargar', etiqueta: 'Cargar Causas', icono: ICONO.subir },
       {
         etiqueta: 'Mis Causas',
         icono: ICONO.carpeta,

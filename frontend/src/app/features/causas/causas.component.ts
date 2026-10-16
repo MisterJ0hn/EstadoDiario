@@ -290,7 +290,7 @@ const SIN_MATERIA = '__sin_materia__';
                     <td [attr.colspan]="colspan()" class="py-10 text-center">
                       <p class="text-neutral-600 font-medium">No hay causas para este filtro</p>
                       <p class="text-sm text-neutral-500 mt-1">
-                        Cargue el Excel de causas desde el menú «Cargar Causas».
+                        Cargue el Excel de causas desde «Cargar Archivo», tipo Causas.
                       </p>
                     </td>
                   </tr>

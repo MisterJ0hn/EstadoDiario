@@ -1,11 +1,12 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Observable } from 'rxjs';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EstadoDiarioService } from '../../services/estado-diario.service';
 import { MovimientoService } from '@features/movimientos/services/movimiento.service';
 import { AudienciaService } from '@features/audiencias/services/audiencia.service';
+import { CausaService } from '@features/causas/services/causa.service';
 import { AuthService } from '@core/services/auth.service';
 import { NotificationService } from '@core/services/notification.service';
 import { ApiResponse, TipoOrigenCargable } from '@core/models/estado-diario.model';
@@ -30,12 +31,12 @@ interface RespuestaCarga extends ApiResponse {
 @Component({
   selector: 'app-upload-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="max-w-2xl mx-auto space-y-6">
       <div>
         <h1 class="text-2xl font-bold text-neutral-800">Cargar Archivo</h1>
-        <p class="text-neutral-500 mt-1">Suba un archivo XLS/XLSX de estado diario, movimientos o audiencias</p>
+        <p class="text-neutral-500 mt-1">Suba un archivo XLS/XLSX de estado diario, movimientos, audiencias o causas</p>
         <p class="text-xs text-neutral-400 mt-1">
           El RUT y la fecha se extraen del nombre del archivo (Ej: {{ ejemploNombre() }})
         </p>
@@ -51,6 +52,7 @@ interface RespuestaCarga extends ApiResponse {
               <option value="estado_diario">Estado Diario</option>
               <option value="movimientos">Movimientos</option>
               <option value="audiencias">Audiencias</option>
+              <option value="causas">Causas</option>
             </select>
           </div>
 
@@ -114,9 +116,9 @@ interface RespuestaCarga extends ApiResponse {
                 <p class="font-medium">Mis Causas se armó con lo que había</p>
                 <p class="text-sm mt-1">{{ avisoCartera() }}</p>
               </div>
-              <a routerLink="/causas/cargar" class="btn-warning btn-sm shrink-0">
+              <button type="button" (click)="prepararCausas()" class="btn-warning btn-sm shrink-0">
                 Cargar Causas
-              </a>
+              </button>
             </div>
           }
 
@@ -182,10 +184,12 @@ interface RespuestaCarga extends ApiResponse {
     }
   `,
 })
-export class UploadFormComponent {
+export class UploadFormComponent implements OnInit {
   private service = inject(EstadoDiarioService);
   private movimientoService = inject(MovimientoService);
   private audienciaService = inject(AudienciaService);
+  private causaService = inject(CausaService);
+  private route = inject(ActivatedRoute);
   private notification = inject(NotificationService);
   private auth = inject(AuthService);
   private router = inject(Router);
@@ -197,8 +201,7 @@ export class UploadFormComponent {
 
   /** Se pide confirmación porque el archivo parece de otro estudio. */
   confirmandoRut = signal(false);
-  /** Los tres Excel de esta pantalla tienen formatos y endpoints distintos.
-   *  El de causas no está: se carga desde "Cargar Causas". */
+  /** Los cuatro Excel de esta pantalla tienen formatos y endpoints distintos. */
   tipo: TipoOrigenCargable = 'estado_diario';
   selectedFile = signal<File | null>(null);
   parsedInfo = signal<{ rut: string; fecha: string } | null>(null);
@@ -211,10 +214,29 @@ export class UploadFormComponent {
     estado_diario: 'estadoDiario_16952077__28072026.xls',
     movimientos: 'Movimientos_16952077__30_07_2026.xls',
     audiencias: 'Audiencias_16952077_03_08_2026_09_08_2026.xls',
+    causas: 'Causas_16952077.xlsx',
   };
 
   ejemploNombre(): string {
     return this.EJEMPLOS[this.tipo];
+  }
+
+  ngOnInit(): void {
+    // Los enlaces de otras pantallas ("Cargar Causas" en Bitácora) llegan con
+    // el tipo ya elegido.
+    const tipo = this.route.snapshot.queryParamMap.get('tipo');
+    if (tipo && tipo in this.EJEMPLOS) this.tipo = tipo as TipoOrigenCargable;
+  }
+
+  /** Desde el aviso de cartera deducida: deja el formulario listo para el
+   *  Excel de causas. */
+  prepararCausas(): void {
+    this.tipo = 'causas';
+    this.avisoCartera.set('');
+    this.selectedFile.set(null);
+    this.parsedInfo.set(null);
+    this.rut = '';
+    this.fecha = '';
   }
 
   onFileSelect(event: Event): void {
@@ -268,7 +290,8 @@ export class UploadFormComponent {
     // "Estado Diario" —el valor por omisión— sin que nadie lo notara. Así se
     // grabaron movimientos como estado diario. El servidor igual verifica las
     // columnas antes de grabar, esto es solo para no hacerle elegir al usuario.
-    if (/audiencia/i.test(name)) this.tipo = 'audiencias';
+    if (/^causas?(_|$)/i.test(name)) this.tipo = 'causas';
+    else if (/audiencia/i.test(name)) this.tipo = 'audiencias';
     else if (/movimiento/i.test(name)) this.tipo = 'movimientos';
     else if (/estado\s*_?diario/i.test(name)) this.tipo = 'estado_diario';
     else {
@@ -288,6 +311,22 @@ export class UploadFormComponent {
     } else if (matchEdViejo ?? matchMov ?? matchAud) {
       match = matchEdViejo ?? matchMov ?? matchAud;
       rutDetectado = match![1];
+    }
+
+    if (this.tipo === 'causas') {
+      // Causas_{RUT}.xlsx. No trae fecha ni en el nombre ni adentro: es una
+      // foto de la cartera y el servidor le pone la de hoy. Mismo patrón que
+      // `causa_import_service.parse_nombre_archivo`.
+      const m = name.match(/^Causas_(\d+(?:-?[0-9kK])?)_*$/i);
+      if (m) {
+        this.rut = m[1];
+        this.parsedInfo.set({ rut: m[1], fecha: 'hoy (el reporte no la trae)' });
+        this.notification.info('RUT extraído del nombre del archivo');
+      } else {
+        this.parsedInfo.set(null);
+        this.notification.info('Archivo de causas: el RUT lo deducirá el servidor');
+      }
+      return;
     }
 
     if (!match && this.tipo === 'audiencias') {
@@ -393,12 +432,15 @@ export class UploadFormComponent {
     const rut = this.rut || undefined;
     const fecha = this.fecha || undefined;
 
+    // Causas no manda fecha: el servidor usa la de hoy.
     const carga: Observable<RespuestaCarga> =
-      this.tipo === 'movimientos'
-        ? this.movimientoService.uploadFile(archivo, rut, fecha)
-        : this.tipo === 'audiencias'
-          ? this.audienciaService.uploadFile(archivo, rut, fecha)
-          : this.service.uploadFile(archivo, rut, fecha);
+      this.tipo === 'causas'
+        ? this.causaService.cargar(archivo, rut)
+        : this.tipo === 'movimientos'
+          ? this.movimientoService.uploadFile(archivo, rut, fecha)
+          : this.tipo === 'audiencias'
+            ? this.audienciaService.uploadFile(archivo, rut, fecha)
+            : this.service.uploadFile(archivo, rut, fecha);
 
     carga.subscribe({
       next: (res) => {
@@ -430,10 +472,12 @@ export class UploadFormComponent {
    * cargar el archivo de la semana siguiente parecería no haber hecho nada.
    */
   private mensajeCarga(res: {
+    mensaje?: string;
     movimientos_importados?: number;
     audiencias_nuevas?: number;
     audiencias_actualizadas?: number;
   }): string {
+    if (this.tipo === 'causas') return res.mensaje || 'Causas importadas';
     if (this.tipo === 'audiencias') {
       const nuevas = res.audiencias_nuevas ?? 0;
       const actualizadas = res.audiencias_actualizadas ?? 0;

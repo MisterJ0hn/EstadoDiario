@@ -38,7 +38,8 @@ type Pestana = TipoOrigen | 'correo';
           <p class="text-neutral-500 mt-1">{{ subtitulo() }}</p>
         </div>
         @if (activeTab() !== 'correo') {
-          <a [routerLink]="activeTab() === 'causas' ? '/causas/cargar' : '/estado-diario/upload'"
+          <a routerLink="/estado-diario/upload"
+             [queryParams]="activeTab() === 'causas' ? { tipo: 'causas' } : null"
              class="btn-primary">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
