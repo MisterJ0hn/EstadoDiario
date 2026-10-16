@@ -28,6 +28,7 @@ from app.core.credenciales_pjud import (
 )
 from app.core.filtro_roles import DESC_ROLES, parse_roles
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
+from app.models.maestra.cliente import Cliente
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
 from app.repositories.causa_repository import FINALIZADAS, SIN_MATERIA, VIGENTES, CausaRepository
@@ -370,16 +371,42 @@ def listar(
 # ── Detalle en vivo desde el PJUD (solo Civil) ────────────
 
 
+def _pjud_habilitado(db_maestra: Session, tenant: TenantContexto) -> bool:
+    """Si la consola de administración le encendió el Detalle PJUD al cliente."""
+    cliente = db_maestra.get(Cliente, tenant.cliente_id)
+    return bool(cliente and cliente.pjud_habilitado)
+
+
+def requerir_pjud_habilitado(
+    db_maestra: Session = Depends(get_db_maestra),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+) -> None:
+    """El botón se esconde en la pantalla, pero eso no es una barrera: sin esto
+    bastaría llamar al endpoint a mano para consultar (y gastar) el PJUD."""
+    if not _pjud_habilitado(db_maestra, tenant):
+        raise HTTPException(
+            status_code=403,
+            detail="La consulta al PJUD no está habilitada para su estudio",
+        )
+
+
 @router.get(
     "/pjud/disponible",
     response_model=PjudDisponibleResponse,
     summary="Si la consulta de detalle PJUD está configurada",
 )
-def pjud_disponible(current_user: Usuario = Depends(get_usuario_actual)):
+def pjud_disponible(
+    db_maestra: Session = Depends(get_db_maestra),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
     """El frontend la consulta una vez para decidir si muestra el botón
     'Detalle PJUD': sin credenciales configuradas, no tiene sentido ofrecerlo
-    y que cada clic termine en un error."""
-    return PjudDisponibleResponse(disponible=settings.pjud_api_activo)
+    y que cada clic termine en un error. Tampoco si la plataforma no se lo
+    habilitó al estudio (ver `Cliente.pjud_habilitado`)."""
+    return PjudDisponibleResponse(
+        disponible=settings.pjud_api_activo and _pjud_habilitado(db_maestra, tenant)
+    )
 
 
 @router.get(
@@ -401,6 +428,9 @@ def pjud_por_rol(
     cartera vigente que calza, con su `pjud_estado` ya resuelto (mismo icono
     que en Mis Causas). `causa: null` si no calza ninguna o no es Civil ni de
     Familia: ahí la pantalla que llama simplemente no muestra el botón."""
+    if not _pjud_habilitado(db_maestra, tenant):
+        return PjudPorRolResponse(causa=None)
+
     causa = CausaRepository(db).find_pjud_por_rol_tribunal(rol, tribunal)
     if not causa:
         return PjudPorRolResponse(causa=None)
@@ -419,6 +449,7 @@ def pjud_por_rol(
 
 @router.get(
     "/pjud/documento",
+    dependencies=[Depends(requerir_pjud_habilitado)],
     summary="Reenvía un documento (PDF/DOC/DOCX) del PJUD para abrirlo desde el navegador",
 )
 def pjud_documento(
@@ -475,6 +506,7 @@ def pjud_documento(
 
 @router.get(
     "/{causa_id}/pjud/movimientos",
+    dependencies=[Depends(requerir_pjud_habilitado)],
     response_model=PjudMovimientosResponse,
     summary="Detalle de una causa Civil consultado en vivo al PJUD",
 )
@@ -545,6 +577,7 @@ def pjud_movimientos(
 
 @router.get(
     "/{causa_id}/pjud/familia",
+    dependencies=[Depends(requerir_pjud_habilitado)],
     response_model=PjudFamiliaMovimientosResponse,
     summary="Detalle de una causa de Familia consultado en vivo al PJUD",
 )
@@ -612,6 +645,7 @@ def pjud_familia(
 
 @router.get(
     "/{causa_id}/pjud/laboral",
+    dependencies=[Depends(requerir_pjud_habilitado)],
     response_model=PjudLaboralMovimientosResponse,
     summary="Detalle de una causa Laboral consultado en vivo al PJUD",
 )
@@ -679,6 +713,7 @@ def pjud_laboral(
 
 @router.get(
     "/{causa_id}/pjud/cobranza",
+    dependencies=[Depends(requerir_pjud_habilitado)],
     response_model=PjudCobranzaMovimientosResponse,
     summary="Detalle de una causa Cobranza consultado en vivo al PJUD",
 )
@@ -746,6 +781,7 @@ def pjud_cobranza(
 
 @router.get(
     "/{causa_id}/pjud/penal",
+    dependencies=[Depends(requerir_pjud_habilitado)],
     response_model=PjudPenalMovimientosResponse,
     summary="Detalle de una causa Penal consultado en vivo al PJUD",
 )

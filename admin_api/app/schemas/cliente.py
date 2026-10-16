@@ -157,6 +157,8 @@ class ClienteUpdate(BaseModel):
     direccion: str | None = Field(default=None, max_length=255)
     comuna: str | None = Field(default=None, max_length=100)
     ciudad: str | None = Field(default=None, max_length=100)
+    # Habilita el Detalle PJUD y su sincronización. Ausente = no cambiarlo.
+    pjud_habilitado: bool | None = None
 
 
 class ClienteLogoUpdate(BaseModel):
@@ -200,6 +202,8 @@ class ClienteResponse(BaseModel):
     direccion: str | None = None
     comuna: str | None = None
     ciudad: str | None = None
+    # Si el estudio puede usar el Detalle PJUD. Los nuevos nacen en false.
+    pjud_habilitado: bool = False
     tipo: TipoCliente = "estudio"
     # Tope de usuarios contratado. Null en los patrocinadores, donde es 1.
     cal: int | None = None

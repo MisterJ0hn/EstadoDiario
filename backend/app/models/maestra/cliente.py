@@ -131,6 +131,19 @@ class Cliente(BaseMaestra):
     # libera. Se compara contra los usuarios ACTIVOS.
     cal: Mapped[Optional[int]] = mapped_column(Integer)
 
+    # ── Consulta al PJUD ──
+    # Si el estudio puede ver el "Detalle PJUD" y disparar la sincronización
+    # (scraping) de sus causas. Cada consulta tiene costo para la plataforma,
+    # así que es un servicio que se contrata: la consola lo enciende por
+    # cliente, y un cliente nuevo nace sin él.
+    #
+    # Los clientes que ya existían antes de esta columna quedan HABILITADOS
+    # (ver `COLUMNAS_NUEVAS_MAESTRA`): ya lo usaban, y apagárselo en silencio
+    # sería quitarles algo que tenían.
+    pjud_habilitado: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+
     @property
     def es_patrocinador(self) -> bool:
         return self.tipo == self.TIPO_PATROCINADOR

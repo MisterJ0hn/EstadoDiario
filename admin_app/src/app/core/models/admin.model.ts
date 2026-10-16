@@ -51,6 +51,8 @@ export interface Cliente {
   direccion: string | null;
   comuna: string | null;
   ciudad: string | null;
+  /** Si el estudio puede usar el Detalle PJUD (y su sincronización). Los nuevos nacen en `false`. */
+  pjud_habilitado: boolean;
   tipo: TipoCliente;
   /** Tope de usuarios contratado. Null en los patrocinadores, donde es 1. */
   cal: number | null;
@@ -122,6 +124,8 @@ export interface ClienteUpdate {
   direccion?: string | null;
   comuna?: string | null;
   ciudad?: string | null;
+  /** Ausente = no cambiarlo. */
+  pjud_habilitado?: boolean;
   activo: boolean;
 }
 

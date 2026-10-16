@@ -267,6 +267,24 @@ type Seccion = 'datos' | 'inbox' | 'webhook' | 'api_keys' | 'usuarios';
 
               <hr class="border-neutral-200" />
 
+              <!-- Servicios contratados. Cada consulta al PJUD tiene costo, así
+                   que el estudio nuevo nace sin ella y se enciende acá. -->
+              <div>
+                <h3 class="text-sm font-semibold text-neutral-800">Consulta al PJUD</h3>
+                <label class="mt-2 flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" class="mt-1" [(ngModel)]="datos.pjud_habilitado" />
+                  <span>
+                    <span class="text-sm text-neutral-800">Habilitar Detalle PJUD</span>
+                    <span class="block text-xs text-neutral-500">
+                      Permite al estudio ver el detalle de sus causas en el Poder Judicial y
+                      sincronizarlas. Deshabilitado, el botón «Detalle PJUD» no aparece.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              <hr class="border-neutral-200" />
+
               <!-- Identificadores: se muestran porque el administrador los
                    necesita para soporte, pero no se editan: cambiarlos
                    dejaría la base de datos huérfana. -->
@@ -770,7 +788,10 @@ export class ClienteDetalleComponent implements OnInit {
   cliente = signal<Cliente | null>(null);
   errorCliente = signal<string | null>(null);
   guardando = signal(false);
-  datos = { nombre: '', rut: '', correo: '', giro: '', direccion: '', comuna: '', ciudad: '' };
+  datos = {
+    nombre: '', rut: '', correo: '', giro: '', direccion: '', comuna: '', ciudad: '',
+    pjud_habilitado: false,
+  };
 
   inbox = signal<ClienteInbox | null>(null);
   errorInbox = signal<string | null>(null);
@@ -813,6 +834,7 @@ export class ClienteDetalleComponent implements OnInit {
           direccion: c.direccion ?? '',
           comuna: c.comuna ?? '',
           ciudad: c.ciudad ?? '',
+          pjud_habilitado: c.pjud_habilitado,
         };
       },
       error: (e) => this.errorCliente.set(this.mensajeError(e)),
@@ -900,6 +922,7 @@ export class ClienteDetalleComponent implements OnInit {
         direccion: this.datos.direccion.trim() || null,
         comuna: this.datos.comuna.trim() || null,
         ciudad: this.datos.ciudad.trim() || null,
+        pjud_habilitado: this.datos.pjud_habilitado,
         activo: actual.activo,
       })
       .subscribe({

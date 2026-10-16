@@ -297,6 +297,14 @@ class ClienteService:
         cliente.comuna = (datos.comuna or "").strip() or None
         cliente.ciudad = (datos.ciudad or "").strip() or None
 
+        if datos.pjud_habilitado is not None and datos.pjud_habilitado != cliente.pjud_habilitado:
+            cliente.pjud_habilitado = datos.pjud_habilitado
+            logger.info(
+                "Detalle PJUD %s para el cliente %s (%s)",
+                "habilitado" if datos.pjud_habilitado else "deshabilitado",
+                cliente.guid, actor or "?",
+            )
+
         # El RUT es la credencial de login del estudio y tiene UNIQUE por
         # `rut_hash`: si ya es de otro cliente, el login quedaría ambiguo (no
         # se sabría a qué base entrar), así que se rechaza antes de guardar.
@@ -513,6 +521,7 @@ class ClienteService:
             direccion=cliente.direccion,
             comuna=cliente.comuna,
             ciudad=cliente.ciudad,
+            pjud_habilitado=bool(cliente.pjud_habilitado),
             logo=cliente.logo_data_uri,
             guid=cliente.guid,
             inbox=self.inbox_por_defecto(cliente),

@@ -97,6 +97,10 @@ COLUMNAS_NUEVAS_MAESTRA: list[tuple[str, str, str]] = [
     # DEFAULT deja en FALSE a todos los inactivos que ya existen — nadie sabe
     # por qué se los desactivó, así que no se reactivan solos.
     ("cliente", "suspendido_por_mora", "BOOLEAN DEFAULT FALSE"),
+    # Consulta al PJUD por cliente. A diferencia de casi todas las banderas, el
+    # DEFAULT es TRUE: los clientes que ya existen lo usan y no se les apaga.
+    # Los nuevos nacen en FALSE por el default del modelo, no por éste.
+    ("cliente", "pjud_habilitado", "BOOLEAN DEFAULT TRUE"),
 ]
 
 COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
