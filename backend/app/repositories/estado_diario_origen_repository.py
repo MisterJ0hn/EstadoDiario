@@ -58,6 +58,12 @@ class EstadoDiarioOrigenRepository:
             total_query = total_query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
             items_query = items_query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
 
+        # La Bitácora lista lo que entró por un Excel. La cartera deducida (ver
+        # `EstadoDiarioOrigen.deducida`) la arma el cruce, no la subió nadie ni
+        # llegó por correo, así que no tiene archivo detrás que mostrar.
+        total_query = total_query.filter(EstadoDiarioOrigen.deducida.is_(False))
+        items_query = items_query.filter(EstadoDiarioOrigen.deducida.is_(False))
+
         total = total_query.scalar()
         total_pages = max(1, math.ceil(total / per_page))
 
