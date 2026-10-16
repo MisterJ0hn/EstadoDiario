@@ -284,7 +284,86 @@ def test_cada_entrega_se_audita_sin_el_contenido(bases):
     assert llamada.kwargs["ip"] == "200.1.2.3"
 
 
-def test_sin_nadie_que_entregar_no_se_audita(bases):
+@pytest.fixture()
+def sin_plataforma():
+    """La plataforma sin api-pjud configurada, sea cual sea el .env de quien corre."""
+    with (
+        patch.object(credenciales_pjud.settings, "PJUD_API_EMAIL", ""),
+        patch.object(credenciales_pjud.settings, "PJUD_API_PASSWORD", ""),
+    ):
+        yield
+
+
+def test_sin_nadie_que_entregar_no_se_audita(bases, sin_plataforma):
     with bases.SesionT() as db:
         _sellador(bases).entregar(db, ["16952077-1", None])
+    bases.bitacora.assert_not_called()
+
+
+# ── Conexión de la plataforma a api-pjud ──────────────────
+
+CLAVE_PLATAFORMA = "clave-de-la-plataforma-xyz"
+
+
+@pytest.fixture()
+def plataforma():
+    with (
+        patch.object(credenciales_pjud.settings, "PJUD_API_BASE_URL", "http://api-pjud.test"),
+        patch.object(credenciales_pjud.settings, "PJUD_API_EMAIL", "plataforma@temposoft.cl"),
+        patch.object(credenciales_pjud.settings, "PJUD_API_PASSWORD", CLAVE_PLATAFORMA),
+        patch.object(credenciales_pjud.settings, "PJUD_API_CLIENT_KEY", "ck-123"),
+    ):
+        yield
+
+
+def _habilitar_pjud(bases, valor: bool):
+    with bases.SesionM() as db:
+        db.get(Cliente, bases.cliente_id).pjud_habilitado = valor
+        db.commit()
+
+
+def test_con_pjud_habilitado_entrega_la_conexion_a_api_pjud_sellada(bases, par, plataforma):
+    privada, _ = par
+    entrega = _sellador(bases).entregar(MagicMock(), [])
+    assert entrega.pjud_habilitado is True
+    assert _abrir(privada, entrega.api_pjud) == {
+        "base_url": "http://api-pjud.test", "email": "plataforma@temposoft.cl",
+        "password": CLAVE_PLATAFORMA, "client_key": "ck-123",
+    }
+    assert CLAVE_PLATAFORMA not in entrega.api_pjud
+    # Se audita que se entregó, sin el contenido.
+    llamada = bases.bitacora.call_args
+    assert "api_pjud=si" in llamada.kwargs["detalle"]
+    assert CLAVE_PLATAFORMA not in llamada.kwargs["detalle"]
+
+
+def test_sin_api_pjud_configurada_no_hay_conexion_que_entregar(bases, sin_plataforma):
+    entrega = _sellador(bases).entregar(MagicMock(), [])
+    assert entrega.api_pjud is None and entrega.pjud_habilitado is True
+
+
+def test_con_pjud_deshabilitado_no_se_entrega_ninguna_credencial(bases, plataforma):
+    with bases.SesionT() as db:
+        _abogado(db, "Ana", "16952077-1")
+        s = credenciales_pjud.Sellador(
+            api_key_id=1, prefijo="ed_abc", guid="guid-uno", usuario_id=42,
+            ip="200.1.2.3", ruta="/api/v1/causas", llave_publica_pem=bases.pem,
+            pjud_habilitado=False,
+        )
+        entrega = s.entregar(db, ["16952077-1", None])
+    assert entrega.refs == [None, None]
+    assert entrega.credenciales_pjud == {} and entrega.api_pjud is None
+    assert entrega.pjud_habilitado is False
+    bases.bitacora.assert_not_called()
+
+
+def test_el_sellador_toma_pjud_habilitado_del_cliente(bases):
+    _habilitar_pjud(bases, False)
+    assert _dependencia(bases, _key(bases)).pjud_habilitado is False
+    # No es un 403: queda registrado que se pidió y no se dio.
+    assert auditoria.ACCION_API_KEY_DENEGADO in [c.args[2] for c in bases.bitacora.call_args_list]
+
+    bases.bitacora.reset_mock()
+    _habilitar_pjud(bases, True)
+    assert _dependencia(bases, _key(bases)).pjud_habilitado is True
     bases.bitacora.assert_not_called()

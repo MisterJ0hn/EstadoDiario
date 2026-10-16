@@ -352,12 +352,14 @@ def listar(
                 r.pjud_estado = llamado.resultado
                 r.pjud_fecha_sincronizacion = llamado.fecha_hora
 
-    credenciales = None
+    credenciales = api_pjud = pjud_habilitado = None
     if sellador is not None:
         entrega = sellador.entregar(db, [r.rut for r in causas_resp])
         for r, ref in zip(causas_resp, entrega.refs):
             r.credencial_ref = ref
         credenciales = entrega.credenciales_pjud
+        api_pjud = entrega.api_pjud
+        pjud_habilitado = entrega.pjud_habilitado
 
     return CausaListResponse(
         total=total,
@@ -365,6 +367,8 @@ def listar(
         total_pages=total_pages,
         causas=causas_resp,
         credenciales_pjud=credenciales,
+        api_pjud=api_pjud,
+        pjud_habilitado=pjud_habilitado,
     )
 
 

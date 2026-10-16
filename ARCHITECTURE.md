@@ -463,6 +463,24 @@ dígito verificador). No se cae al usuario que subió el archivo: podría ser ot
 persona. Con 0 o 2+ coincidencias, o si el abogado no tiene credenciales
 cargadas, la causa va sin credencial.
 
+**Conexión de la plataforma a api-pjud.** Con las mismas capas y el mismo sello, la
+respuesta agrega `api_pjud` (un solo sello) con `{"base_url", "email", "password",
+"client_key"}`: son `PJUD_API_BASE_URL`, `PJUD_API_EMAIL`, `PJUD_API_PASSWORD` y
+`PJUD_API_CLIENT_KEY` de la plataforma, lo que el sistema externo necesita, junto
+con las credenciales del abogado, para consultar api-pjud por su cuenta. Va
+ausente si la plataforma no tiene api-pjud configurada (`settings.pjud_api_activo`).
+**Es una sola suscripción compartida por todos los clientes**: el integrador
+consulta api-pjud directo, sin pasar por `pjud_llamado` ni por el bloqueo por
+cliente, y rotar la clave en la plataforma obliga a que todos los integradores
+vuelvan a pedirla.
+
+**Solo con el PJUD habilitado.** Todo lo anterior depende de `Cliente.pjud_habilitado`
+(lo enciende la consola de administración; los clientes nuevos nacen sin él).
+Apagado, la request **no falla**: la respuesta llega completa pero sin
+`credenciales_pjud`, sin `credencial_ref` ni `api_pjud`, y con `pjud_habilitado: false`
+para que el sistema sepa por qué. El intento queda en la bitácora como
+`api_key_denegado` (`pjud_deshabilitado`).
+
 Para activarlo: en `admin_app`, pestaña **API keys** de la ficha del cliente →
 **Editar** la key → sección *Credenciales del PJUD* (interruptor y llave pública
 PEM; exige tener IPs permitidas). No está en el formulario de emisión a propósito:

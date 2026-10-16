@@ -80,6 +80,11 @@ class MovimientoListResponse(BaseModel):
     # ref → sello (RSA-OAEP + AES-GCM) con {rut, clave, metodo_login} del OJV.
     # Ver `app/core/credenciales_pjud.py`. Ausente si no se pidió.
     credenciales_pjud: dict[str, str] | None = None
+    # Sello con la conexión de la plataforma a api-pjud. Ausente si no se pidió,
+    # o si el cliente no tiene el PJUD habilitado (ver `pjud_habilitado`).
+    api_pjud: str | None = None
+    # `false` = el cliente no tiene el PJUD habilitado: no hay ninguna credencial.
+    pjud_habilitado: bool | None = None
 
 
 class MarcarLeidoRequest(BaseModel):

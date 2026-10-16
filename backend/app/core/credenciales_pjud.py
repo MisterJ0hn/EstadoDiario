@@ -33,10 +33,12 @@ from fastapi import Depends, Header, HTTPException, Query, Request, Response, st
 from sqlalchemy.orm import Session
 
 from app.core import api_key
+from app.core.config import settings
 from app.core.database import SesionMaestra
 from app.core.sello_rsa import sellar
 from app.core.deps import TenantContexto, get_tenant_actual
 from app.models.maestra.api_key import ApiKey
+from app.models.maestra.cliente import Cliente
 from app.models.usuario import Usuario
 from app.models.usuario_rut import UsuarioRut, limpiar_rut
 from app.services import auditoria_service as auditoria
@@ -130,6 +132,15 @@ class Entrega:
 
     refs: list[Optional[str]]
     credenciales_pjud: dict[str, str]
+    # Sello con la conexión de la plataforma a api-pjud (`base_url`, `email`,
+    # `password`, `client_key`). Es lo que el sistema externo necesita, además
+    # de las credenciales del abogado, para consultar api-pjud por su cuenta.
+    # `None` si el cliente no tiene el PJUD habilitado o la plataforma no lo
+    # tiene configurado.
+    api_pjud: Optional[str] = None
+    # Si el cliente tiene el PJUD habilitado. `False` explica por qué la
+    # respuesta viene sin ninguna credencial.
+    pjud_habilitado: bool = True
 
 
 @dataclass(frozen=True)
@@ -141,11 +152,44 @@ class Sellador:
     ip: Optional[str]
     ruta: str
     llave_publica_pem: str
+    # El cliente puede usar el PJUD (`Cliente.pjud_habilitado`, lo enciende la
+    # consola de administración). Apagado, no se entrega NINGUNA credencial,
+    # pero la request no falla: el sistema externo sigue leyendo sus datos.
+    pjud_habilitado: bool = True
+
+    def _sellar_api_pjud(self) -> Optional[str]:
+        """La conexión de la plataforma a api-pjud, sellada para esta key.
+
+        Es una credencial de la PLATAFORMA —una sola suscripción para todos los
+        clientes—, no del estudio. Por eso va tras las mismas capas que las
+        claves del OJV y nunca en claro.
+        """
+        if not settings.pjud_api_activo:
+            return None
+        try:
+            return sellar(
+                self.llave_publica_pem,
+                {
+                    "base_url": settings.PJUD_API_BASE_URL,
+                    "email": settings.PJUD_API_EMAIL,
+                    "password": settings.PJUD_API_PASSWORD,
+                    "client_key": settings.PJUD_API_CLIENT_KEY,
+                },
+            )
+        except ValueError:
+            logger.error("API key %s: no se pudo sellar la conexión a api-pjud", self.prefijo)
+            return None
 
     def entregar(self, db: Session, ruts: Sequence[Optional[str]]) -> Entrega:
         """Sella las credenciales de los dueños de `ruts` (los de las filas de la
         respuesta). Un sello por abogado, no por fila: las filas lo referencian
         con `credencial_ref`, un número de la respuesta que no es ningún id."""
+        if not self.pjud_habilitado:
+            return Entrega(
+                refs=[None] * len(ruts), credenciales_pjud={}, api_pjud=None,
+                pjud_habilitado=False,
+            )
+
         normalizados = [limpiar_rut(r) if r else None for r in ruts]
         duenos = _duenos_por_rut(db, {n for n in normalizados if n})
 
@@ -183,7 +227,9 @@ class Sellador:
                 ids_entregados.append(usuario.id)
             refs.append(ref)
 
-        if ids_entregados:
+        api_pjud = self._sellar_api_pjud()
+
+        if ids_entregados or api_pjud:
             # Aparte y no en la transacción del endpoint: la entrega ocurrió
             # aunque el resto de la request falle después.
             auditoria.registrar_aparte(
@@ -194,10 +240,11 @@ class Sellador:
                 ip=self.ip,
                 detalle=(
                     f"{self.ruta} key={self.prefijo} entregadas={len(ids_entregados)} "
-                    f"usuarios={','.join(str(i) for i in ids_entregados)}"
+                    f"usuarios={','.join(str(i) for i in ids_entregados)} "
+                    f"api_pjud={'si' if api_pjud else 'no'}"
                 ),
             )
-        return Entrega(refs=refs, credenciales_pjud=sellos)
+        return Entrega(refs=refs, credenciales_pjud=sellos, api_pjud=api_pjud)
 
 
 def _denegar(tenant: TenantContexto, request: Request, motivo: str, prefijo: Optional[str]):
@@ -247,7 +294,21 @@ def sellador_solicitado(
             _denegar(tenant, request, "sin_ips_permitidas", fila.prefijo)
         if not fila.llave_publica_pem:
             _denegar(tenant, request, "sin_llave_publica", fila.prefijo)
+        cliente = db.get(Cliente, tenant.cliente_id)
+        pjud_habilitado = bool(cliente and cliente.pjud_habilitado)
+        if not pjud_habilitado:
+            # No es un error: la key sigue leyendo sus datos. Pero pidió
+            # credenciales y no se le dan, y eso tiene que quedar escrito.
+            auditoria.registrar_aparte(
+                tenant.guid,
+                auditoria.MODULO_AUTH,
+                auditoria.ACCION_API_KEY_DENEGADO,
+                usuario_id=tenant.usuario_id,
+                ip=api_key.ip_confiable(request),
+                detalle=f"{request.url.path} credenciales_pjud (pjud_deshabilitado) key={fila.prefijo}",
+            )
         sellador = Sellador(
+            pjud_habilitado=pjud_habilitado,
             api_key_id=fila.id,
             prefijo=fila.prefijo,
             guid=tenant.guid,

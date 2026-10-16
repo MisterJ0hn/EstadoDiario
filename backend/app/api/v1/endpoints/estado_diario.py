@@ -277,6 +277,8 @@ def _con_credenciales(resultado: dict, db: Session, sellador: Sellador | None) -
     for fila, ref in zip(filas, entrega.refs):
         fila["credencial_ref"] = ref
     resultado["credenciales_pjud"] = entrega.credenciales_pjud
+    resultado["api_pjud"] = entrega.api_pjud
+    resultado["pjud_habilitado"] = entrega.pjud_habilitado
     return resultado
 
 
@@ -447,6 +449,8 @@ def detalle_movimiento(
         entrega = sellador.entregar(db, [resultado["movimiento"].get("rut")])
         resultado["movimiento"]["credencial_ref"] = entrega.refs[0]
         resultado["credenciales_pjud"] = entrega.credenciales_pjud
+        resultado["api_pjud"] = entrega.api_pjud
+        resultado["pjud_habilitado"] = entrega.pjud_habilitado
     return resultado
 
 
