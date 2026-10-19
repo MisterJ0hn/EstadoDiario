@@ -140,6 +140,9 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     ("audiencia", "asistio", "BOOLEAN DEFAULT FALSE"),
     ("audiencia", "asistencia_usuario_id", "INTEGER"),
     ("audiencia", "asistencia_marcada_en", "TIMESTAMPTZ"),
+    # Usuario propio del cliente de una integración, sin cuenta en `usuario`.
+    ("estado_diario", "usuario_pendiente_externo", "VARCHAR(100)"),
+    ("estado_diario_agenda", "usuario_registro_externo", "VARCHAR(100)"),
 ]
 
 # Lo que se ELIMINA. Al revés que agregar, esto no es opcional: `usuario.rol`

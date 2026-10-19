@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -17,6 +18,9 @@ from app.services import auditoria_service as auditoria
 from app.services.google_calendar_service import GoogleCalendarService
 
 logger = logging.getLogger(__name__)
+
+# Usuario propio de un cliente de integración: solo se guarda como texto.
+_USUARIO_EXTERNO = re.compile(r"[\w .@+\-]{1,100}")
 
 
 def _describir(ed: EstadoDiario) -> str:
@@ -228,8 +232,12 @@ class EstadoDiarioService:
                          mensaje: Optional[str] = None, fecha_hora: Optional[str] = None,
                          notificar_whatsapp: bool = False, whatsapp_telefono: Optional[str] = None,
                          fecha_hora_whatsapp: Optional[str] = None,
-                         usuario_id: Optional[int] = None, ip: Optional[str] = None):
-        """`usuario_id` es quién aprieta el botón, que no siempre es el mismo
+                         usuario_id: Optional[int] = None, ip: Optional[str] = None,
+                         integracion=None):
+        """`integracion` es el usuario de la API key cuando llama una integración
+        (None si es una persona): habilita `username` externo.
+
+        `usuario_id` es quién aprieta el botón, que no siempre es el mismo
         que `username`: se puede dejar pendiente y agendarle el recordatorio a
         otra persona del estudio. En la bitácora va el primero, porque lo que
         se pregunta es quién ejecutó la acción."""
@@ -280,20 +288,37 @@ class EstadoDiarioService:
             raise BadRequestException("Indique la fecha y hora de envío del WhatsApp")
 
         usuario = None
+        externo = None
         if agendar or username:
             if not username:
                 self._save_log(log, False, error="Username requerido para agendar")
                 raise BadRequestException("El campo username es obligatorio para agendar")
 
-            usuario = self.user_repo.find_by_usuario(username)
-            if not usuario:
-                self._save_log(log, False, error="Username no existe")
-                raise BadRequestException("username no existe")
+            if integracion is None:
+                usuario = self.user_repo.find_by_usuario(username)
+                if not usuario:
+                    self._save_log(log, False, error="Username no existe")
+                    raise BadRequestException("username no existe")
+            else:
+                # Una integración trae el usuario de su propio sistema, que no
+                # tiene por qué existir acá. Si coincide con una persona activa
+                # del estudio se enlaza como siempre; si no, queda como texto de
+                # atribución. Quién actuó lo dice la API key (`integracion`),
+                # nunca este valor, que no autoriza nada.
+                usuario = self.user_repo.find_elegible_por_usuario(username)
+                if not usuario:
+                    externo = username.strip()
+                    if not _USUARIO_EXTERNO.fullmatch(externo):
+                        self._save_log(log, False, error="Usuario externo con formato inválido")
+                        raise BadRequestException(
+                            "username solo admite letras, números, espacios y . _ @ + - (máx. 100)"
+                        )
 
         ed.pendiente = True
         ed.nivel_pendiente = nivel
         ed.fecha_pendiente = datetime.now(timezone.utc)
         ed.usuario_pendiente = usuario
+        ed.usuario_pendiente_externo = externo
 
         agenda = None
         if agendar:
@@ -302,7 +327,9 @@ class EstadoDiarioService:
                 detalle=mensaje.strip(),
                 fecha_hora=self._parse_fecha_hora(fecha_hora),
                 nivel=nivel,
-                usuario_registro=usuario,
+                # Con usuario externo el recordatorio es de la cuenta de integración.
+                usuario_registro=usuario or (integracion if externo else None),
+                usuario_registro_externo=externo,
                 fecha_hora_registro=datetime.now(timezone.utc),
                 notificar_whatsapp=notificar_whatsapp,
                 whatsapp_telefono=(whatsapp_telefono or (usuario.telefono if usuario else None))
@@ -317,6 +344,8 @@ class EstadoDiarioService:
             detalle += f" — recordatorio {fecha_hora}"
             if usuario is not None:
                 detalle += f" para {usuario.usuario}"
+        if externo:
+            detalle += f" (usuario externo: {externo})"
         auditoria.registrar(
             self.db, auditoria.MODULO_ESTADO_DIARIO, auditoria.ACCION_MARCAR_PENDIENTE,
             usuario_id=usuario_id, ip=ip, detalle=detalle,
@@ -376,7 +405,8 @@ class EstadoDiarioService:
                 "detalle": a.detalle,
                 "fecha_hora": a.fecha_hora.isoformat(),
                 "nivel": a.nivel,
-                "usuario_registro": a.usuario_registro.usuario if a.usuario_registro else None,
+                "usuario_registro": a.usuario_registro_externo
+                    or (a.usuario_registro.usuario if a.usuario_registro else None),
                 "movimiento_caratulado": a.estado_diario.caratulado if a.estado_diario else None,
                 "movimiento_rol": a.estado_diario.rol if a.estado_diario else None,
                 "movimiento_tribunal": a.estado_diario.tribunal if a.estado_diario else None,
@@ -445,7 +475,8 @@ class EstadoDiarioService:
                 "fecha_envio": a.fecha_envio.isoformat() if a.fecha_envio else None,
                 "google_event_id": a.google_event_id,
                 "google_sync_error": a.google_sync_error,
-                "usuario_registro": a.usuario_registro.usuario if a.usuario_registro else None,
+                "usuario_registro": a.usuario_registro_externo
+                    or (a.usuario_registro.usuario if a.usuario_registro else None),
             }
             for a in agendas
         ]
@@ -621,5 +652,6 @@ class EstadoDiarioService:
         if include_pendiente:
             data["nivel_pendiente"] = m.nivel_pendiente
             data["fecha_pendiente"] = m.fecha_pendiente.isoformat() if m.fecha_pendiente else None
-            data["usuario_pendiente"] = m.usuario_pendiente.usuario if m.usuario_pendiente else None
+            data["usuario_pendiente"] = m.usuario_pendiente_externo or (
+                m.usuario_pendiente.usuario if m.usuario_pendiente else None)
         return data

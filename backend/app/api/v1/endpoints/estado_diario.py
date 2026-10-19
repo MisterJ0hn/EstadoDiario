@@ -514,6 +514,7 @@ def marcar_pendiente(
         estado_diario_id, body.nivel, body.username, body.mensaje, body.fecha_hora,
         body.notificar_whatsapp, body.whatsapp_telefono, body.fecha_hora_whatsapp,
         usuario_id=current_user.id, ip=auditoria.ip_de(request),
+        integracion=current_user if current_user.es_integracion else None,
     )
 
 

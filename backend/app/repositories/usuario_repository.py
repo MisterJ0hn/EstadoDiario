@@ -27,6 +27,14 @@ class UsuarioRepository:
             .first()
         )
 
+    def find_elegible_por_usuario(self, usuario: str) -> Optional[Usuario]:
+        """Como `find_by_usuario`, pero solo personas activas: es lo que una
+        integración puede enlazar, nunca otra cuenta de integración ni una baja."""
+        u = self.find_by_usuario(usuario)
+        if u is None or not u.activo or u.es_integracion:
+            return None
+        return u
+
     def find_by_id(self, usuario_id: int) -> Optional[Usuario]:
         return self.db.get(Usuario, usuario_id)
 

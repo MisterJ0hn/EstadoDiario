@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 # ── Estado Diario Origen ──────────────────────────────────
@@ -100,7 +100,12 @@ class MarcarLeidoResponse(BaseModel):
 
 class MarcarPendienteRequest(BaseModel):
     nivel: str = Field(..., pattern="^(bajo|medio|alto)$")
-    username: str | None = None
+    # `usuario_registro` es el nombre con que los clientes de integración llaman
+    # a este campo. Para ellos puede ser un usuario propio, que no existe en
+    # nuestra base: ver `marcar_pendiente`.
+    username: str | None = Field(
+        None, max_length=100, validation_alias=AliasChoices("username", "usuario_registro")
+    )
     mensaje: str | None = None
     fecha_hora: str | None = None
     # Recordatorio por WhatsApp (Twilio): opcional, requiere mensaje+fecha_hora

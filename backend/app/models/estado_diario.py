@@ -45,6 +45,9 @@ class EstadoDiario(BaseTenant):
     usuario_pendiente_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("usuario.id"), index=True
     )
+    # Usuario propio del cliente de una integración que no existe en `usuario`.
+    # Es solo atribución: no concede acceso. Excluyente con `usuario_pendiente_id`.
+    usuario_pendiente_externo: Mapped[Optional[str]] = mapped_column(String(100))
 
     # Relationships
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="estados_diarios")

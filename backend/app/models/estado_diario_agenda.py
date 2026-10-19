@@ -17,6 +17,9 @@ class EstadoDiarioAgenda(BaseTenant):
     usuario_registro_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("usuario.id"), index=True
     )
+    # Usuario propio del cliente de una integración (ver EstadoDiario.usuario_pendiente_externo).
+    # En ese caso `usuario_registro_id` es la cuenta de integración.
+    usuario_registro_externo: Mapped[Optional[str]] = mapped_column(String(100))
     detalle: Mapped[str] = mapped_column(Text, nullable=False)
     # Fecha del recordatorio: es la fecha del evento de todo el día en
     # Google Calendar. No confundir con fecha_hora_whatsapp, que es la

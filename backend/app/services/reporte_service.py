@@ -96,7 +96,8 @@ CAMPOS: dict[str, dict[str, Campo]] = {
         _c("fecha_pendiente", "Fecha en que quedó pendiente",
            lambda m: _fecha(m.fecha_pendiente)),
         _c("usuario_pendiente", "Responsable",
-           lambda m: m.usuario_pendiente.usuario if m.usuario_pendiente else None),
+           lambda m: m.usuario_pendiente_externo
+           or (m.usuario_pendiente.usuario if m.usuario_pendiente else None)),
     ]),
     ReportePlantilla.FUENTE_MOVIMIENTOS: dict([
         _c("materia", "Materia", lambda m: m.materia),
@@ -125,7 +126,8 @@ CAMPOS: dict[str, dict[str, Campo]] = {
         _c("fecha_finalizacion", "Fecha de finalización",
            lambda a: _fecha(a.fecha_finalizacion)),
         _c("usuario_registro", "Creado por",
-           lambda a: a.usuario_registro.usuario if a.usuario_registro else None),
+           lambda a: a.usuario_registro_externo
+           or (a.usuario_registro.usuario if a.usuario_registro else None)),
         _c("notificar_whatsapp", "Notifica por WhatsApp",
            lambda a: _si_no(a.notificar_whatsapp)),
         _c("enviado", "WhatsApp enviado", lambda a: _si_no(a.enviado)),
