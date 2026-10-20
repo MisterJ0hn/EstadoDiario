@@ -128,6 +128,7 @@ function fmtFechaChip(iso: string): string {
             <table class="data-table">
               <thead>
                 <tr>
+                  <th>Día</th>
                   <th>Rit/Rol</th>
                   <th>Ruc/RolUnico</th>
                   <th>FechaIngreso</th>
@@ -141,6 +142,8 @@ function fmtFechaChip(iso: string): string {
               <tbody>
                 @for (m of movimientos(); track m.id) {
                   <tr>
+                    <!-- Día del estado diario: la misma fecha que filtran Desde/Hasta. -->
+                    <td class="whitespace-nowrap">{{ fmtDia(m.fecha_estado_diario) }}</td>
                     <td class="font-medium">
                       <a [routerLink]="['/estado-diario', m.id]" class="hover:text-primary-600 hover:underline">
                         {{ m.rol || '-' }}
@@ -314,6 +317,10 @@ export class MovimientosListComponent implements OnInit {
   pjudModal = signal<Causa | null>(null);
 
   title = computed(() => (this.isOrigen() ? 'Estado Diario del Archivo' : 'Estado Diario'));
+
+  fmtDia(iso: string | null): string {
+    return iso ? fmtFechaChip(iso) : '-';
+  }
 
   claseNivel(nivel: string | null): string {
     if (nivel === 'alto') return 'badge-danger';

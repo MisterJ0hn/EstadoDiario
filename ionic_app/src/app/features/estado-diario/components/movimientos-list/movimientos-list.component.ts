@@ -126,6 +126,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
             <table class="data-table">
               <thead>
                 <tr>
+                  <th>Día</th>
                   <th>Rit/Rol</th>
                   <th>Ruc/RolUnico</th>
                   <th>FechaIngreso</th>
@@ -139,6 +140,8 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
               <tbody>
                 @for (m of movimientos(); track m.id) {
                   <tr>
+                    <!-- Día del estado diario: la misma fecha que filtran Desde/Hasta. -->
+                    <td class="whitespace-nowrap">{{ fmtDia(m.fecha_estado_diario) }}</td>
                     <td class="font-medium">
                       <a [routerLink]="['/estado-diario', m.id]" class="hover:text-primary-600 hover:underline">
                         {{ m.rol || '-' }}
@@ -216,7 +219,7 @@ type Tab = 'no-leidos' | 'leidos' | 'pendientes';
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="8" class="text-center py-10 text-neutral-400">
+                    <td colspan="9" class="text-center py-10 text-neutral-400">
                       No se encontraron registros del estado diario
                     </td>
                   </tr>
@@ -324,6 +327,10 @@ export class MovimientosListComponent implements OnInit {
   pjudModal = signal<Causa | null>(null);
 
   title = computed(() => (this.isOrigen() ? 'Estado Diario del Archivo' : 'Estado Diario'));
+
+  fmtDia(iso: string | null): string {
+    return iso ? fmtFechaChip(iso) : '-';
+  }
 
   claseNivel(nivel: string | null): string {
     if (nivel === 'alto') return 'badge-danger';
