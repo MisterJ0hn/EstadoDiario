@@ -319,7 +319,7 @@ export class MovimientosListComponent implements OnInit {
   title = computed(() => (this.isOrigen() ? 'Estado Diario del Archivo' : 'Estado Diario'));
 
   fmtDia(iso: string | null): string {
-    return iso ? fmtFechaChip(iso) : '-';
+    return iso || '-';
   }
 
   claseNivel(nivel: string | null): string {
