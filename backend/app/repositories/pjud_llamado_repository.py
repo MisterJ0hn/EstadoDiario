@@ -9,7 +9,7 @@ endpoint envuelve la llamada a `registrar` en un try/except que solo loguea.
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.maestra.pjud_llamado import PjudLlamado
@@ -98,15 +98,23 @@ class PjudLlamadoRepository:
         return items, total, total_pages
 
     def ultimos_por_causa(
-        self, *, cliente_id: Optional[int], causa_ids: list[int]
+        self, *, cliente_id: Optional[int], causa_ids: list[int], apelaciones: bool = False
     ) -> dict[int, PjudLlamado]:
         """`{causa_id: PjudLlamado}` del llamado más reciente de cada causa:
         `.resultado` pinta en el listado el icono de estado del PJUD (nunca
         sincronizada / sincronizando / error / lista) y `.fecha_hora` la fecha
         de última sincronización, sin tener que abrir el modal (que sí golpea
-        al proveedor en vivo)."""
+        al proveedor en vivo).
+
+        `apelaciones=True` mira los llamados de causas de corte (guardados con
+        `causa_id` = id de `causa_corte` y materia 'Apelaciones'); sin él se
+        ignoran, porque sus ids son de otra tabla y chocarían con los de `Causa`."""
         if not causa_ids:
             return {}
+        es_apelacion = (
+            PjudLlamado.materia == "Apelaciones" if apelaciones
+            else or_(PjudLlamado.materia.is_(None), PjudLlamado.materia != "Apelaciones")
+        )
         ultima_fecha = (
             self.db.query(
                 PjudLlamado.causa_id,
@@ -115,6 +123,7 @@ class PjudLlamadoRepository:
             .filter(
                 PjudLlamado.cliente_id == cliente_id,
                 PjudLlamado.causa_id.in_(causa_ids),
+                es_apelacion,
             )
             .group_by(PjudLlamado.causa_id)
             .subquery()
@@ -126,7 +135,7 @@ class PjudLlamadoRepository:
                 (PjudLlamado.causa_id == ultima_fecha.c.causa_id)
                 & (PjudLlamado.fecha_hora == ultima_fecha.c.ultima),
             )
-            .filter(PjudLlamado.cliente_id == cliente_id)
+            .filter(PjudLlamado.cliente_id == cliente_id, es_apelacion)
             .all()
         )
         # Si dos llamados de la misma causa cayeron en el mismo instante (no

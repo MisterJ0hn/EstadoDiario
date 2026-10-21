@@ -571,6 +571,9 @@ export class PjudApelacionesModalComponent implements OnDestroy {
   }
 
   @Output() cerrado = new EventEmitter<void>();
+  /** Cada consulta avisa el estado resultante para que el botón de Corte
+   *  actualice su ícono sin recargar el listado. */
+  @Output() estadoPjud = new EventEmitter<{ causaId: number; estado: PjudApelacionesMovimientosResponse['estado'] }>();
 
   cargando = signal(false);
   error = signal<string | null>(null);
@@ -592,6 +595,7 @@ export class PjudApelacionesModalComponent implements OnDestroy {
       next: (res) => {
         this.datos.set(res);
         this.cargando.set(false);
+        this.estadoPjud.emit({ causaId: corteId, estado: res.estado });
         if (res.estado === 'sincronizando') this.iniciarPolling(corteId);
       },
       error: (err) => {
@@ -611,6 +615,7 @@ export class PjudApelacionesModalComponent implements OnDestroy {
       this.service.pjudApelaciones(corteId, false).subscribe({
         next: (res) => {
           this.datos.set(res);
+          this.estadoPjud.emit({ causaId: corteId, estado: res.estado });
           if (res.estado !== 'sincronizando') this.detenerPolling();
         },
         // Error de red en un tick: se sigue preguntando en el próximo.

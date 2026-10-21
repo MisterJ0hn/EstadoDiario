@@ -154,6 +154,10 @@ class CausaCorteResponse(BaseModel):
     ubicacion: str | None = None
     fecha_ubicacion: date | None = None
     fecha_archivo: date | None = None
+    # Último resultado de "Detalle PJUD" (solo Corte de Apelaciones): pinta el
+    # icono del botón, igual que en `CausaResponse`.
+    pjud_estado: str | None = None
+    pjud_fecha_sincronizacion: datetime | None = None
 
 
 class CausaCorteListResponse(BaseModel):

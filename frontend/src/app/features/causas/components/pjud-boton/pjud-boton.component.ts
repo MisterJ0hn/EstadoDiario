@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import { Causa, PjudMovimientosResponse } from '@core/models/causa.model';
+import { Causa, CausaCorte, PjudMovimientosResponse } from '@core/models/causa.model';
 import { PjudBotonVariante, pjudBotonEstado, pjudBotonTitulo } from '@core/utils/pjud-estado';
 import { CausaService } from '../../services/causa.service';
 
@@ -48,7 +48,7 @@ const MARTILLO_PJUD_PNG =
   selector: 'app-pjud-boton',
   standalone: true,
   template: `
-    @if (causa && (causa.materia === 'Civil' || causa.materia === 'Familia' || causa.materia === 'Laboral' || causa.materia === 'Cobranza' || causa.materia === 'Penal')) {
+    @if (objetivo && (objetivo.materia === 'Civil' || objetivo.materia === 'Familia' || objetivo.materia === 'Laboral' || objetivo.materia === 'Cobranza' || objetivo.materia === 'Penal' || objetivo.materia === 'Apelaciones')) {
       <button type="button" class="btn-outline btn-sm !px-2 outline outline-1 outline-primary-600 outline-offset-2" (click)="onClick()"
               [class.text-warning-500]="variante() === 'nuevo'"
               [class.text-accent-600]="variante() === 'sincronizando'"
@@ -78,6 +78,9 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
   private causaService = inject(CausaService);
 
   @Input() causa: Causa | null = null;
+  /** Alternativa a `causa` para el listado de Corte: una causa de la hoja
+   *  Corte Apelaciones (otra tabla, otro endpoint, mismo botón e iconos). */
+  @Input() corte: CausaCorte | null = null;
   @Output() abrir = new EventEmitter<void>();
   /** Se dispara cuando este componente, por su cuenta, se entera de que una
    *  sincronización terminó (`listo`/`error`/`sin_credenciales`). Quien lo use
@@ -98,15 +101,24 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
    *  = todavía no se miró ninguno. */
   private ultimoPjudEstado: string | null | undefined = undefined;
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (!('causa' in changes)) return;
+  /** Lo que el botón necesita saber de la causa, venga de `causa` o de `corte`. */
+  get objetivo(): { id: number; materia: string | null; pjud_estado?: string | null } | null {
+    if (this.causa) return this.causa;
+    if (this.corte?.tipo === 'apelaciones') {
+      return { id: this.corte.id, materia: 'Apelaciones', pjud_estado: this.corte.pjud_estado };
+    }
+    return null;
+  }
 
-    const causaId = this.causa?.id ?? null;
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!('causa' in changes || 'corte' in changes)) return;
+
+    const causaId = this.objetivo?.id ?? null;
     if (causaId !== this.causaIdPolling && this.pollTimer) {
       this.detenerPolling();
     }
 
-    const nuevoEstado = this.causa?.pjud_estado ?? null;
+    const nuevoEstado = this.objetivo?.pjud_estado ?? null;
     if (nuevoEstado === this.ultimoPjudEstado) return;
     this.ultimoPjudEstado = nuevoEstado;
 
@@ -126,7 +138,7 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
   }
 
   variante(): PjudBotonVariante {
-    return this.estadoLocal() ?? pjudBotonEstado(this.causa?.pjud_estado);
+    return this.estadoLocal() ?? pjudBotonEstado(this.objetivo?.pjud_estado);
   }
 
   titulo(): string {
@@ -136,9 +148,9 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
   onClick(): void {
     // Optimista: si nunca se sincronizó, se ve "sincronizando" al toque, sin
     // esperar la respuesta — abrir el modal es lo que dispara el scrape.
-    if (this.variante() === 'nuevo' && this.causa) {
+    if (this.variante() === 'nuevo' && this.objetivo) {
       this.estadoLocal.set('sincronizando');
-      this.iniciarPolling(this.causa.id);
+      this.iniciarPolling(this.objetivo.id);
     }
     this.abrir.emit();
   }
@@ -162,13 +174,15 @@ export class PjudBotonComponent implements OnChanges, OnDestroy {
    *  se corta acá dejaría preguntando para siempre a quien no cargó su clave. */
   private consultarEstado(causaId: number): void {
     const consulta$: Observable<Pick<PjudMovimientosResponse, 'estado'>> =
-      this.causa?.materia === 'Familia'
+      this.objetivo?.materia === 'Apelaciones'
+        ? this.causaService.pjudApelaciones(causaId)
+        : this.objetivo?.materia === 'Familia'
         ? this.causaService.pjudFamilia(causaId)
-        : this.causa?.materia === 'Laboral'
+        : this.objetivo?.materia === 'Laboral'
         ? this.causaService.pjudLaboral(causaId)
-        : this.causa?.materia === 'Cobranza'
+        : this.objetivo?.materia === 'Cobranza'
         ? this.causaService.pjudCobranza(causaId)
-        : this.causa?.materia === 'Penal'
+        : this.objetivo?.materia === 'Penal'
         ? this.causaService.pjudPenal(causaId)
         : this.causaService.pjudMovimientos(causaId);
     consulta$.subscribe({

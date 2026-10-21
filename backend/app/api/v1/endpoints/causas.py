@@ -215,6 +215,8 @@ def listar_cortes(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
     repo = CausaCorteRepository(db)
@@ -223,6 +225,13 @@ def listar_cortes(
         fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
         vigencia=_vigencia(vigencia), page=page, limit=limit,
     )
+    estados_pjud = {}
+    if settings.pjud_api_activo:
+        estados_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
+            cliente_id=tenant.cliente_id,
+            causa_ids=[c.id for c in items if c.tipo == "apelaciones"],
+            apelaciones=True,
+        )
     return CausaCorteListResponse(
         total=total,
         page=pagina,
@@ -241,6 +250,8 @@ def listar_cortes(
                 estado_procesal=c.estado_procesal,
                 institucion=c.institucion,
                 fecha_archivo=c.estado_diario_origen.fecha if c.estado_diario_origen else None,
+                pjud_estado=estados_pjud[c.id].resultado if c.id in estados_pjud else None,
+                pjud_fecha_sincronizacion=estados_pjud[c.id].fecha_hora if c.id in estados_pjud else None,
             )
             for c in items
         ],
@@ -916,9 +927,9 @@ def pjud_apelaciones(
         _registrar_llamado_pjud(
             db_maestra,
             tenant=tenant,
-            # Sin causa_id a propósito: es un id de `causa_corte` y el log lo
-            # usa para el último estado de las `Causa` (ids de otra tabla).
-            causa_id=None,
+            # Es un id de `causa_corte`: se distingue de los de `Causa` por la
+            # materia 'Apelaciones' (ver `ultimos_por_causa`).
+            causa_id=corte_id,
             rol=f"{causa_corte.rol}-{causa_corte.era}",
             tribunal=causa_corte.corte,
             materia="Apelaciones",

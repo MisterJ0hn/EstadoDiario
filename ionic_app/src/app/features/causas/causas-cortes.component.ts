@@ -9,6 +9,7 @@ import {
   FiltrosPanelComponent,
 } from '@shared/components/filtros-panel/filtros-panel.component';
 import { CausaService } from './services/causa.service';
+import { PjudBotonComponent } from './components/pjud-boton/pjud-boton.component';
 import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-modal/pjud-apelaciones-modal.component';
 
 /**
@@ -24,7 +25,7 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
 @Component({
   selector: 'app-causas-cortes',
   standalone: true,
-  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudApelacionesModalComponent],
+  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudBotonComponent, PjudApelacionesModalComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-4">
@@ -163,15 +164,8 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
                       @if (pjudDisponible()) {
                         <td class="text-center">
                           @if (c.tipo === 'apelaciones') {
-                            <button type="button" class="btn-outline btn-sm !px-2 outline outline-1 outline-primary-600 outline-offset-2"
-                                    (click)="causaPjud.set(c)" title="Ver detalle de la causa en el Poder Judicial"
-                                    aria-label="Ver detalle de la causa en el Poder Judicial">
-                              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
-                                <path d="M14 3v5h5M9 13h6M9 17h6" />
-                              </svg>
-                            </button>
+                            <app-pjud-boton [corte]="c" (abrir)="causaPjud.set(c)"
+                                            (estadoPjud)="onEstadoPjud($event)" />
                           } @else {
                             <span>-</span>
                           }
@@ -205,7 +199,8 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
       </div>
     </div>
 
-    <app-pjud-apelaciones-modal [causa]="causaPjud()" (cerrado)="causaPjud.set(null)" />
+    <app-pjud-apelaciones-modal [causa]="causaPjud()" (cerrado)="causaPjud.set(null)"
+                                (estadoPjud)="onEstadoPjud($event)" />
   `,
 })
 export class CausasCortesComponent implements OnInit {
@@ -342,6 +337,14 @@ export class CausasCortesComponent implements OnInit {
     if (this.filtroTipo === tipo) return;
     this.filtroTipo = tipo;
     this.onFiltrar();
+  }
+
+  /** El botón o el modal se enteraron de que una sincronización terminó:
+   *  se anota en la fila para que el ícono quede al día sin recargar. */
+  onEstadoPjud(e: { causaId: number; estado: string }): void {
+    this.cortes.update((lista) =>
+      lista.map((c) => (c.id === e.causaId ? { ...c, pjud_estado: e.estado } : c))
+    );
   }
 
   irA(pagina: number): void {

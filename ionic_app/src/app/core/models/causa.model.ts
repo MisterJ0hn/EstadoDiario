@@ -114,6 +114,9 @@ export interface CausaCorte {
   ubicacion: string | null;
   fecha_ubicacion: string | null;
   fecha_archivo: string | null;
+  /** Último resultado de "Detalle PJUD" (solo Corte de Apelaciones). */
+  pjud_estado?: string | null;
+  pjud_fecha_sincronizacion?: string | null;
 }
 
 export interface CausaCorteListResponse {
