@@ -1393,6 +1393,213 @@ class PjudService:
             for anexo in item.get("anexo") or []:
                 anexo["doc"] = self._url_documento(anexo.get("doc"), identificador, 1)
 
+    # ── Corte de Apelaciones ────────────────────────────────────
+
+    @_diagnostico_en_error
+    def obtener_detalle_apelaciones(
+        self,
+        causa_corte,
+        forzar_sincronizacion: bool = False,
+        credenciales_dueno: Optional[dict] = None,
+    ) -> dict:
+        """Detalle de una `CausaCorte` de Corte de Apelaciones desde el PJUD.
+
+        Mismo flujo asíncrono que las otras materias (`sincronizando` / `error` /
+        `listo`), pero la clave de la causa es distinta y NO usa el catálogo de
+        tribunales: el request es `{rol, anio, corte}` con la corte como texto
+        ("C.A. de Santiago", tal cual la trae la hoja del Excel). No hay
+        cuadernos: `/consultar_movimientos_apelaciones` recibe solo el
+        `identificador` y devuelve `movimientos`, `liquidantes`, `exhortos` e
+        `incompetencia`. Ver "solicitud apelaciones.md".
+        """
+        if (causa_corte.tipo or "").strip().lower() != "apelaciones":
+            raise PjudApiError(
+                "El detalle de Apelaciones solo está disponible para causas de Corte de Apelaciones."
+            )
+        numero = re.search(r"\d+", str(causa_corte.rol or ""))
+        anio = re.search(r"\d{4}", str(causa_corte.era or ""))
+        corte = (causa_corte.corte or "").strip()
+        if not (numero and anio and corte):
+            raise PjudApiError(
+                f"La causa de corte «{causa_corte.rol}» no tiene rol, era y corte "
+                "completos para consultar al PJUD."
+            )
+        cuerpo_causa = {"rol": int(numero.group()), "anio": int(anio.group()), "corte": corte}
+        diag = self._diag = [f"rol={cuerpo_causa['rol']} anio={cuerpo_causa['anio']} corte={corte!r}"]
+
+        if forzar_sincronizacion:
+            diag.append(
+                "forzar=" + self._sincronizar(cuerpo_causa, credenciales_dueno, "apelaciones")
+            )
+
+        detalle_estado: Optional[str] = None
+        ultimo_error: Optional[str] = None
+        diag.append(
+            "consultar_apelaciones: body=" + self._cuerpo_para_log(cuerpo_causa, credenciales_dueno)
+        )
+        try:
+            data = self._request(
+                "POST", "/consultar_apelaciones",
+                json=self._con_credenciales(cuerpo_causa, credenciales_dueno),
+            )
+            # Se tolera que la causa venga bajo `causa` o en la raíz.
+            detalle = data.get("causa", data)
+            detalle_estado = (detalle.get("detalle_estado") or "").strip() or None
+            ultimo_error = (detalle.get("ultimo_error") or "").strip() or None
+            diag.append(
+                f"consultar_apelaciones: 200 estado={detalle.get('estado')!r} "
+                f"detalle_estado={detalle_estado!r} "
+                f"últ.sync={detalle.get('fecha_ultima_sincronizacion')!r} "
+                f"ultimo_error={ultimo_error!r}"
+            )
+        except PjudNoEncontrado:
+            detalle = None
+            diag.append("consultar_apelaciones: 404 (api-pjud no tiene la causa)")
+
+        estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
+
+        if estado_norm in _ESTADOS_ERROR:
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": detalle_estado,
+                "ultimo_error": ultimo_error,
+                "diagnostico": " · ".join(diag),
+            }
+
+        esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+
+        if esta_sincronizando and not forzar_sincronizacion:
+            diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "apelaciones"))
+
+        identificador = (detalle or {}).get("identificador")
+        resultado: dict = {
+            "estado": "sincronizando" if esta_sincronizando else "listo",
+            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "detalle_estado": detalle_estado,
+            "ultimo_error": ultimo_error,
+            "diagnostico": " · ".join(diag),
+            "causa": self._normalizar_cabecera_apelaciones(detalle, identificador) if identificador else None,
+            "movimientos": [],
+            "liquidantes": [],
+            "exhortos": [],
+            "incompetencia": [],
+        }
+
+        if identificador:
+            try:
+                mov = self._request(
+                    "POST", "/consultar_movimientos_apelaciones",
+                    json=self._con_credenciales({"identificador": identificador}, credenciales_dueno),
+                )
+            except PjudApiError as e:
+                if not esta_sincronizando:
+                    raise
+                diag.append(f"movimientos: no disponibles aún ({e})")
+                resultado["diagnostico"] = " · ".join(diag)
+            else:
+                movimientos = mov.get("movimientos") or []
+                self._normalizar_movimientos_apelaciones(movimientos, identificador)
+                diag.append(f"movimientos: {len(movimientos)} trámites")
+                resultado.update(
+                    diagnostico=" · ".join(diag),
+                    movimientos=movimientos,
+                    liquidantes=mov.get("liquidantes") or [],
+                    exhortos=[e for e in (mov.get("exhortos") or []) if e],
+                    # El proveedor lo escribió con la errata `incompentencia`.
+                    incompetencia=[
+                        e for e in (mov.get("incompetencia") or mov.get("incompentencia") or []) if e
+                    ],
+                )
+
+        return resultado
+
+    def _doc_apelaciones(self, valor, identificador: str) -> Optional[dict]:
+        """Un documento `{"doc": url, "color": hex}` (o la URL suelta) a
+        `{"url", "color"}`; `None` si no hay documento."""
+        if isinstance(valor, dict):
+            url = self._url_documento(valor.get("doc") or valor.get("url"), identificador, 1)
+            return {"url": url, "color": valor.get("color")} if url else None
+        url = self._url_documento(valor, identificador, 1) if isinstance(valor, str) else None
+        return {"url": url, "color": None} if url else None
+
+    @staticmethod
+    def _icono_apelaciones(valor) -> Optional[dict]:
+        """`doc_principal` llega como un par ícono/color (`"fa-check"`,
+        `"#AD5454"`); la forma exacta no está confirmada, así que se acepta
+        objeto (`icono`/`color`), lista o string. Queda `{"icono", "color"}`."""
+        if isinstance(valor, dict):
+            icono = valor.get("icono") or valor.get("icon") or valor.get("clase")
+            if icono is None:
+                icono = next((v for v in valor.values() if isinstance(v, str) and v.startswith("fa")), None)
+            if icono is None:
+                icono = next((k for k in valor if isinstance(k, str) and k.startswith("fa")), None)
+            color = valor.get("color")
+            if color is None:
+                color = next((v for v in valor.values() if isinstance(v, str) and v.startswith("#")), None)
+            return {"icono": icono, "color": color} if (icono or color) else None
+        if isinstance(valor, (list, tuple)):
+            textos = [v for v in valor if isinstance(v, str)]
+            if not textos:
+                return None
+            return {
+                "icono": next((t for t in textos if not t.startswith("#")), None),
+                "color": next((t for t in textos if t.startswith("#")), None),
+            }
+        if isinstance(valor, str) and valor:
+            es_color = valor.startswith("#")
+            return {"icono": None if es_color else valor, "color": valor if es_color else None}
+        return None
+
+    def _normalizar_cabecera_apelaciones(self, detalle: dict, identificador: str) -> dict:
+        cab = dict(detalle)
+        for clave in ("certificado_envio", "ebook"):
+            cab[clave] = self._doc_apelaciones(cab.get(clave), identificador)
+        cab["texto"] = [
+            {
+                "id": t.get("id"),
+                "doc_principal": self._icono_apelaciones(t.get("doc_principal")),
+                "doc": self._doc_apelaciones(t.get("doc"), identificador),
+                "fecha": t.get("fecha"),
+                "referencia": t.get("referencia"),
+            }
+            for t in cab.get("texto") or [] if isinstance(t, dict)
+        ]
+        cab["anexo"] = [
+            {
+                "id": a.get("id"),
+                "doc": self._doc_apelaciones(a.get("doc"), identificador),
+                "codigo": None if a.get("codigo") is None else str(a.get("codigo")),
+                "tipo_documento": (a.get("tipo_documento") or "").strip() or None,
+                "cantidad": None if a.get("cantidad") is None else str(a.get("cantidad")),
+                "observacion_documento": a.get("observacion_documento"),
+            }
+            for a in cab.get("anexo") or [] if isinstance(a, dict)
+        ]
+        primera = cab.get("expediente_primera")
+        cab["expediente_primera"] = primera if isinstance(primera, dict) and primera else None
+        return cab
+
+    def _normalizar_movimientos_apelaciones(self, movimientos: list[dict], identificador: str) -> None:
+        """`doc` es una lista de `{"doc": url, "color": hex}` y se resuelve a
+        `documentos`; el `doc` de cada anexo del movimiento queda como URL absoluta."""
+        for item in movimientos:
+            crudos = item.pop("doc", None)
+            if isinstance(crudos, (str, dict)):
+                crudos = [crudos]
+            item["documentos"] = [
+                d for d in (self._doc_apelaciones(c, identificador) for c in crudos or []) if d
+            ]
+            anexos = []
+            for a in item.get("anexo") or []:
+                if isinstance(a, dict):
+                    doc = self._doc_apelaciones(a.get("doc"), identificador)
+                    anexos.append({**a, "doc": doc["url"] if doc else None,
+                                   "color": a.get("color") or (doc or {}).get("color")})
+            item["anexo"] = anexos
+            georef = item.get("georeferencia")
+            item["georeferencia"] = georef if isinstance(georef, dict) and georef else None
+
     # ── Reenvío de un PDF al navegador ───────────────────────────
 
     def abrir_documento(self, url: str):

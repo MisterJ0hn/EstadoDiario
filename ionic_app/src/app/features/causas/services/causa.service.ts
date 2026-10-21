@@ -10,6 +10,7 @@ import {
   CausaResumenResponse,
   PjudCobranzaMovimientosResponse,
   PjudPenalMovimientosResponse,
+  PjudApelacionesMovimientosResponse,
   PjudFamiliaMovimientosResponse,
   PjudLaboralMovimientosResponse,
   PjudMovimientosResponse,
@@ -169,6 +170,21 @@ export class CausaService {
     if (cuaderno != null) params = params.set('cuaderno', String(cuaderno));
     return this.http.get<PjudPenalMovimientosResponse>(
       `${this.apiUrl}/${causaId}/pjud/penal`,
+      { params },
+    );
+  }
+
+  /** Detalle EN VIVO de una causa de **Corte de Apelaciones** (`causa_corte`,
+   *  no `Causa`), consultado directo al PJUD. Sin cuadernos. `forzar` pide
+   *  además que el PJUD sincronice antes de responder. */
+  pjudApelaciones(
+    corteId: number,
+    forzar = false,
+  ): Observable<PjudApelacionesMovimientosResponse> {
+    let params = new HttpParams();
+    if (forzar) params = params.set('forzar', 'true');
+    return this.http.get<PjudApelacionesMovimientosResponse>(
+      `${this.apiUrl}/cortes/${corteId}/pjud/apelaciones`,
       { params },
     );
   }

@@ -808,3 +808,93 @@ export interface PjudPenalMovimientosResponse {
   notificaciones: PjudPenalNotificacionItem[];
   relaciones: PjudPenalRelacionItem[];
 }
+
+// ── Corte de Apelaciones ──────────────────────────────────────
+// Espeja `PjudApelacionesMovimientosResponse` del backend. La causa es una
+// `CausaCorte` (hoja Corte Apelaciones), se pide por rol/era/corte y no tiene
+// cuadernos. `exhortos` e `incompetencia` aún no tienen forma confirmada.
+
+export interface PjudApelacionesDocumento {
+  url: string;
+  color: string | null;
+}
+
+export interface PjudApelacionesTextoItem {
+  id: number | null;
+  /** Ícono (`fa-check`, `fa-times-circle`) y color de la columna "Doc. principal". */
+  doc_principal: { icono: string | null; color: string | null } | null;
+  doc: PjudApelacionesDocumento | null;
+  fecha: string | null;
+  referencia: string | null;
+}
+
+export interface PjudApelacionesAnexoCausaItem {
+  id: number | null;
+  doc: PjudApelacionesDocumento | null;
+  codigo: string | null;
+  tipo_documento: string | null;
+  cantidad: string | null;
+  observacion_documento: string | null;
+}
+
+export interface PjudApelacionesCausaDetalle {
+  identificador: string;
+  estado: string | null;
+  fecha_ultima_sincronizacion: string | null;
+  libro: string | null;
+  fecha: string | null;
+  estado_recurso: string | null;
+  estado_procesal: string | null;
+  ubicacion: string | null;
+  recurso: string | null;
+  corte: string | null;
+  certificado_envio: PjudApelacionesDocumento | null;
+  ebook: PjudApelacionesDocumento | null;
+  texto: PjudApelacionesTextoItem[];
+  anexo: PjudApelacionesAnexoCausaItem[];
+  expediente_primera: {
+    causa_origen: string | null;
+    caratulado: string | null;
+    materia: string | null;
+    tribunal: string | null;
+  } | null;
+}
+
+export interface PjudApelacionesMovimientoItem {
+  folio: number | null;
+  documentos: PjudApelacionesDocumento[];
+  anexo: PjudPenalAnexoItem[];
+  tramite: string | null;
+  descripcion: string | null;
+  fecha: string | null;
+  sala: string | null;
+  estado: string | null;
+  georeferencia: PjudGeoreferencia | null;
+}
+
+export interface PjudApelacionesLiquidanteItem {
+  sujeto: string | null;
+  rut: string | null;
+  persona: string | null;
+  razon_social: string | null;
+}
+
+export interface PjudApelacionesMovimientosResponse {
+  estado: 'listo' | 'sincronizando' | 'error' | 'sin_credenciales';
+  mensaje: string | null;
+  detalle_estado: string | null;
+  ultimo_error: string | null;
+  causa: PjudApelacionesCausaDetalle | null;
+  /** La causa de la cartera que calza con el expediente de primera instancia. */
+  causa_origen: {
+    id: number;
+    rol: string | null;
+    tribunal: string | null;
+    materia: string | null;
+    caratulado: string | null;
+  } | null;
+  movimientos: PjudApelacionesMovimientoItem[];
+  liquidantes: PjudApelacionesLiquidanteItem[];
+  exhortos: Record<string, unknown>[];
+  incompetencia: Record<string, unknown>[];
+}

@@ -13,6 +13,7 @@ import os
 import time
 import uuid
 from datetime import date, timedelta
+from types import SimpleNamespace
 from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
@@ -28,6 +29,7 @@ from app.core.credenciales_pjud import (
 )
 from app.core.filtro_roles import DESC_ROLES, parse_roles
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
+from app.models.causa_corte import CausaCorte
 from app.models.maestra.cliente import Cliente
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
@@ -45,6 +47,7 @@ from app.schemas.causa import (
     CrearCausaResponse,
 )
 from app.schemas.pjud import (
+    PjudApelacionesMovimientosResponse,
     PjudCobranzaMovimientosResponse,
     PjudDisponibleResponse,
     PjudFamiliaMovimientosResponse,
@@ -851,6 +854,99 @@ def pjud_penal(
             diagnostico=diagnostico_log,
             duracion_ms=int((time.monotonic() - inicio) * 1000),
         )
+
+
+@router.get(
+    "/cortes/{corte_id}/pjud/apelaciones",
+    dependencies=[Depends(requerir_pjud_habilitado)],
+    response_model=PjudApelacionesMovimientosResponse,
+    summary="Detalle de una causa de Corte de Apelaciones consultado en vivo al PJUD",
+)
+def pjud_apelaciones(
+    corte_id: int,
+    response: Response,
+    forzar: bool = Query(False, description="Pide al PJUD que sincronice antes de consultar"),
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Igual que `/pjud/penal` pero para una causa de la hoja Corte de
+    Apelaciones (`CausaCorte`, no `Causa`): mismo flujo de sincronización
+    asíncrona, sin cuadernos. Además relaciona el expediente de primera
+    instancia con la causa de la cartera (`causa_origen`), si existe."""
+    causa_corte = db.get(CausaCorte, corte_id)
+    if not causa_corte:
+        raise HTTPException(status_code=404, detail="Causa de corte no encontrada")
+
+    # `CausaCorte` no tiene rut propio: el dueño es el del archivo del que salió.
+    origen = causa_corte.estado_diario_origen
+    credenciales_dueno = credenciales_del_dueno(
+        db, SimpleNamespace(rut_efectivo=origen.rut if origen else None)
+    )
+
+    inicio = time.monotonic()
+    resultado_log = "error"
+    http_status = 502
+    mensaje_log: str | None = None
+    diagnostico_log: str | None = None
+    try:
+        resultado = PjudService().obtener_detalle_apelaciones(
+            causa_corte,
+            forzar_sincronizacion=forzar,
+            credenciales_dueno=credenciales_dueno,
+        )
+        estado = resultado.get("estado")
+        diagnostico_log = resultado.pop("diagnostico", None)
+        if estado == "sincronizando":
+            response.status_code = http_status = 202
+        else:
+            # 'sin_credenciales' y 'error' también van 200: el estado va en el
+            # cuerpo y el modal decide qué mostrar.
+            http_status = 200
+        resultado_log = estado or "listo"
+        mensaje_log = resultado.get("mensaje")
+        resultado["causa_origen"] = _causa_origen_de_apelacion(db, resultado.get("causa"))
+        return PjudApelacionesMovimientosResponse(**resultado)
+    except PjudApiError as e:
+        mensaje_log = str(e)
+        diagnostico_log = e.diagnostico
+        raise HTTPException(status_code=502, detail=mensaje_log)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra,
+            tenant=tenant,
+            # Sin causa_id a propósito: es un id de `causa_corte` y el log lo
+            # usa para el último estado de las `Causa` (ids de otra tabla).
+            causa_id=None,
+            rol=f"{causa_corte.rol}-{causa_corte.era}",
+            tribunal=causa_corte.corte,
+            materia="Apelaciones",
+            forzar=forzar,
+            resultado=resultado_log,
+            http_status=http_status,
+            mensaje=mensaje_log,
+            diagnostico=diagnostico_log,
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
+
+
+def _causa_origen_de_apelacion(db: Session, detalle: dict | None) -> dict | None:
+    """La causa de la cartera que calza con `expediente_primera` (rol y tribunal
+    de primera instancia), o None. El PJUD escribe el rol con espacios
+    (`C - 711 - 2026`) y la cartera sin ellos (`C-711-2026`)."""
+    primera = (detalle or {}).get("expediente_primera") or {}
+    rol = "".join((primera.get("causa_origen") or "").split())
+    tribunal = (primera.get("tribunal") or "").strip()
+    if not rol or not tribunal:
+        return None
+    causa = CausaRepository(db).find_pjud_por_rol_tribunal(rol, tribunal)
+    if not causa:
+        return None
+    return {
+        "id": causa.id, "rol": causa.rol, "tribunal": causa.tribunal,
+        "materia": causa.materia, "caratulado": causa.caratulado,
+    }
 
 
 def _registrar_llamado_pjud(db_maestra, *, tenant, causa_id, rol, tribunal, forzar,

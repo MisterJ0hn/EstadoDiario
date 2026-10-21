@@ -9,6 +9,7 @@ import {
   FiltrosPanelComponent,
 } from '@shared/components/filtros-panel/filtros-panel.component';
 import { CausaService } from './services/causa.service';
+import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-modal/pjud-apelaciones-modal.component';
 
 /**
  * Causas de corte de la cartera (submenú **Corte** de Mis Causas).
@@ -23,7 +24,7 @@ import { CausaService } from './services/causa.service';
 @Component({
   selector: 'app-causas-cortes',
   standalone: true,
-  imports: [CommonModule, FormsModule, FiltrosPanelComponent],
+  imports: [CommonModule, FormsModule, FiltrosPanelComponent, PjudApelacionesModalComponent],
   template: `
     <div class="space-y-6">
       <div class="flex items-start justify-between flex-wrap gap-4">
@@ -134,6 +135,9 @@ import { CausaService } from './services/causa.service';
                     <th>Ubicación</th>
                     <th>FechaUbicación</th>
                      <th>Corte</th>
+                    @if (pjudDisponible()) {
+                      <th>PJUD</th>
+                    }
                   </tr>
                 </thead>
                 <tbody>
@@ -156,6 +160,23 @@ import { CausaService } from './services/causa.service';
                       <td class="max-w-[180px] truncate" [title]="c.corte || ''">
                         {{ c.corte || '-' }}
                       </td>
+                      @if (pjudDisponible()) {
+                        <td class="text-center">
+                          @if (c.tipo === 'apelaciones') {
+                            <button type="button" class="btn-outline btn-sm !px-2 outline outline-1 outline-primary-600 outline-offset-2"
+                                    (click)="causaPjud.set(c)" title="Ver detalle de la causa en el Poder Judicial"
+                                    aria-label="Ver detalle de la causa en el Poder Judicial">
+                              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
+                                <path d="M14 3v5h5M9 13h6M9 17h6" />
+                              </svg>
+                            </button>
+                          } @else {
+                            <span>-</span>
+                          }
+                        </td>
+                      }
                     </tr>
                   }
                 </tbody>
@@ -183,6 +204,8 @@ import { CausaService } from './services/causa.service';
         </div>
       </div>
     </div>
+
+    <app-pjud-apelaciones-modal [causa]="causaPjud()" (cerrado)="causaPjud.set(null)" />
   `,
 })
 export class CausasCortesComponent implements OnInit {
@@ -195,6 +218,10 @@ export class CausasCortesComponent implements OnInit {
   ];
 
   cortes = signal<CausaCorte[]>([]);
+  /** Si la consulta al PJUD está habilitada; sin esto no se ofrece el botón de detalle. */
+  pjudDisponible = signal(false);
+  /** La causa de corte cuyo detalle PJUD está abierto; null = cerrado. */
+  causaPjud = signal<CausaCorte | null>(null);
   cortesDisponibles = signal<string[]>([]);
   total = signal(0);
 
@@ -236,6 +263,11 @@ export class CausasCortesComponent implements OnInit {
 
   ngOnInit(): void {
     this.cargar();
+    this.service.pjudDisponible().subscribe({
+      next: (res) => this.pjudDisponible.set(res.disponible),
+      // Si falla la consulta simplemente no se ofrece el botón.
+      error: () => this.pjudDisponible.set(false),
+    });
   }
 
   cargar(): void {

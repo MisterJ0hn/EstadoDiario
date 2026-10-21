@@ -727,6 +727,110 @@ class PjudPenalMovimientosResponse(BaseModel):
     relaciones: list[PjudPenalRelacionItem] = []
 
 
+# ── Corte de Apelaciones ───────────────────────────────────────
+# Armado desde "solicitud apelaciones.md" (raíz del repo). La causa se pide por
+# `{rol, anio, corte}` (sin catálogo ni cuadernos) y se consulta sobre una
+# `CausaCorte`, no una `Causa`. `exhortos` e `incompetencia` todavía no tienen un
+# ejemplo del proveedor: quedan como objetos sueltos.
+
+
+class PjudApelacionesDocumento(BaseModel):
+    url: str
+    color: str | None = None
+
+
+class PjudApelacionesIcono(BaseModel):
+    """Par ícono/color de `doc_principal` (p.ej. `fa-check` / `#AD5454`)."""
+
+    icono: str | None = None
+    color: str | None = None
+
+
+class PjudApelacionesTextoItem(BaseModel):
+    id: int | None = None
+    doc_principal: PjudApelacionesIcono | None = None
+    doc: PjudApelacionesDocumento | None = None
+    fecha: str | None = None
+    referencia: str | None = None
+
+
+class PjudApelacionesAnexoCausaItem(BaseModel):
+    id: int | None = None
+    doc: PjudApelacionesDocumento | None = None
+    codigo: str | None = None
+    tipo_documento: str | None = None
+    cantidad: str | None = None
+    observacion_documento: str | None = None
+
+
+class PjudApelacionesExpedientePrimera(BaseModel):
+    causa_origen: str | None = None
+    caratulado: str | None = None
+    materia: str | None = None
+    tribunal: str | None = None
+
+
+class PjudApelacionesCausaDetalle(BaseModel):
+    identificador: str
+    estado: str | None = None
+    fecha_ultima_sincronizacion: str | None = None
+    libro: str | None = None
+    fecha: str | None = None
+    estado_recurso: str | None = None
+    estado_procesal: str | None = None
+    ubicacion: str | None = None
+    recurso: str | None = None
+    corte: str | None = None
+    certificado_envio: PjudApelacionesDocumento | None = None
+    ebook: PjudApelacionesDocumento | None = None
+    texto: list[PjudApelacionesTextoItem] = []
+    anexo: list[PjudApelacionesAnexoCausaItem] = []
+    expediente_primera: PjudApelacionesExpedientePrimera | None = None
+
+
+class PjudApelacionesMovimientoItem(BaseModel):
+    folio: int | None = None
+    documentos: list[PjudApelacionesDocumento] = []
+    anexo: list[PjudPenalAnexoItem] = []
+    tramite: str | None = None
+    descripcion: str | None = None
+    fecha: str | None = None
+    sala: str | None = None
+    estado: str | None = None
+    georeferencia: PjudGeoreferencia | None = None
+
+
+class PjudApelacionesLiquidanteItem(BaseModel):
+    sujeto: str | None = None
+    rut: str | None = None
+    persona: str | None = None
+    razon_social: str | None = None
+
+
+class PjudApelacionesCausaOrigen(BaseModel):
+    """La causa de la cartera que calza con `expediente_primera.causa_origen`."""
+
+    id: int
+    rol: str | None = None
+    tribunal: str | None = None
+    materia: str | None = None
+    caratulado: str | None = None
+
+
+class PjudApelacionesMovimientosResponse(BaseModel):
+    # Mismos estados y semántica que `PjudMovimientosResponse` (ver ahí).
+    estado: Literal["listo", "sincronizando", "error", "sin_credenciales"] = "listo"
+    mensaje: str | None = None
+    ultimo_error: str | None = None
+    detalle_estado: str | None = None
+    causa: PjudApelacionesCausaDetalle | None = None
+    causa_origen: PjudApelacionesCausaOrigen | None = None
+    movimientos: list[PjudApelacionesMovimientoItem] = []
+    liquidantes: list[PjudApelacionesLiquidanteItem] = []
+    exhortos: list[dict] = []
+    incompetencia: list[dict] = []
+
+
 class PjudErrorResponse(BaseModel):
     exito: bool = False
     mensaje: str
