@@ -144,6 +144,7 @@ class CausaCorteResponse(BaseModel):
     tipo: str
     rol: str | None = None
     era: str | None = None
+    tipo_libro: str | None = None
     fecha_ingreso: date | None = None
     caratulado: str | None = None
     # Suprema lo llama "Estado Causa" y Apelaciones "Estado Procesal".

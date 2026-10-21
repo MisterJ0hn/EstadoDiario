@@ -90,6 +90,7 @@ export interface MovimientoCorte {
   tipo: 'suprema' | 'apelaciones';
   rol: string | null;
   era: string | null;
+  tipo_libro?: string | null;
   fecha_ingreso: string | null;
   caratulado: string | null;
   estado_causa: string | null;

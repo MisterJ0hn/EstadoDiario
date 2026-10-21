@@ -154,6 +154,8 @@ export interface Corte {
   /** De qué hoja salió: explica por qué unas columnas vienen vacías. */
   tipo: TipoCorte;
   numero_ingreso: string | null;
+  /** "Civil" en "Civil-1620-2026": el libro del rol, que api-pjud necesita. */
+  tipo_libro: string | null;
   fecha_ingreso: string | null;
   caratulado: string | null;
   /** Solo Corte de Apelaciones. */

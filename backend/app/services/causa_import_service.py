@@ -42,7 +42,7 @@ from app.repositories.causa_repository import ultimo_origen_causas_id
 from app.services import auditoria_service as auditoria
 from app.services.causa_api_service import copiar_causa_de_api
 from app.services.cartera_sync_service import sincronizar_cartera
-from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
+from app.services.import_service import normalizar_texto, tipo_de_hoja_corte, tipo_libro_de
 from app.utils.excel_pjud import (
     detectar_formato,
     parse_fecha_xls,
@@ -76,6 +76,7 @@ HEADER_ALIASES = {
 HEADER_ALIASES_CORTE = {
     "rol": "rol",
     "era": "era",
+    "tipo libro": "tipo_libro",
     "corte": "corte",
     "fecha ingreso": "fecha_ingreso",
     "fecha de ingreso": "fecha_ingreso",
@@ -100,6 +101,7 @@ LARGOS = {
     "rol": 100,
     "ruc": 100,
     "era": 20,
+    "tipo_libro": 50,
     "tribunal": 255,
     "caratulado": 500,
     "estado_causa": 255,
@@ -365,7 +367,7 @@ class CausaImportService:
         elif not (causa.estado_procesal or "").strip():
             causa.estado_procesal = fila.get("estado_procesal")
 
-        for campo in ("era", "corte", "fecha_ingreso", "ubicacion",
+        for campo in ("era", "tipo_libro", "corte", "fecha_ingreso", "ubicacion",
                       "fecha_ubicacion", "caratulado", "institucion"):
             if not getattr(causa, campo, None) and fila.get(campo):
                 setattr(causa, campo, fila[campo])
@@ -458,6 +460,7 @@ class CausaImportService:
                     tipo=fila["tipo"],
                     rol=fila.get("rol"),
                     era=fila.get("era"),
+                    tipo_libro=fila.get("tipo_libro") or tipo_libro_de(fila.get("rol")),
                     corte=fila.get("corte"),
                     fecha_ingreso=fila.get("fecha_ingreso"),
                     ubicacion=fila.get("ubicacion"),

@@ -118,6 +118,7 @@ class MovimientoCorteResponse(BaseModel):
     tipo: str
     rol: str | None = None
     era: str | None = None
+    tipo_libro: str | None = None
     fecha_ingreso: date | None = None
     caratulado: str | None = None
     estado_causa: str | None = None

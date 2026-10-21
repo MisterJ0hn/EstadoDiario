@@ -46,6 +46,9 @@ class MovimientoCorte(BaseTenant):
     # "Era" es el año del rol en la nomenclatura del PJUD; llega como columna
     # aparte y no pegada al rol.
     era: Mapped[Optional[str]] = mapped_column(String(20))
+    # Tipo de libro del rol ("Civil" en "Civil-1620-2026"). api-pjud lo necesita
+    # para ubicar la causa en la corte.
+    tipo_libro: Mapped[Optional[str]] = mapped_column(String(50))
     fecha_ingreso: Mapped[Optional[date]] = mapped_column(Date)
     caratulado: Mapped[Optional[str]] = mapped_column(String(500))
     estado_causa: Mapped[Optional[str]] = mapped_column(String(255))

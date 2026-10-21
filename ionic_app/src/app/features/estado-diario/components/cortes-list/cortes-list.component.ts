@@ -124,6 +124,7 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
               <table class="data-table">
                 <thead>
                   <tr>
+                    <th>TipoLibro</th>
                     <th>FechaIngreso</th>
                     <th>Caratulado</th>
                     <th>Ubicación</th>
@@ -135,6 +136,7 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
                 <tbody>
                   @for (c of cortes(); track c.id) {
                     <tr>
+                      <td>{{ c.tipo_libro || '-' }}</td>
                       <td class="whitespace-nowrap">{{ fecha(c.fecha_ingreso) }}</td>
                       <td>{{ c.caratulado || '-' }}</td>
                       <td>{{ c.ubicacion || '-' }}</td>

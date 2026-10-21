@@ -117,6 +117,10 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     ("causa", "enriquecida_en", "TIMESTAMPTZ"),
     ("causa_corte", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
     ("causa_corte", "enriquecida_en", "TIMESTAMPTZ"),
+    # Tipo de libro del rol de las causas de corte ("Civil" en "Civil-1620-2026").
+    ("causa_corte", "tipo_libro", "VARCHAR(50)"),
+    ("movimiento_corte", "tipo_libro", "VARCHAR(50)"),
+    ("estado_diario_corte", "tipo_libro", "VARCHAR(50)"),
     # Última vez que la causa apareció en algún reporte. Nula en las filas ya
     # cargadas hasta que corra el cruce: no se puede deducir de la nada.
     ("causa", "ultima_actividad", "DATE"),

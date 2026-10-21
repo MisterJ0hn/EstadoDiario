@@ -419,6 +419,7 @@ def listar_cortes(
                 id=c.id,
                 tipo=c.tipo,
                 numero_ingreso=c.numero_ingreso,
+                tipo_libro=c.tipo_libro,
                 fecha_ingreso=c.fecha_ingreso,
                 caratulado=c.caratulado,
                 ubicacion=c.ubicacion,

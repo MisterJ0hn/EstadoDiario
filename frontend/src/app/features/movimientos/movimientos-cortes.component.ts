@@ -116,6 +116,7 @@ import { MovimientoService } from './services/movimiento.service';
                   <tr>
                     <th>Rol</th>
                     <th>Era</th>
+                    <th>TipoLibro</th>
                     <th>FechaIngreso</th>
                     <th>Caratulado</th>
                     <th>EstadoCausa</th>
@@ -130,6 +131,7 @@ import { MovimientoService } from './services/movimiento.service';
                     <tr>
                       <td class="font-medium whitespace-nowrap">{{ c.rol || '-' }}</td>
                       <td>{{ c.era || '-' }}</td>
+                      <td>{{ c.tipo_libro || '-' }}</td>
                       <td class="whitespace-nowrap">{{ fecha(c.fecha_ingreso) }}</td>
                       <td class="max-w-[220px] truncate" [title]="c.caratulado || ''">
                         {{ c.caratulado || '-' }}

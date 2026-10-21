@@ -195,6 +195,7 @@ class CorteResponse(BaseModel):
     # lo que explica por qué unas columnas vienen vacías y otras no.
     tipo: str
     numero_ingreso: str | None = None
+    tipo_libro: str | None = None
     fecha_ingreso: date | None = None
     caratulado: str | None = None
     # Solo Corte de Apelaciones.

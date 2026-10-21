@@ -46,6 +46,9 @@ class EstadoDiarioCorte(BaseTenant):
 
     # ── Comunes a las dos hojas ──
     numero_ingreso: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    # Tipo de libro del rol ("Civil" en "Civil-1620-2026"). api-pjud lo necesita
+    # para ubicar la causa en la corte.
+    tipo_libro: Mapped[Optional[str]] = mapped_column(String(50))
     fecha_ingreso: Mapped[Optional[date]] = mapped_column(Date)
     caratulado: Mapped[Optional[str]] = mapped_column(String(500))
 

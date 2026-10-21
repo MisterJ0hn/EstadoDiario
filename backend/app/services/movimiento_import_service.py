@@ -41,7 +41,7 @@ from app.utils.excel_pjud import (
 
 from app.services import auditoria_service as auditoria
 from app.services.cartera_sync_service import sincronizar_cartera
-from app.services.import_service import normalizar_texto, tipo_de_hoja_corte
+from app.services.import_service import normalizar_texto, tipo_de_hoja_corte, tipo_libro_de
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ HEADER_ALIASES = {
     "rit": "rol",
     "rol": "rol",
     "era": "era",
+    "tipo libro": "tipo_libro",
     "tribunal": "tribunal",
     "corte": "corte",
     "caratulado": "caratulado",
@@ -295,6 +296,7 @@ class MovimientoImportService:
                         tipo=fila["tipo"],
                         rol=fila.get("rol"),
                         era=fila.get("era"),
+                        tipo_libro=fila.get("tipo_libro") or tipo_libro_de(fila.get("rol")),
                         corte=fila.get("corte"),
                         fecha_ingreso=fila.get("fecha_ingreso"),
                         ubicacion=fila.get("ubicacion"),

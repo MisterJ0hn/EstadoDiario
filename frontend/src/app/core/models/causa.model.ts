@@ -105,6 +105,7 @@ export interface CausaCorte {
   tipo: TipoCorteCausa;
   rol: string | null;
   era: string | null;
+  tipo_libro?: string | null;
   fecha_ingreso: string | null;
   caratulado: string | null;
   estado_procesal: string | null;

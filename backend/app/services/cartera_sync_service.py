@@ -84,6 +84,15 @@ logger = logging.getLogger(__name__)
 # tipo de corte sale de la hoja, que es más confiable que un prefijo de texto.
 _NUMERO_INGRESO = re.compile(r"^\s*(?P<materia>.+?)-(?P<rol>\d+)-(?P<era>\d{4})\s*$")
 
+_TIPO_LIBRO = re.compile(r"^\s*([^\W\d_][^-\d]*?)\s*-\s*\d")
+
+
+def tipo_libro_de(rol: Optional[str]) -> Optional[str]:
+    """`Civil` en `Civil-1620-2026` / `Civil - 1620 - 2026`; None si el rol no
+    trae el prefijo (un rol que es solo el número no dice de qué libro es)."""
+    m = _TIPO_LIBRO.match(rol or "")
+    return m.group(1).strip() if m else None
+
 # Campos que se sobrescriben aunque ya tengan valor, porque cambian por
 # naturaleza: dónde está la causa hoy y en qué estado. El resto solo se rellena
 # si está vacío — pisar un caratulado con otro sería inventar.
@@ -639,6 +648,7 @@ class CarteraSyncService:
                 "tipo": fila.tipo,
                 "rol": fila.rol,
                 "era": fila.era,
+                "tipo_libro": fila.tipo_libro or tipo_libro_de(fila.rol),
                 "corte": fila.corte,
                 "fecha_ingreso": fila.fecha_ingreso,
                 "caratulado": fila.caratulado,
@@ -658,6 +668,7 @@ class CarteraSyncService:
             "tipo": fila.tipo,
             "rol": m.group("rol"),
             "era": m.group("era"),
+            "tipo_libro": fila.tipo_libro or (m.group("materia") or "").strip() or None,
             "corte": fila.corte,
             "fecha_ingreso": fila.fecha_ingreso,
             "caratulado": fila.caratulado,

@@ -127,6 +127,7 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
                   <tr>
                     <th>Rol</th>
                     <th>Era</th>
+                    <th>TipoLibro</th>
                     <th>FechaIngreso</th>
                     <th>Caratulado</th>
                     <th>EstadoProcesal</th>
@@ -146,6 +147,7 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
                     <tr>
                       <td class="font-medium whitespace-nowrap">{{ c.rol || '-' }}</td>
                       <td>{{ c.era || '-' }}</td>
+                      <td>{{ c.tipo_libro || '-' }}</td>
                       <td class="whitespace-nowrap">{{ fecha(c.fecha_ingreso) }}</td>
                       <td class="max-w-[240px] truncate" [title]="c.caratulado || ''">
                         {{ c.caratulado || '-' }}

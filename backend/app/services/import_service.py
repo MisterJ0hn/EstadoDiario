@@ -16,7 +16,7 @@ from app.repositories.estado_diario_repository import EstadoDiarioRepository
 from app.repositories.estado_diario_origen_repository import EstadoDiarioOrigenRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
 from app.services import auditoria_service as auditoria
-from app.services.cartera_sync_service import sincronizar_cartera
+from app.services.cartera_sync_service import sincronizar_cartera, tipo_libro_de  # noqa: F401 (se reexporta)
 from app.models.jurisdiccion import Jurisdiccion
 from app.services.deteccion_archivo import verificar_contenido
 
@@ -52,6 +52,7 @@ HEADER_ALIASES_CORTE = {
     "fecha ubicacion": "fecha_ubicacion",
     "corte": "corte",
     "tipo recurso": "tipo_recurso",
+    "tipo libro": "tipo_libro",
 }
 
 HEADER_ALIASES = {
@@ -216,6 +217,7 @@ class ImportService:
                 estado_diario_origen_id=origen.id,
                 tipo=row["tipo"],
                 numero_ingreso=row.get("numero_ingreso"),
+                tipo_libro=row.get("tipo_libro") or tipo_libro_de(row.get("numero_ingreso")),
                 fecha_ingreso=row.get("fecha_ingreso"),
                 caratulado=row.get("caratulado"),
                 ubicacion=row.get("ubicacion"),

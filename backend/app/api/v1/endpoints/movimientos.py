@@ -301,6 +301,7 @@ def listar_cortes(
                 tipo=c.tipo,
                 rol=c.rol,
                 era=c.era,
+                tipo_libro=c.tipo_libro,
                 fecha_ingreso=c.fecha_ingreso,
                 caratulado=c.caratulado,
                 estado_causa=c.estado_causa,
