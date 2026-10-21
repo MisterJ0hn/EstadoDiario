@@ -10,8 +10,8 @@ from app.services.pjud_service import PjudApiError, PjudNoEncontrado, PjudServic
 _CREDS = {"rut": "12345678-9", "clave": "secreta", "metodo_login": 1}
 
 
-def _corte(rol="23414", era="2026", corte="C.A. de Santiago", tipo="apelaciones"):
-    return types.SimpleNamespace(id=1, tipo=tipo, rol=rol, era=era, corte=corte)
+def _corte(rol="23414", era="2026", corte="C.A. de Santiago", tipo="apelaciones", tipo_libro="Civil"):
+    return types.SimpleNamespace(id=1, tipo=tipo, rol=rol, era=era, corte=corte, tipo_libro=tipo_libro)
 
 
 class TestObtenerDetalleApelaciones:
@@ -39,7 +39,7 @@ class TestObtenerDetalleApelaciones:
         r = servicio.obtener_detalle_apelaciones(_corte(), credenciales_dueno=_CREDS)
         assert r["estado"] == "sincronizando"
         assert self.cuerpos["/sincronizar_apelaciones"] == {
-            "rol": 23414, "anio": 2026, "corte": "C.A. de Santiago", **_CREDS,
+            "rol": 23414, "anio": 2026, "corte": "C.A. de Santiago", "libro": "Civil", **_CREDS,
         }
 
     def test_sin_credenciales_del_dueno_va_sin_rut_ni_clave(self, monkeypatch):
@@ -49,8 +49,24 @@ class TestObtenerDetalleApelaciones:
         })
         servicio.obtener_detalle_apelaciones(_corte(), credenciales_dueno=None)
         assert self.cuerpos["/sincronizar_apelaciones"] == {
-            "rol": 23414, "anio": 2026, "corte": "C.A. de Santiago",
+            "rol": 23414, "anio": 2026, "corte": "C.A. de Santiago", "libro": "Civil",
         }
+
+    def test_libro_sale_del_prefijo_del_rol_si_falta_la_columna(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_apelaciones": PjudNoEncontrado("no está"),
+            "/sincronizar_apelaciones": {"exito": True},
+        })
+        servicio.obtener_detalle_apelaciones(_corte(rol="Laboral-23414", tipo_libro=None))
+        assert self.cuerpos["/sincronizar_apelaciones"]["libro"] == "Laboral"
+
+    def test_sin_libro_no_se_manda_la_clave(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_apelaciones": PjudNoEncontrado("no está"),
+            "/sincronizar_apelaciones": {"exito": True},
+        })
+        servicio.obtener_detalle_apelaciones(_corte(tipo_libro=None))
+        assert "libro" not in self.cuerpos["/sincronizar_apelaciones"]
 
     def test_solo_aplica_a_la_hoja_de_apelaciones(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {})

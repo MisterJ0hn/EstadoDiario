@@ -36,6 +36,7 @@ from urllib.parse import quote, urlsplit
 import requests
 
 from app.core.config import settings
+from app.services.cartera_sync_service import tipo_libro_de
 
 logger = logging.getLogger(__name__)
 
@@ -1425,7 +1426,15 @@ class PjudService:
                 "completos para consultar al PJUD."
             )
         cuerpo_causa = {"rol": int(numero.group()), "anio": int(anio.group()), "corte": corte}
-        diag = self._diag = [f"rol={cuerpo_causa['rol']} anio={cuerpo_causa['anio']} corte={corte!r}"]
+        # Tipo de libro del rol ("Civil" en "Civil-1620-2026"). Las filas cargadas
+        # antes de que existiera la columna lo traen en el rol, si lo traen. Sin
+        # dato no se manda la clave: un "libro" vacío haría fallar la búsqueda.
+        libro = (getattr(causa_corte, "tipo_libro", None) or "").strip() or tipo_libro_de(causa_corte.rol)
+        if libro:
+            cuerpo_causa["libro"] = libro
+        diag = self._diag = [
+            f"rol={cuerpo_causa['rol']} anio={cuerpo_causa['anio']} corte={corte!r} libro={libro!r}"
+        ]
 
         if forzar_sincronizacion:
             diag.append(
