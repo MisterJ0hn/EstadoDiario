@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, OnDestroy, Output, inject, signal } from '@angular/core';
 import { CommonModule, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 
 import {
@@ -133,6 +133,15 @@ const INTERVALO_POLL_MS = 5000;
 
               @if ((d.estado === 'listo' || d.estado === 'sincronizando') && d.causa; as c) {
 
+                <!-- ── Vista: el recurso o el expediente de primera instancia ──── -->
+                <div class="border-b border-neutral-200">
+                  <nav class="tabs-nav">
+                    <button class="tab-link" [class.tab-link-activo]="vista() === 'recurso'" (click)="vista.set('recurso')">Recurso</button>
+                    <button class="tab-link" [class.tab-link-activo]="vista() === 'expediente'" (click)="vista.set('expediente')">Expediente Primera Instancia</button>
+                  </nav>
+                </div>
+
+                @if (vista() === 'recurso') {
                 <!-- ── Panel de datos de la causa ──── -->
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
                   <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
@@ -160,29 +169,6 @@ const INTERVALO_POLL_MS = 5000;
                     </div>
                   }
                 </div>
-
-                <!-- ── Expediente de primera instancia, y la causa de la cartera que le corresponde ──── -->
-                @if (c.expediente_primera; as p) {
-                  <div class="rounded-lg border border-neutral-200 bg-neutral-50">
-                    <p class="border-b border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600">
-                      Expediente primera instancia
-                    </p>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
-                      <p><span class="pjud-k">Causa Origen:</span> {{ p.causa_origen || '-' }}</p>
-                      <p><span class="pjud-k">Tribunal:</span> {{ p.tribunal || '-' }}</p>
-                      <p><span class="pjud-k">Caratulado:</span> {{ p.caratulado || '-' }}</p>
-                      <p><span class="pjud-k">Materia:</span> {{ p.materia || '-' }}</p>
-                    </div>
-                    <p class="border-t border-neutral-200 px-4 py-2 text-sm">
-                      @if (d.causa_origen; as o) {
-                        <span class="badge-success">En tu cartera</span>
-                        <span class="ml-2 text-neutral-700">{{ o.rol }} — {{ o.materia || 'Sin materia' }} — {{ o.tribunal }}</span>
-                      } @else {
-                        <span class="badge-neutral">No está en tu cartera</span>
-                      }
-                    </p>
-                  </div>
-                }
 
                 <!-- ── Pestañas ──── -->
                 <div class="border-b border-neutral-200">
@@ -365,6 +351,44 @@ const INTERVALO_POLL_MS = 5000;
                     <ng-container *ngTemplateOutlet="tablaGenerica; context: { $implicit: d.incompetencia, vacio: 'Sin incompetencias registradas.' }" />
                   }
                 </div>
+                }
+
+                <!-- ── Expediente de primera instancia, y la causa de la cartera que le corresponde ──── -->
+                @if (vista() === 'expediente') {
+                @if (c.expediente_primera; as p) {
+                  <div class="rounded-lg border border-neutral-200 bg-neutral-50">
+                    <p class="border-b border-neutral-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-600">
+                      Expediente primera instancia
+                    </p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
+                      <p class="flex items-center gap-1.5"><span class="pjud-k">Causa Origen:</span> {{ p.causa_origen || '-' }}
+                        @if (d.causa_origen; as o) {
+                          <button type="button" (click)="abrirCausaOrigen(o.id, o.rol)"
+                                  class="inline-flex items-center text-primary-600 hover:text-primary-800"
+                                  title="Abrir la causa en Mis Causas" aria-label="Abrir la causa en Mis Causas">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4" aria-hidden="true">
+                              <circle cx="11" cy="11" r="7" /><path stroke-linecap="round" d="m20 20-3.5-3.5" />
+                            </svg>
+                          </button>
+                        }
+                      </p>
+                      <p><span class="pjud-k">Tribunal:</span> {{ p.tribunal || '-' }}</p>
+                      <p><span class="pjud-k">Caratulado:</span> {{ p.caratulado || '-' }}</p>
+                      <p><span class="pjud-k">Materia:</span> {{ p.materia || '-' }}</p>
+                    </div>
+                    <p class="border-t border-neutral-200 px-4 py-2 text-sm">
+                      @if (d.causa_origen; as o) {
+                        <span class="badge-success">En tu cartera</span>
+                        <span class="ml-2 text-neutral-700">{{ o.rol }} — {{ o.materia || 'Sin materia' }} — {{ o.tribunal }}</span>
+                      } @else {
+                        <span class="badge-neutral">No está en tu cartera</span>
+                      }
+                    </p>
+                  </div>
+                  } @else {
+                    <p class="text-sm text-neutral-500">El PJUD no informa expediente de primera instancia.</p>
+                  }
+                }
 
                 <p class="text-xs text-neutral-400">
                   Consultado directo al Poder Judicial.
@@ -541,6 +565,7 @@ const INTERVALO_POLL_MS = 5000;
 export class PjudApelacionesModalComponent implements OnDestroy {
   private service = inject(CausaService);
   private sanitizer = inject(DomSanitizer);
+  private router = inject(Router);
 
   private _causa: CausaCorte | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -551,6 +576,7 @@ export class PjudApelacionesModalComponent implements OnDestroy {
     this._causa = c;
     if (c !== null) {
       this.tab.set('movimientos');
+      this.vista.set('recurso');
       this.datos.set(null);
       this.anexosTramite.set(null);
       this.docError.set(null);
@@ -579,6 +605,8 @@ export class PjudApelacionesModalComponent implements OnDestroy {
   error = signal<string | null>(null);
   datos = signal<PjudApelacionesMovimientosResponse | null>(null);
   tab = signal<TabApelaciones>('movimientos');
+  /** Vista superior: la causa de apelaciones o su expediente de primera instancia. */
+  vista = signal<'recurso' | 'expediente'>('recurso');
   anexosTramite = signal<PjudPenalAnexoItem[] | null>(null);
   docError = signal<string | null>(null);
 
@@ -702,6 +730,13 @@ export class PjudApelacionesModalComponent implements OnDestroy {
         this.docError.set('No se pudo abrir el documento desde el PJUD.');
       },
     });
+  }
+
+  /** Lleva a Mis Causas y abre el detalle PJUD de la causa de la cartera que
+   *  calza con el expediente de primera instancia (ver `CausasComponent`). */
+  abrirCausaOrigen(id: number, rol: string | null): void {
+    this.cerrar();
+    this.router.navigate(['/causas'], { queryParams: { abrir: id, busqueda: rol || null } });
   }
 
   cerrar(): void {

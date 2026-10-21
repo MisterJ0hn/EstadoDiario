@@ -430,6 +430,22 @@ export class CausasComponent implements OnInit {
     const origenId = Number(this.route.snapshot.queryParamMap.get('origen_id'));
     this.filtroOrigenId = Number.isFinite(origenId) && origenId > 0 ? origenId : undefined;
 
+    // Enlace desde el expediente de primera instancia de una apelación: se
+    // filtra por el rol y se abre el detalle PJUD de esa causa.
+    const abrir = Number(this.route.snapshot.queryParamMap.get('abrir'));
+    const busqueda = this.route.snapshot.queryParamMap.get('busqueda');
+    if (busqueda) {
+      this.filtroBusqueda = busqueda;
+    }
+    if (Number.isFinite(abrir) && abrir > 0) {
+      this.service.getCausas({ busqueda: busqueda || undefined, limit: 50 }).subscribe({
+        next: (res) => {
+          const c = res.causas.find((x) => x.id === abrir);
+          if (c) this.causaPjud.set(c);
+        },
+      });
+    }
+
     this.cargarResumen();
     this.cargar();
 
