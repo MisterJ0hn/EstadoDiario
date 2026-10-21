@@ -115,6 +115,14 @@ DESC_ROLES_CORTE = (
 _ENTRADA_CORTE = re.compile(r"^(?:(?P<libro>.+?)\s*-\s*)?(?P<rol>\d+)\s*-\s*(?P<era>\d{4})$")
 
 
+DESC_ROLES_ORIGEN = (
+    "Opcional. Causas de primera instancia (origen) de las apelaciones, `rol` o "
+    "`rol|tribunal` separadas por coma. Se suma a `roles` con OR: sale la apelación "
+    "que calce con cualquiera de los dos. Solo conocen su origen las apelaciones "
+    "cuyo detalle PJUD ya se consultó."
+)
+
+
 def parse_roles_corte(valor: str | None) -> list[RolCorteFiltro] | None:
     """`"Civil-1-2020|C.A. de Temuco"` → `[("Civil", "1", "2020", "C.A. de Temuco")]`."""
     if not valor:
@@ -186,3 +194,22 @@ def parse_roles_origen(valor: str | None) -> list[RolFiltro] | None:
     if not roles:
         return None
     return [("".join(r.split()), t) for r, t in roles]
+
+
+def condicion_roles_numero_ingreso(modelo, roles: list[RolCorteFiltro] | None):
+    """Igual que `condicion_roles_corte`, para las tablas que guardan el rol
+    pegado en `numero_ingreso` (`Civil-1620-2026`), como `estado_diario_corte`.
+    None si no hay filtro."""
+    if not roles:
+        return None
+    ingreso = func.replace(func.upper(func.trim(modelo.numero_ingreso)), " ", "")
+    condiciones = []
+    for libro, rol, era, corte in roles:
+        if libro:
+            partes = [ingreso == f"{''.join(libro.upper().split())}-{rol}-{era}"]
+        else:
+            partes = [ingreso.like(f"%-{rol}-{era}")]
+        if corte:
+            partes.append(_norm(modelo.corte) == corte.upper())
+        condiciones.append(and_(*partes))
+    return or_(*condiciones)

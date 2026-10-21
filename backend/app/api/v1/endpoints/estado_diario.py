@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 from app.core.config import UPLOAD_DIR, settings
 from app.core.database import get_db_maestra
 from app.core.credenciales_pjud import Sellador, sellador_solicitado
-from app.core.filtro_roles import DESC_ROLES, parse_roles
+from app.core.filtro_roles import (
+    DESC_ROLES, DESC_ROLES_CORTE, DESC_ROLES_ORIGEN, parse_roles, parse_roles_corte,
+    parse_roles_origen,
+)
 from app.core.deps import get_db_tenant, get_usuario_actual
 from app.models.usuario import Usuario
 from app.schemas.estado_diario import (
@@ -387,6 +390,8 @@ def listar_cortes(
     corte: str | None = Query(None, description="Nombre de la corte, coincidencia parcial"),
     fecha_desde: str | None = Query(None, description="Fecha del archivo (YYYY-MM-DD)"),
     fecha_hasta: str | None = Query(None),
+    roles: str | None = Query(None, description=DESC_ROLES_CORTE),
+    roles_origen: str | None = Query(None, description=DESC_ROLES_ORIGEN),
     page: int | None = Query(None, ge=1),
     limit: int | None = Query(None, ge=1, le=500),
     db: Session = Depends(get_db_tenant),
@@ -406,6 +411,8 @@ def listar_cortes(
         corte=corte,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
+        roles=parse_roles_corte(roles),
+        roles_origen=parse_roles_origen(roles_origen),
         page=page,
         limit=limit,
     )

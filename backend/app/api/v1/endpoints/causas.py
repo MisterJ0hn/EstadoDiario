@@ -27,7 +27,7 @@ from app.core.credenciales_pjud import (
     credenciales_del_dueno,
     sellador_solicitado,
 )
-from app.core.filtro_roles import DESC_ROLES, DESC_ROLES_CORTE, parse_roles, parse_roles_corte, parse_roles_origen
+from app.core.filtro_roles import DESC_ROLES, DESC_ROLES_CORTE, DESC_ROLES_ORIGEN, parse_roles, parse_roles_corte, parse_roles_origen
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.causa_corte import CausaCorte
 from app.models.maestra.cliente import Cliente
@@ -213,13 +213,7 @@ def listar_cortes(
         VIGENTES, description="vigentes | finalizadas | vacío para todas"
     ),
     roles: str | None = Query(None, description=DESC_ROLES_CORTE),
-    roles_origen: str | None = Query(
-        None,
-        description="Opcional. Causas de primera instancia (origen) de las apelaciones, "
-                    "`rol` o `rol|tribunal` separadas por coma. Se suma a `roles` con OR: "
-                    "sale la apelación que calce con cualquiera de los dos. Solo conocen "
-                    "su origen las apelaciones cuyo detalle PJUD ya se consultó.",
-    ),
+    roles_origen: str | None = Query(None, description=DESC_ROLES_ORIGEN),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db_tenant),

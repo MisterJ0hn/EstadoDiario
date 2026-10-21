@@ -5,11 +5,16 @@ permiso por jurisdiccion (usuario_jurisdiccion) y se elimino.
 """
 
 import math
+import re
 from typing import Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import false, func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.filtro_roles import (
+    RolCorteFiltro, RolFiltro, condicion_roles, condicion_roles_numero_ingreso,
+)
+from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_corte import EstadoDiarioCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 
@@ -27,6 +32,7 @@ class EstadoDiarioCorteRepository:
         corte: Optional[str],
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
+        por_roles=None,
     ):
         query = query
 
@@ -50,8 +56,40 @@ class EstadoDiarioCorteRepository:
             query = query.filter(EstadoDiarioOrigen.fecha >= fecha_desde)
         if fecha_hasta:
             query = query.filter(EstadoDiarioOrigen.fecha <= fecha_hasta)
+        if por_roles is not None:
+            query = query.filter(por_roles)
 
         return query
+
+    def _condicion_roles(
+        self,
+        roles: Optional[list[RolCorteFiltro]],
+        roles_origen: Optional[list[RolFiltro]],
+    ):
+        """`roles` (la causa de corte) o `roles_origen` (su causa de primera
+        instancia): sale la fila que calce con cualquiera de los dos. None = sin
+        filtro.
+
+        Esta tabla no guarda la causa origen: está en `causa_corte` (se anota al
+        consultar el detalle PJUD). Se busca ahí a qué (rol, era, corte) le
+        corresponde y se comparan esas claves con el número de ingreso."""
+        condiciones = []
+        if roles:
+            condiciones.append(condicion_roles_numero_ingreso(EstadoDiarioCorte, roles))
+        if roles_origen:
+            origen = condicion_roles(CausaCorte.origen_rol, CausaCorte.origen_tribunal, roles_origen)
+            claves: set[RolCorteFiltro] = set()
+            for rol, era, corte in (
+                self.db.query(CausaCorte.rol, CausaCorte.era, CausaCorte.corte).filter(origen).distinct()
+            ):
+                numero, anio = re.search(r"\d+", rol or ""), re.search(r"\d{4}", era or "")
+                if numero and anio:
+                    claves.add((None, str(int(numero.group())), anio.group(), (corte or "").strip() or None))
+            # Sin ninguna apelación con ese origen no calza nada (no "sin filtro").
+            condiciones.append(
+                condicion_roles_numero_ingreso(EstadoDiarioCorte, list(claves)) if claves else false()
+            )
+        return or_(*condiciones) if condiciones else None
 
     def find_filtered(
         self,
@@ -60,15 +98,18 @@ class EstadoDiarioCorteRepository:
         corte: Optional[str] = None,
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
+        roles: Optional[list[RolCorteFiltro]] = None,
+        roles_origen: Optional[list[RolFiltro]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
+        por_roles = self._condicion_roles(roles, roles_origen)
         base = self.db.query(EstadoDiarioCorte).join(
             EstadoDiarioOrigen,
             EstadoDiarioCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
         )
         base = self._aplicar_filtros(
-            base, tipo, busqueda, corte, fecha_desde, fecha_hasta
+            base, tipo, busqueda, corte, fecha_desde, fecha_hasta, por_roles
         )
 
         conteo = self.db.query(func.count(EstadoDiarioCorte.id)).join(
@@ -76,7 +117,7 @@ class EstadoDiarioCorteRepository:
             EstadoDiarioCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
         )
         total = self._aplicar_filtros(
-            conteo, tipo, busqueda, corte, fecha_desde, fecha_hasta
+            conteo, tipo, busqueda, corte, fecha_desde, fecha_hasta, por_roles
         ).scalar() or 0
 
         query = base.options(joinedload(EstadoDiarioCorte.estado_diario_origen))
