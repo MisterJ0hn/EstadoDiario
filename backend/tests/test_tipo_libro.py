@@ -68,3 +68,47 @@ def test_recuperar_deriva_y_cruza(db):
 
     # Idempotente: la segunda vez no cambia nada.
     assert recuperar(db)["causa_corte"] == 0
+
+
+# ── Filtro `roles` del listado de cortes ──────────────────
+
+from fastapi import HTTPException
+
+from app.repositories.causa_corte_repository import CausaCorteRepository
+from app.core.filtro_roles import parse_roles_corte
+
+
+def test_parse_roles_corte():
+    assert parse_roles_corte("Civil-1620-2026|C.A. de Santiago, 55 - 2025") == [
+        ("Civil", "1620", "2026", "C.A. de Santiago"),
+        (None, "55", "2025", None),
+    ]
+    assert parse_roles_corte("") is None
+    with pytest.raises(HTTPException):
+        parse_roles_corte("Civil-1620")
+
+
+def test_filtro_roles_en_cortes(db):
+    for rol, era, libro, corte in [
+        ("1620", "2026", "Civil", "C.A. de Santiago"),
+        ("Civil-1620", "2026", "Civil", "C.A. de Temuco"),
+        ("1620", "2026", "Laboral", "C.A. de Santiago"),
+        ("16200", "2026", "Civil", "C.A. de Santiago"),
+        ("1620", "2025", "Civil", "C.A. de Santiago"),
+    ]:
+        db.add(CausaCorte(estado_diario_origen_id=1, tipo="apelaciones", rol=rol,
+                          era=era, tipo_libro=libro, corte=corte))
+    db.flush()
+    repo = CausaCorteRepository(db)
+
+    def buscar(roles):
+        q = repo._aplicar_filtros(
+            db.query(CausaCorte), None, None, None, None, None, roles=parse_roles_corte(roles)
+        )
+        return sorted((c.tipo_libro, c.corte) for c in q.all())
+
+    # Libro + rol + era, en cualquier corte; el rol no calza por prefijo (16200).
+    assert buscar("Civil-1620-2026") == [("Civil", "C.A. de Santiago"), ("Civil", "C.A. de Temuco")]
+    assert buscar("civil-1620-2026|c.a. de temuco") == [("Civil", "C.A. de Temuco")]
+    assert buscar("Laboral-1620-2026") == [("Laboral", "C.A. de Santiago")]
+    assert len(buscar("1620-2026")) == 3  # sin libro: cualquiera

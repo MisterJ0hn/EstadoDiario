@@ -15,6 +15,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.estados_causa import condicion_vigencia
+from app.core.filtro_roles import RolCorteFiltro, filtrar_por_roles_corte
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.causa_repository import ultimo_origen_causas_id
@@ -55,6 +56,7 @@ class CausaCorteRepository:
         fecha_hasta: Optional[str],
         origen_id: Optional[int] = None,
         vigencia: Optional[str] = None,
+        roles: Optional[list[RolCorteFiltro]] = None,
     ):
         if origen_id is not None:
             query = query.filter(CausaCorte.estado_diario_origen_id == origen_id)
@@ -80,7 +82,7 @@ class CausaCorteRepository:
         condicion = condicion_vigencia(CausaCorte.estado_procesal, vigencia)
         if condicion is not None:
             query = query.filter(condicion)
-        return query
+        return filtrar_por_roles_corte(query, CausaCorte, roles)
 
     def find_filtered(
         self,
@@ -90,6 +92,7 @@ class CausaCorteRepository:
         fecha_desde: Optional[str] = None,
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
+        roles: Optional[list[RolCorteFiltro]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -99,7 +102,7 @@ class CausaCorteRepository:
                 EstadoDiarioOrigen,
                 CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
             ),
-            tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia,
+            tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia, roles,
         )
         total = (
             self._aplicar_filtros(
@@ -107,7 +110,7 @@ class CausaCorteRepository:
                     EstadoDiarioOrigen,
                     CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
                 ),
-                tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia,
+                tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia, roles,
             ).scalar()
             or 0
         )

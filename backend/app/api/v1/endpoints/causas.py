@@ -27,7 +27,7 @@ from app.core.credenciales_pjud import (
     credenciales_del_dueno,
     sellador_solicitado,
 )
-from app.core.filtro_roles import DESC_ROLES, parse_roles
+from app.core.filtro_roles import DESC_ROLES, DESC_ROLES_CORTE, parse_roles, parse_roles_corte
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.causa_corte import CausaCorte
 from app.models.maestra.cliente import Cliente
@@ -212,6 +212,7 @@ def listar_cortes(
     vigencia: str | None = Query(
         VIGENTES, description="vigentes | finalizadas | vacío para todas"
     ),
+    roles: str | None = Query(None, description=DESC_ROLES_CORTE),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
@@ -223,7 +224,8 @@ def listar_cortes(
     items, total, pagina, total_pages = repo.find_filtered(
         tipo=tipo, busqueda=busqueda, corte=corte,
         fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
-        vigencia=_vigencia(vigencia), page=page, limit=limit,
+        vigencia=_vigencia(vigencia), roles=parse_roles_corte(roles),
+        page=page, limit=limit,
     )
     estados_pjud = {}
     if settings.pjud_api_activo:

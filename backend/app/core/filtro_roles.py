@@ -19,6 +19,8 @@ Por lo mismo el nombre del tribunal tiene que escribirse igual que en los
 archivos cargados (ver `tribunal` en las respuestas).
 """
 
+import re
+
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_
 
@@ -81,4 +83,82 @@ def filtrar_por_roles(query, col_rol, col_tribunal, roles: list[RolFiltro] | Non
             condiciones.append(
                 and_(_norm(col_rol) == rol.upper(), _norm(col_tribunal) == tribunal.upper())
             )
+    return query.filter(or_(*condiciones))
+
+
+# ── Causas de corte ───────────────────────────────────────
+# Una causa de corte no tiene tribunal: se identifica por libro, rol, era y
+# corte. Cada entrada es `libro-rol-era` o `libro-rol-era|corte`
+# (ej. `Civil-1620-2026|C.A. de Santiago`), el mismo formato en que el PJUD
+# escribe el rol. El libro es opcional (`1620-2026`); la corte también: sin ella
+# la entrada calza en cualquier corte.
+
+# (libro o None, rol, era, corte o None)
+RolCorteFiltro = tuple[str | None, str, str, str | None]
+
+DESC_ROLES_CORTE = (
+    "Opcional. Causas a devolver, separadas por coma; cada una `libro-rol-era` o "
+    "`libro-rol-era|corte` (ej. `Civil-1620-2026|C.A. de Santiago,Civil-55-2025`). "
+    "Filtra por tipo de libro, rol, era y corte (exactos, sin distinguir "
+    "mayúsculas). Sin el parámetro, no se filtra. "
+    f"Máximo {MAX_ROLES}."
+)
+
+_ENTRADA_CORTE = re.compile(r"^(?:(?P<libro>.+?)\s*-\s*)?(?P<rol>\d+)\s*-\s*(?P<era>\d{4})$")
+
+
+def parse_roles_corte(valor: str | None) -> list[RolCorteFiltro] | None:
+    """`"Civil-1-2020|C.A. de Temuco"` → `[("Civil", "1", "2020", "C.A. de Temuco")]`."""
+    if not valor:
+        return None
+    filtros: list[RolCorteFiltro] = []
+    vistos: set[RolCorteFiltro] = set()
+    for bruto in valor.split(","):
+        if not bruto.strip():
+            continue
+        causa, _, corte = bruto.partition("|")
+        m = _ENTRADA_CORTE.match(causa.strip())
+        if not m:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Causa de corte inválida: «{bruto.strip()}». Use libro-rol-era, "
+                       "p. ej. Civil-1620-2026 (opcional |corte).",
+            )
+        libro = (m.group("libro") or "").strip() or None
+        filtro = (libro, str(int(m.group("rol"))), m.group("era"), corte.strip() or None)
+        clave = tuple(x.upper() if x else x for x in filtro)
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        filtros.append(filtro)
+    if not filtros:
+        return None
+    if len(filtros) > MAX_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Máximo {MAX_ROLES} roles por consulta",
+        )
+    return filtros
+
+
+def filtrar_por_roles_corte(query, modelo, roles: list[RolCorteFiltro] | None):
+    """Acota `query` (sobre `CausaCorte`) a las causas de `roles`. `None` = sin filtro.
+
+    El rol guardado puede ser solo el número (`1620`) o traer el libro
+    (`Civil-1620`), según el Excel del que salió: calzan las dos formas.
+    """
+    if not roles:
+        return query
+    rol_col = _norm(modelo.rol)
+    condiciones = []
+    for libro, rol, era, corte in roles:
+        partes = [
+            or_(rol_col == rol, rol_col.like(f"%-{rol}"), rol_col.like(f"%- {rol}")),
+            func.trim(modelo.era) == era,
+        ]
+        if libro:
+            partes.append(_norm(modelo.tipo_libro) == libro.upper())
+        if corte:
+            partes.append(_norm(modelo.corte) == corte.upper())
+        condiciones.append(and_(*partes))
     return query.filter(or_(*condiciones))
