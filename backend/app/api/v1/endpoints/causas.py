@@ -27,7 +27,7 @@ from app.core.credenciales_pjud import (
     credenciales_del_dueno,
     sellador_solicitado,
 )
-from app.core.filtro_roles import DESC_ROLES, DESC_ROLES_CORTE, parse_roles, parse_roles_corte
+from app.core.filtro_roles import DESC_ROLES, DESC_ROLES_CORTE, parse_roles, parse_roles_corte, parse_roles_origen
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.causa_corte import CausaCorte
 from app.models.maestra.cliente import Cliente
@@ -213,6 +213,13 @@ def listar_cortes(
         VIGENTES, description="vigentes | finalizadas | vacío para todas"
     ),
     roles: str | None = Query(None, description=DESC_ROLES_CORTE),
+    roles_origen: str | None = Query(
+        None,
+        description="Opcional. Causas de primera instancia (origen) de las apelaciones, "
+                    "`rol` o `rol|tribunal` separadas por coma. Se suma a `roles` con OR: "
+                    "sale la apelación que calce con cualquiera de los dos. Solo conocen "
+                    "su origen las apelaciones cuyo detalle PJUD ya se consultó.",
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db_tenant),
@@ -224,7 +231,7 @@ def listar_cortes(
     items, total, pagina, total_pages = repo.find_filtered(
         tipo=tipo, busqueda=busqueda, corte=corte,
         fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
-        vigencia=_vigencia(vigencia), roles=parse_roles_corte(roles),
+        vigencia=_vigencia(vigencia), roles=parse_roles_corte(roles), roles_origen=parse_roles_origen(roles_origen),
         page=page, limit=limit,
     )
     estados_pjud = {}
@@ -245,6 +252,9 @@ def listar_cortes(
                 rol=c.rol,
                 era=c.era,
                 tipo_libro=c.tipo_libro,
+                origen_rol=c.origen_rol,
+                origen_tribunal=c.origen_tribunal,
+                origen_causa_id=c.origen_causa_id,
                 corte=c.corte,
                 fecha_ingreso=c.fecha_ingreso,
                 ubicacion=c.ubicacion,
@@ -921,6 +931,7 @@ def pjud_apelaciones(
         resultado_log = estado or "listo"
         mensaje_log = resultado.get("mensaje")
         resultado["causa_origen"] = _causa_origen_de_apelacion(db, resultado.get("causa"))
+        _guardar_origen_de_apelacion(db, causa_corte, resultado.get("causa"), resultado["causa_origen"])
         return PjudApelacionesMovimientosResponse(**resultado)
     except PjudApiError as e:
         mensaje_log = str(e)
@@ -942,6 +953,30 @@ def pjud_apelaciones(
             mensaje=mensaje_log,
             diagnostico=diagnostico_log,
             duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
+
+
+def _guardar_origen_de_apelacion(
+    db: Session, causa_corte: CausaCorte, detalle: dict | None, causa_origen: dict | None
+) -> None:
+    """Anota en `causa_corte` la causa de primera instancia del expediente, para
+    poder filtrar el listado por ella. Mejor esfuerzo: un fallo acá no puede
+    impedir que el estudio vea el detalle."""
+    primera = (detalle or {}).get("expediente_primera") or {}
+    rol = "".join((primera.get("causa_origen") or "").split()) or None
+    tribunal = (primera.get("tribunal") or "").strip() or None
+    if not rol:
+        return
+    nuevo = (rol, tribunal, causa_origen["id"] if causa_origen else None)
+    if nuevo == (causa_corte.origen_rol, causa_corte.origen_tribunal, causa_corte.origen_causa_id):
+        return
+    try:
+        causa_corte.origen_rol, causa_corte.origen_tribunal, causa_corte.origen_causa_id = nuevo
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning(
+            "No se pudo guardar la causa origen de la causa de corte %s", causa_corte.id, exc_info=True
         )
 
 

@@ -145,6 +145,11 @@ class CausaCorteResponse(BaseModel):
     rol: str | None = None
     era: str | None = None
     tipo_libro: str | None = None
+    # Causa de primera instancia de la apelación; nulos hasta que se consulta
+    # su detalle PJUD.
+    origen_rol: str | None = None
+    origen_tribunal: str | None = None
+    origen_causa_id: int | None = None
     fecha_ingreso: date | None = None
     caratulado: str | None = None
     # Suprema lo llama "Estado Causa" y Apelaciones "Estado Procesal".

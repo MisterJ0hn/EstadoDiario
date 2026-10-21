@@ -119,6 +119,10 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     ("causa_corte", "enriquecida_en", "TIMESTAMPTZ"),
     # Tipo de libro del rol de las causas de corte ("Civil" en "Civil-1620-2026").
     ("causa_corte", "tipo_libro", "VARCHAR(50)"),
+    # Causa origen (primera instancia) de una apelación, tomada del detalle PJUD.
+    ("causa_corte", "origen_rol", "VARCHAR(100)"),
+    ("causa_corte", "origen_tribunal", "VARCHAR(255)"),
+    ("causa_corte", "origen_causa_id", "INTEGER"),
     ("movimiento_corte", "tipo_libro", "VARCHAR(50)"),
     ("estado_diario_corte", "tipo_libro", "VARCHAR(50)"),
     # Última vez que la causa apareció en algún reporte. Nula en las filas ya
@@ -190,6 +194,7 @@ INDICES_NUEVOS_TENANT: list[tuple[str, ...]] = [
     ("ix_estado_diario_agenda_twilio_sid", "estado_diario_agenda", "twilio_sid"),
     # Se ordena y se filtra por esta columna en el listado de la cartera.
     ("ix_causa_ultima_actividad", "causa", "ultima_actividad"),
+    ("ix_causa_corte_origen_rol", "causa_corte", "origen_rol"),
 ]
 
 # Los nombres son los que usa SQLAlchemy para un `index=True` (ix_<tabla>_<col>):

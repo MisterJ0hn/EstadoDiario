@@ -70,10 +70,12 @@ def _norm(columna):
     return func.upper(func.trim(columna))
 
 
-def filtrar_por_roles(query, col_rol, col_tribunal, roles: list[RolFiltro] | None):
-    """Acota `query` a las causas de `roles`. `None` = sin filtro."""
+def condicion_roles(col_rol, col_tribunal, roles: list[RolFiltro] | None):
+    """Condición SQL de `roles` (OR entre entradas), o None si no hay filtro.
+    Va aparte de `filtrar_por_roles` para poder combinarla con otras condiciones
+    con OR."""
     if not roles:
-        return query
+        return None
     sin_tribunal = [r.upper() for r, t in roles if t is None]
     condiciones = []
     if sin_tribunal:
@@ -83,7 +85,13 @@ def filtrar_por_roles(query, col_rol, col_tribunal, roles: list[RolFiltro] | Non
             condiciones.append(
                 and_(_norm(col_rol) == rol.upper(), _norm(col_tribunal) == tribunal.upper())
             )
-    return query.filter(or_(*condiciones))
+    return or_(*condiciones)
+
+
+def filtrar_por_roles(query, col_rol, col_tribunal, roles: list[RolFiltro] | None):
+    """Acota `query` a las causas de `roles`. `None` = sin filtro."""
+    condicion = condicion_roles(col_rol, col_tribunal, roles)
+    return query if condicion is None else query.filter(condicion)
 
 
 # ── Causas de corte ───────────────────────────────────────
@@ -141,14 +149,14 @@ def parse_roles_corte(valor: str | None) -> list[RolCorteFiltro] | None:
     return filtros
 
 
-def filtrar_por_roles_corte(query, modelo, roles: list[RolCorteFiltro] | None):
-    """Acota `query` (sobre `CausaCorte`) a las causas de `roles`. `None` = sin filtro.
+def condicion_roles_corte(modelo, roles: list[RolCorteFiltro] | None):
+    """Condición SQL de `roles` sobre `CausaCorte`, o None si no hay filtro.
 
     El rol guardado puede ser solo el número (`1620`) o traer el libro
     (`Civil-1620`), según el Excel del que salió: calzan las dos formas.
     """
     if not roles:
-        return query
+        return None
     rol_col = _norm(modelo.rol)
     condiciones = []
     for libro, rol, era, corte in roles:
@@ -161,4 +169,20 @@ def filtrar_por_roles_corte(query, modelo, roles: list[RolCorteFiltro] | None):
         if corte:
             partes.append(_norm(modelo.corte) == corte.upper())
         condiciones.append(and_(*partes))
-    return query.filter(or_(*condiciones))
+    return or_(*condiciones)
+
+
+def filtrar_por_roles_corte(query, modelo, roles: list[RolCorteFiltro] | None):
+    """Acota `query` (sobre `CausaCorte`) a las causas de `roles`. `None` = sin filtro."""
+    condicion = condicion_roles_corte(modelo, roles)
+    return query if condicion is None else query.filter(condicion)
+
+
+def parse_roles_origen(valor: str | None) -> list[RolFiltro] | None:
+    """`roles_origen`: igual que `roles` de Mis Causas (`rol` o `rol|tribunal`),
+    pero el rol se guarda sin espacios en `causa_corte.origen_rol`
+    (`C - 711 - 2026` → `C-711-2026`)."""
+    roles = parse_roles(valor)
+    if not roles:
+        return None
+    return [("".join(r.split()), t) for r, t in roles]

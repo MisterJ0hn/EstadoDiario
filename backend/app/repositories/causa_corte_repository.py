@@ -15,7 +15,9 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.estados_causa import condicion_vigencia
-from app.core.filtro_roles import RolCorteFiltro, filtrar_por_roles_corte
+from app.core.filtro_roles import (
+    RolCorteFiltro, RolFiltro, condicion_roles, condicion_roles_corte,
+)
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.causa_repository import ultimo_origen_causas_id
@@ -57,6 +59,7 @@ class CausaCorteRepository:
         origen_id: Optional[int] = None,
         vigencia: Optional[str] = None,
         roles: Optional[list[RolCorteFiltro]] = None,
+        roles_origen: Optional[list[RolFiltro]] = None,
     ):
         if origen_id is not None:
             query = query.filter(CausaCorte.estado_diario_origen_id == origen_id)
@@ -82,7 +85,17 @@ class CausaCorteRepository:
         condicion = condicion_vigencia(CausaCorte.estado_procesal, vigencia)
         if condicion is not None:
             query = query.filter(condicion)
-        return filtrar_por_roles_corte(query, CausaCorte, roles)
+        # `roles` (la apelación) y `roles_origen` (su causa de primera instancia)
+        # se SUMAN: sale la fila que calce con cualquiera de los dos.
+        por_roles = [
+            c for c in (
+                condicion_roles_corte(CausaCorte, roles),
+                condicion_roles(CausaCorte.origen_rol, CausaCorte.origen_tribunal, roles_origen),
+            ) if c is not None
+        ]
+        if por_roles:
+            query = query.filter(or_(*por_roles))
+        return query
 
     def find_filtered(
         self,
@@ -93,6 +106,7 @@ class CausaCorteRepository:
         fecha_hasta: Optional[str] = None,
         vigencia: Optional[str] = None,
         roles: Optional[list[RolCorteFiltro]] = None,
+        roles_origen: Optional[list[RolFiltro]] = None,
         page: Optional[int] = None,
         limit: Optional[int] = None,
     ):
@@ -102,7 +116,7 @@ class CausaCorteRepository:
                 EstadoDiarioOrigen,
                 CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
             ),
-            tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia, roles,
+            tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia, roles, roles_origen,
         )
         total = (
             self._aplicar_filtros(
@@ -110,7 +124,7 @@ class CausaCorteRepository:
                     EstadoDiarioOrigen,
                     CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
                 ),
-                tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia, roles,
+                tipo, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia, roles, roles_origen,
             ).scalar()
             or 0
         )

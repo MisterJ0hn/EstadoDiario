@@ -65,6 +65,16 @@ class CausaCorte(BaseTenant):
         ForeignKey("jurisdiccion.id"), index=True
     )
 
+    # ── Causa origen (primera instancia) ──
+    # Sale de `expediente_primera` del detalle PJUD y se guarda al consultarlo,
+    # para poder filtrar el listado por ella sin ir al PJUD fila por fila.
+    # Nulos hasta que alguien abre el detalle de la apelación.
+    origen_rol: Mapped[Optional[str]] = mapped_column(String(100), index=True)  # sin espacios: C-711-2026
+    origen_tribunal: Mapped[Optional[str]] = mapped_column(String(255))
+    # La `Causa` de la cartera que calzó (sin FK: la cartera se reemplaza con
+    # cada archivo y el id puede dejar de existir).
+    origen_causa_id: Mapped[Optional[int]] = mapped_column()
+
     # ── Cruce con los otros dos reportes ──
     # Mismo criterio que en `Causa`: de qué reporte salió la fila y cuándo la
     # tocó el cruce. Las constantes viven en `app.models.causa` para que no haya
