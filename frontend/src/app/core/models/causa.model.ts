@@ -127,6 +127,7 @@ export interface CausaCorteListResponse {
   total_pages: number;
   cortes: CausaCorte[];
   cortes_disponibles: string[];
+  conteo_por_tipo?: Record<string, number>;
 }
 
 export interface CargarCausasResponse {

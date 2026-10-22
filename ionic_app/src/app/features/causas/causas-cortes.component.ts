@@ -96,6 +96,16 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
               "
             >
               {{ op.etiqueta }}
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                [class]="
+                  filtroTipo === op.valor
+                    ? 'bg-primary-100 text-primary-700'
+                    : 'bg-neutral-100 text-neutral-600'
+                "
+              >
+                {{ conteoTipo(op.valor) }}
+              </span>
             </button>
           }
         </nav>
@@ -221,6 +231,8 @@ export class CausasCortesComponent implements OnInit {
   causaPjud = signal<CausaCorte | null>(null);
   cortesDisponibles = signal<string[]>([]);
   total = signal(0);
+  /** Contadores de las pestañas: bajo los filtros activos, salvo el tipo. */
+  conteos = signal<Record<string, number>>({});
 
   /**
    * Qué mitad se está viendo. Por defecto las vigentes: son las que el estudio
@@ -287,6 +299,7 @@ export class CausasCortesComponent implements OnInit {
           this.pagina.set(res.page);
           this.totalPaginas.set(res.total_pages);
           this.cortesDisponibles.set(res.cortes_disponibles ?? []);
+          this.conteos.set(res.conteo_por_tipo ?? {});
           this.cargando.set(false);
         },
         error: () => {
@@ -333,6 +346,12 @@ export class CausasCortesComponent implements OnInit {
         break;
     }
     this.onFiltrar();
+  }
+
+  /** Lo que muestra la pestaña: '' (Todas) suma las de cada tipo. */
+  conteoTipo(tipo: TipoCorteCausa | ''): number {
+    const c = this.conteos();
+    return tipo ? (c[tipo] ?? 0) : Object.values(c).reduce((a, b) => a + b, 0);
   }
 
   seleccionarTipo(tipo: TipoCorteCausa | ''): void {

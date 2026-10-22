@@ -95,6 +95,16 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
               "
             >
               {{ op.etiqueta }}
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                [class]="
+                  filtroTipo === op.valor
+                    ? 'bg-primary-100 text-primary-700'
+                    : 'bg-neutral-100 text-neutral-600'
+                "
+              >
+                {{ conteoTipo(op.valor) }}
+              </span>
             </button>
           }
         </nav>
@@ -192,6 +202,8 @@ export class CortesListComponent implements OnInit {
   cortes = signal<Corte[]>([]);
   cortesDisponibles = signal<string[]>([]);
   total = signal(0);
+  /** Contadores de las pestañas: bajo los filtros activos, salvo el tipo. */
+  conteos = signal<Record<string, number>>({});
   pagina = signal(1);
   totalPaginas = signal(1);
   cargando = signal(true);
@@ -251,6 +263,7 @@ export class CortesListComponent implements OnInit {
           this.pagina.set(res.page);
           this.totalPaginas.set(res.total_pages);
           this.cortesDisponibles.set(res.cortes_disponibles ?? []);
+          this.conteos.set(res.conteo_por_tipo ?? {});
           this.cargando.set(false);
         },
         error: () => {
@@ -338,6 +351,12 @@ export class CortesListComponent implements OnInit {
       }
     }
     this.chipsFiltros.set(chips);
+  }
+
+  /** Lo que muestra la pestaña: '' (Todas) suma las de cada tipo. */
+  conteoTipo(tipo: TipoCorte | ''): number {
+    const c = this.conteos();
+    return tipo ? (c[tipo] ?? 0) : Object.values(c).reduce((a, b) => a + b, 0);
   }
 
   seleccionarTipo(tipo: TipoCorte | ''): void {

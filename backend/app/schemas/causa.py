@@ -174,6 +174,8 @@ class CausaCorteListResponse(BaseModel):
     cortes: list[CausaCorteResponse]
     # Nombres de corte presentes, para el combo del filtro.
     cortes_disponibles: list[str] = []
+    # {tipo: cuántas} con los filtros del listado salvo `tipo`: contadores de pestañas.
+    conteo_por_tipo: dict[str, int] = {}
 
 
 class CargarCausasResponse(BaseModel):

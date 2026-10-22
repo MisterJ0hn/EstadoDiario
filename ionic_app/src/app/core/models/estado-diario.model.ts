@@ -176,6 +176,7 @@ export interface CorteListResponse {
   cortes: Corte[];
   /** Nombres de corte presentes, para el combo del filtro. */
   cortes_disponibles: string[];
+  conteo_por_tipo?: Record<string, number>;
 }
 
 /**

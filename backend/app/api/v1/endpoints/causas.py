@@ -263,6 +263,12 @@ def listar_cortes(
             for c in items
         ],
         cortes_disponibles=repo.listar_cortes(),
+        conteo_por_tipo=repo.contar_por_tipo_filtrado(
+            busqueda=busqueda, corte=corte,
+            fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+            vigencia=_vigencia(vigencia), roles=parse_roles_corte(roles),
+            roles_origen=parse_roles_origen(roles_origen),
+        ),
     )
 
 

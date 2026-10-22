@@ -144,6 +144,31 @@ class CausaCorteRepository:
 
         return query.all(), total, pagina_actual, total_pages
 
+    def contar_por_tipo_filtrado(
+        self,
+        busqueda: Optional[str] = None,
+        corte: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
+        vigencia: Optional[str] = None,
+        roles: Optional[list[RolCorteFiltro]] = None,
+        roles_origen: Optional[list[RolFiltro]] = None,
+    ) -> dict[str, int]:
+        """{tipo: cuántas} bajo los mismos filtros que el listado, salvo `tipo`.
+
+        Alimenta los contadores de las pestañas: cada una cuenta lo que
+        mostraría al seleccionarla, no el total de la tabla.
+        """
+        origen_id = self._origen_de_la_cartera(fecha_desde, fecha_hasta)
+        query = self._aplicar_filtros(
+            self.db.query(CausaCorte.tipo, func.count(CausaCorte.id)).join(
+                EstadoDiarioOrigen,
+                CausaCorte.estado_diario_origen_id == EstadoDiarioOrigen.id,
+            ),
+            None, busqueda, corte, fecha_desde, fecha_hasta, origen_id, vigencia, roles, roles_origen,
+        )
+        return {tipo: int(total or 0) for tipo, total in query.group_by(CausaCorte.tipo).all()}
+
     def listar_cortes(self) -> list[str]:
         """Nombres de corte presentes, para el combo del filtro."""
         query = self.db.query(CausaCorte.corte).filter(CausaCorte.corte.isnot(None))
