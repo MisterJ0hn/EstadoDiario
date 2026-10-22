@@ -38,37 +38,6 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
         </p>
       </div>
 
-      <!-- Filtros: campos en el panel lateral, badges de lo aplicado acá. -->
-      <app-filtros-panel
-        [chips]="chipsFiltros()"
-        (aplicar)="onFiltrar()"
-        (limpiar)="onLimpiarFiltros()"
-        (quitar)="quitarFiltro($event)"
-      >
-        <div>
-          <label class="form-label" for="c-busqueda">Búsqueda</label>
-          <input
-            id="c-busqueda"
-            type="text"
-            class="form-input"
-            placeholder="Carátula o número de ingreso"
-            [(ngModel)]="filtroBusqueda"
-            (keyup.enter)="aplicarDesdeCampo()"
-          />
-        </div>
-        @if (cortesDisponibles().length) {
-          <div>
-            <label class="form-label" for="c-corte">Corte</label>
-            <select id="c-corte" class="form-select" [(ngModel)]="filtroCorte">
-              <option [ngValue]="''">Todas</option>
-              @for (c of cortesDisponibles(); track c) {
-                <option [ngValue]="c">{{ c }}</option>
-              }
-            </select>
-          </div>
-        }
-      </app-filtros-panel>
-
       <!-- Pestañas por tipo de corte, igual que las de materia en Mis Causas -->
       <div class="border-b border-neutral-200">
         <nav class="-mb-px flex gap-1 overflow-x-auto" role="tablist">
@@ -100,6 +69,37 @@ import { EstadoDiarioService } from '../../services/estado-diario.service';
           }
         </nav>
       </div>
+
+      <!-- Filtros: campos en el panel lateral, badges de lo aplicado acá. -->
+      <app-filtros-panel
+        [chips]="chipsFiltros()"
+        (aplicar)="onFiltrar()"
+        (limpiar)="onLimpiarFiltros()"
+        (quitar)="quitarFiltro($event)"
+      >
+        <div>
+          <label class="form-label" for="c-busqueda">Búsqueda</label>
+          <input
+            id="c-busqueda"
+            type="text"
+            class="form-input"
+            placeholder="Carátula o número de ingreso"
+            [(ngModel)]="filtroBusqueda"
+            (keyup.enter)="aplicarDesdeCampo()"
+          />
+        </div>
+        @if (cortesDisponibles().length) {
+          <div>
+            <label class="form-label" for="c-corte">Corte</label>
+            <select id="c-corte" class="form-select" [(ngModel)]="filtroCorte">
+              <option [ngValue]="''">Todas</option>
+              @for (c of cortesDisponibles(); track c) {
+                <option [ngValue]="c">{{ c }}</option>
+              }
+            </select>
+          </div>
+        }
+      </app-filtros-panel>
 
       <div class="card">
         <div class="card-body">

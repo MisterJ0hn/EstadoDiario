@@ -39,6 +39,38 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
 
       </div>
 
+      <!-- Pestañas por tipo de corte, igual que las de materia en Mis Causas -->
+      <div class="border-b border-neutral-200">
+        <nav class="-mb-px flex gap-1 overflow-x-auto" role="tablist">
+          @for (op of opciones; track op.valor) {
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="filtroTipo === op.valor"
+              (click)="seleccionarTipo(op.valor)"
+              class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors"
+              [class]="
+                filtroTipo === op.valor
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+              "
+            >
+              {{ op.etiqueta }}
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                [class]="
+                  filtroTipo === op.valor
+                    ? 'bg-primary-100 text-primary-700'
+                    : 'bg-neutral-100 text-neutral-600'
+                "
+              >
+                {{ conteoTipo(op.valor) }}
+              </span>
+            </button>
+          }
+        </nav>
+      </div>
+
       <app-filtros-panel
         [chips]="chipsFiltros()"
         (aplicar)="onFiltrar()"
@@ -78,38 +110,6 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
           </div>
         }
       </app-filtros-panel>
-
-      <!-- Pestañas por tipo de corte, igual que las de materia en Mis Causas -->
-      <div class="border-b border-neutral-200">
-        <nav class="-mb-px flex gap-1 overflow-x-auto" role="tablist">
-          @for (op of opciones; track op.valor) {
-            <button
-              type="button"
-              role="tab"
-              [attr.aria-selected]="filtroTipo === op.valor"
-              (click)="seleccionarTipo(op.valor)"
-              class="flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors"
-              [class]="
-                filtroTipo === op.valor
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
-              "
-            >
-              {{ op.etiqueta }}
-              <span
-                class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                [class]="
-                  filtroTipo === op.valor
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'bg-neutral-100 text-neutral-600'
-                "
-              >
-                {{ conteoTipo(op.valor) }}
-              </span>
-            </button>
-          }
-        </nav>
-      </div>
 
       <div class="card">
         <div class="card-body">
