@@ -85,9 +85,12 @@ class TestObtenerDetalleApelaciones:
     def test_error_del_scrape_se_informa(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
             "/consultar_apelaciones": {"identificador": "abc", "estado": "Error", "ultimo_error": "boom"},
+            "/consultar_movimientos_apelaciones": {"movimientos": [{"folio": 5, "doc": [], "anexo": []}]},
         })
         r = servicio.obtener_detalle_apelaciones(_corte(), credenciales_dueno=_CREDS)
         assert r["estado"] == "error" and r["ultimo_error"] == "boom"
+        # El error del scrape no esconde lo que api-pjud ya tenía de la causa.
+        assert r["causa"] is not None and len(r["movimientos"]) == 1
 
     def test_listo_normaliza_documentos_icono_y_movimientos(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {

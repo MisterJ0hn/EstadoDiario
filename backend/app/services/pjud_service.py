@@ -514,7 +514,8 @@ class PjudService:
 
         # El scrape terminó mal: no se reintenta solo, se muestra el motivo en
         # rojo y la pantalla ofrece "Reintentar" (que fuerza un sync nuevo).
-        if estado_norm in _ESTADOS_ERROR:
+        con_error = estado_norm in _ESTADOS_ERROR
+        if con_error and not (detalle or {}).get("identificador"):
             return {
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
@@ -524,7 +525,7 @@ class PjudService:
             }
 
         cuadernos = (detalle.get("cuadernos") or []) if detalle else []
-        esta_sincronizando = (
+        esta_sincronizando = not con_error and (
             detalle is None
             or estado_norm in _ESTADOS_SINCRONIZANDO
             or not cuadernos
@@ -541,9 +542,10 @@ class PjudService:
         # datos parciales y mantiene el aviso de sincronización arriba.
         identificador = (detalle or {}).get("identificador")
         resultado: dict = {
-            "estado": "sincronizando" if esta_sincronizando else "listo",
-            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "estado": "error" if con_error else ("sincronizando" if esta_sincronizando else "listo"),
+            "mensaje": _MENSAJE_ERROR_SYNC if con_error else (_MENSAJE_SINCRONIZANDO if esta_sincronizando else None),
             "detalle_estado": detalle_estado,
+            "ultimo_error": ultimo_error,
             "diagnostico": " · ".join(diag),
             "causa": detalle if identificador else None,
             "cuaderno_consultado_id": None,
@@ -568,7 +570,7 @@ class PjudService:
                 # Durante la sincronización los movimientos de un cuaderno
                 # pueden no estar listos todavía: se devuelve la cabecera y se
                 # deja la historia vacía en vez de fallar.
-                if not esta_sincronizando:
+                if not esta_sincronizando and not con_error:
                     raise
                 diag.append(f"movimientos: no disponibles aún ({e})")
                 resultado["diagnostico"] = " · ".join(diag)
@@ -662,7 +664,8 @@ class PjudService:
 
         estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
 
-        if estado_norm in _ESTADOS_ERROR:
+        con_error = estado_norm in _ESTADOS_ERROR
+        if con_error and not (detalle or {}).get("identificador"):
             return {
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
@@ -672,7 +675,9 @@ class PjudService:
             }
 
         # A diferencia de Civil, no se mira `cuadernos`: Familia no los expone.
-        esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+        esta_sincronizando = not con_error and (
+            detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+        )
 
         if esta_sincronizando and not forzar_sincronizacion:
             diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "familia"))
@@ -684,8 +689,8 @@ class PjudService:
             causa_out["ruc"] = causa_out.get("Ruc")
 
         resultado: dict = {
-            "estado": "sincronizando" if esta_sincronizando else "listo",
-            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "estado": "error" if con_error else ("sincronizando" if esta_sincronizando else "listo"),
+            "mensaje": _MENSAJE_ERROR_SYNC if con_error else (_MENSAJE_SINCRONIZANDO if esta_sincronizando else None),
             "detalle_estado": detalle_estado,
             "ultimo_error": ultimo_error,
             "diagnostico": " · ".join(diag),
@@ -709,7 +714,7 @@ class PjudService:
             except PjudApiError as e:
                 # Durante la sincronización los movimientos pueden no estar
                 # listos: se devuelve la cabecera y las secciones vacías.
-                if not esta_sincronizando:
+                if not esta_sincronizando and not con_error:
                     raise
                 diag.append(f"movimientos: no disponibles aún ({e})")
                 resultado["diagnostico"] = " · ".join(diag)
@@ -924,7 +929,8 @@ class PjudService:
 
         estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
 
-        if estado_norm in _ESTADOS_ERROR:
+        con_error = estado_norm in _ESTADOS_ERROR
+        if con_error and not (detalle or {}).get("identificador"):
             return {
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
@@ -934,7 +940,9 @@ class PjudService:
             }
 
         # Como Familia, no se mira `cuadernos`: Laboral no los expone.
-        esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+        esta_sincronizando = not con_error and (
+            detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+        )
 
         if esta_sincronizando and not forzar_sincronizacion:
             diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "laboral"))
@@ -943,8 +951,8 @@ class PjudService:
         causa_out = detalle if identificador else None
 
         resultado: dict = {
-            "estado": "sincronizando" if esta_sincronizando else "listo",
-            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "estado": "error" if con_error else ("sincronizando" if esta_sincronizando else "listo"),
+            "mensaje": _MENSAJE_ERROR_SYNC if con_error else (_MENSAJE_SINCRONIZANDO if esta_sincronizando else None),
             "detalle_estado": detalle_estado,
             "ultimo_error": ultimo_error,
             "diagnostico": " · ".join(diag),
@@ -969,7 +977,7 @@ class PjudService:
             except PjudApiError as e:
                 # Durante la sincronización el movimiento puede no estar listo
                 # todavía: se devuelve la cabecera y las secciones vacías.
-                if not esta_sincronizando:
+                if not esta_sincronizando and not con_error:
                     raise
                 diag.append(f"movimiento: no disponible aún ({e})")
                 resultado["diagnostico"] = " · ".join(diag)
@@ -1100,7 +1108,8 @@ class PjudService:
 
         estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
 
-        if estado_norm in _ESTADOS_ERROR:
+        con_error = estado_norm in _ESTADOS_ERROR
+        if con_error and not (detalle or {}).get("identificador"):
             return {
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
@@ -1110,7 +1119,7 @@ class PjudService:
             }
 
         cuadernos = (detalle.get("cuadernos") or []) if detalle else []
-        esta_sincronizando = (
+        esta_sincronizando = not con_error and (
             detalle is None
             or estado_norm in _ESTADOS_SINCRONIZANDO
             or not cuadernos
@@ -1130,8 +1139,8 @@ class PjudService:
                 doc_demanda["url"] = doc_demanda.pop("ruta")
 
         resultado: dict = {
-            "estado": "sincronizando" if esta_sincronizando else "listo",
-            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "estado": "error" if con_error else ("sincronizando" if esta_sincronizando else "listo"),
+            "mensaje": _MENSAJE_ERROR_SYNC if con_error else (_MENSAJE_SINCRONIZANDO if esta_sincronizando else None),
             "detalle_estado": detalle_estado,
             "ultimo_error": ultimo_error,
             "diagnostico": " · ".join(diag),
@@ -1154,7 +1163,7 @@ class PjudService:
                     ),
                 )
             except PjudApiError as e:
-                if not esta_sincronizando:
+                if not esta_sincronizando and not con_error:
                     raise
                 diag.append(f"historia: no disponible aún ({e})")
                 resultado["diagnostico"] = " · ".join(diag)
@@ -1317,7 +1326,8 @@ class PjudService:
 
         estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
 
-        if estado_norm in _ESTADOS_ERROR:
+        con_error = estado_norm in _ESTADOS_ERROR
+        if con_error and not (detalle or {}).get("identificador"):
             return {
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
@@ -1327,7 +1337,7 @@ class PjudService:
             }
 
         cuadernos = (detalle.get("cuadernos") or []) if detalle else []
-        esta_sincronizando = (
+        esta_sincronizando = not con_error and (
             detalle is None
             or estado_norm in _ESTADOS_SINCRONIZANDO
             or not cuadernos
@@ -1340,8 +1350,8 @@ class PjudService:
         causa_out = self._normalizar_cabecera_penal(detalle) if identificador else None
 
         resultado: dict = {
-            "estado": "sincronizando" if esta_sincronizando else "listo",
-            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "estado": "error" if con_error else ("sincronizando" if esta_sincronizando else "listo"),
+            "mensaje": _MENSAJE_ERROR_SYNC if con_error else (_MENSAJE_SINCRONIZANDO if esta_sincronizando else None),
             "detalle_estado": detalle_estado,
             "ultimo_error": ultimo_error,
             "diagnostico": " · ".join(diag),
@@ -1363,7 +1373,7 @@ class PjudService:
                     ),
                 )
             except PjudApiError as e:
-                if not esta_sincronizando:
+                if not esta_sincronizando and not con_error:
                     raise
                 diag.append(f"historia: no disponible aún ({e})")
                 resultado["diagnostico"] = " · ".join(diag)
@@ -1494,7 +1504,8 @@ class PjudService:
 
         estado_norm = (detalle.get("estado") or "").strip().lower() if detalle else ""
 
-        if estado_norm in _ESTADOS_ERROR:
+        con_error = estado_norm in _ESTADOS_ERROR
+        if con_error and not (detalle or {}).get("identificador"):
             return {
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
@@ -1503,15 +1514,17 @@ class PjudService:
                 "diagnostico": " · ".join(diag),
             }
 
-        esta_sincronizando = detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+        esta_sincronizando = not con_error and (
+            detalle is None or estado_norm in _ESTADOS_SINCRONIZANDO
+        )
 
         if esta_sincronizando and not forzar_sincronizacion:
             diag.append(self._sincronizar(cuerpo_causa, credenciales_dueno, "apelaciones"))
 
         identificador = (detalle or {}).get("identificador")
         resultado: dict = {
-            "estado": "sincronizando" if esta_sincronizando else "listo",
-            "mensaje": _MENSAJE_SINCRONIZANDO if esta_sincronizando else None,
+            "estado": "error" if con_error else ("sincronizando" if esta_sincronizando else "listo"),
+            "mensaje": _MENSAJE_ERROR_SYNC if con_error else (_MENSAJE_SINCRONIZANDO if esta_sincronizando else None),
             "detalle_estado": detalle_estado,
             "ultimo_error": ultimo_error,
             "diagnostico": " · ".join(diag),
@@ -1529,7 +1542,7 @@ class PjudService:
                     json=self._con_credenciales({"identificador": identificador}, credenciales_dueno),
                 )
             except PjudApiError as e:
-                if not esta_sincronizando:
+                if not esta_sincronizando and not con_error:
                     raise
                 diag.append(f"movimientos: no disponibles aún ({e})")
                 resultado["diagnostico"] = " · ".join(diag)
