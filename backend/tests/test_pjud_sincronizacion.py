@@ -91,13 +91,13 @@ class TestCallback:
     def test_exito_deja_la_sincronizacion_lista(self, db, cliente_http):
         _registrar(PjudSincronizacionRepository(db), "xxssw2232")
         r = cliente_http.post("/causas/pjud/callback", json={"éxito": True, "job_id": "xxssw2232"})
-        assert r.status_code == 200 and r.json() == {"recibido": True}
+        assert r.status_code == 200 and r.json() == {"exito": True}
         assert PjudSincronizacionRepository(db).por_job_id("xxssw2232").estado == LISTO
 
     def test_acepta_exito_sin_tilde(self, db, cliente_http):
         _registrar(PjudSincronizacionRepository(db), "j")
         r = cliente_http.post("/causas/pjud/callback", json={"exito": True, "job_id": "j"})
-        assert r.json() == {"recibido": True}
+        assert r.json() == {"exito": True}
 
     def test_error_guarda_mensaje_error(self, db, cliente_http):
         _registrar(PjudSincronizacionRepository(db), "343sfdfer")
@@ -111,13 +111,13 @@ class TestCallback:
 
     def test_job_desconocido_responde_200_sin_aplicar(self, cliente_http):
         r = cliente_http.post("/causas/pjud/callback", json={"exito": True, "job_id": "nada"})
-        assert r.status_code == 200 and r.json() == {"recibido": False}
+        assert r.status_code == 200 and r.json() == {"exito": False}
 
     def test_repetido_es_idempotente(self, db, cliente_http):
         _registrar(PjudSincronizacionRepository(db), "j")
         for _ in range(2):
             r = cliente_http.post("/causas/pjud/callback", json={"exito": True, "job_id": "j"})
-            assert r.json() == {"recibido": True}
+            assert r.json() == {"exito": True}
         assert PjudSincronizacionRepository(db).por_job_id("j").estado == LISTO
 
 

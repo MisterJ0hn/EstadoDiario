@@ -34,9 +34,10 @@ class PjudCallbackRequest(BaseModel):
 
 
 class PjudCallbackResponse(BaseModel):
-    # False cuando el `job_id` no es de ningún job nuestro: se responde 200 igual
+    # Lo que api-pjud espera como acuse: {"exito": true}. False cuando el `job_id`
+    # no es de ningún job nuestro: se responde 200 igual
     # para que el proveedor no reintente un aviso que nunca vamos a poder aplicar.
-    recibido: bool
+    exito: bool
 
 
 class PjudDocumentoRef(BaseModel):

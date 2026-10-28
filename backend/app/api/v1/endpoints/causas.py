@@ -1067,7 +1067,7 @@ def pjud_callback(
     )
     if fila is None:
         logger.warning("Callback de api-pjud con job_id desconocido: %s", datos.job_id)
-    return PjudCallbackResponse(recibido=fila is not None)
+    return PjudCallbackResponse(exito=fila is not None)
 
 
 def _detalle_pjud(db_maestra, tenant, *, causa_id, materia, rol, tribunal, forzar, consultar) -> dict:
