@@ -272,3 +272,71 @@ class TestSincronizarParaIntegradores:
         repo.cerrar("job-1", exito=False, mensaje_error="No fue posible conectar con pjud")
         r = causas._estado_sincronizacion(db, self._tenant(), causa_id=10, materia="Civil")
         assert (r.estado, r.mensaje_error) == ("error", "No fue posible conectar con pjud")
+
+
+class TestSyncDescartaLaCopiaDelEspejo:
+    """Un sync encolado por la app o por `POST /causas/{id}/pjud/sincronizar` deja sin
+    vigencia la copia que el espejo de api-pjud tenía de esa causa."""
+
+    CUERPO = {"corte": 90, "tribunal": 276, "tipo": "C", "rol": 1234, "anio": 2026}
+
+    @pytest.fixture()
+    def tenant_db(self):
+        from app.models.pjud_copia import PjudCopia
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
+        PjudCopia.metadata.create_all(bind=engine, tables=[PjudCopia.__table__])
+        sesion = sessionmaker(bind=engine)()
+        yield sesion
+        sesion.close()
+
+    @pytest.fixture(autouse=True)
+    def _config(self, monkeypatch):
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
+        monkeypatch.setattr(causas, "_registrar_llamado_pjud", lambda *a, **k: None)
+
+    def _copia(self, tenant_db):
+        from app.repositories.pjud_copia_repository import PjudCopiaRepository, clave_de
+        PjudCopiaRepository(tenant_db).guardar(
+            "/consultar_civil", clave_de(self.CUERPO), "abc", "{}"
+        )
+        return PjudCopiaRepository(tenant_db), clave_de(self.CUERPO)
+
+    def _detalle(self, db, tenant_db, consultar):
+        import types
+        return causas._detalle_pjud(
+            db, types.SimpleNamespace(cliente_id=None), db=tenant_db, causa_id=10,
+            materia="Civil", rol="C-1234-2026", tribunal="1° Juzgado", forzar=True,
+            consultar=consultar,
+        )
+
+    def test_al_encolar_se_descarta_la_copia(self, db, tenant_db):
+        copias, clave = self._copia(tenant_db)
+
+        def consultar(servicio):
+            servicio.encolados.append(("civil", self.CUERPO))
+            return {"estado": "sincronizando"}
+
+        self._detalle(db, tenant_db, consultar)
+        assert copias.vigente("/consultar_civil", clave, 30) is None
+
+    def test_si_no_se_encoló_nada_la_copia_se_queda(self, db, tenant_db):
+        copias, clave = self._copia(tenant_db)
+        self._detalle(db, tenant_db, lambda servicio: {"estado": "listo"})
+        assert copias.vigente("/consultar_civil", clave, 30) is not None
+
+    def test_sincronizar_registra_lo_encolado_en_el_servicio(self, monkeypatch):
+        from app.services.pjud_service import PjudService
+        servicio = PjudService()
+        monkeypatch.setattr(servicio, "_request", lambda *a, **k: {"job_id": "j"})
+        servicio._sincronizar(self.CUERPO, None, "civil")
+        assert servicio.encolados == [("civil", self.CUERPO)]
+
+    def test_solo_lectura_no_encola_ni_registra(self):
+        from app.services.pjud_service import PjudService
+        servicio = PjudService()
+        servicio.solo_lectura = True
+        servicio._sincronizar(self.CUERPO, None, "civil")
+        assert servicio.encolados == []

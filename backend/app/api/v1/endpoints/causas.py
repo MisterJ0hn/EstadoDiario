@@ -34,6 +34,7 @@ from app.models.maestra.cliente import Cliente
 from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
 from app.repositories.causa_repository import FINALIZADAS, SIN_MATERIA, VIGENTES, CausaRepository
+from app.repositories.pjud_copia_repository import PjudCopiaRepository, clave_de
 from app.repositories.pjud_llamado_repository import PjudLlamadoRepository
 from app.repositories.pjud_sincronizacion_repository import (
     ERROR as SINC_ERROR,
@@ -594,7 +595,7 @@ def pjud_movimientos(
     diagnostico_log: str | None = None
     try:
         resultado = _detalle_pjud(
-            db_maestra, tenant, causa_id=causa_id, materia="Civil",
+            db_maestra, tenant, db=db, causa_id=causa_id, materia="Civil",
             rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
             consultar=lambda s: s.obtener_detalle(
                 causa,
@@ -672,7 +673,7 @@ def pjud_familia(
     diagnostico_log: str | None = None
     try:
         resultado = _detalle_pjud(
-            db_maestra, tenant, causa_id=causa_id, materia="Familia",
+            db_maestra, tenant, db=db, causa_id=causa_id, materia="Familia",
             rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
             consultar=lambda s: s.obtener_detalle_familia(
                 causa,
@@ -744,7 +745,7 @@ def pjud_laboral(
     diagnostico_log: str | None = None
     try:
         resultado = _detalle_pjud(
-            db_maestra, tenant, causa_id=causa_id, materia="Laboral",
+            db_maestra, tenant, db=db, causa_id=causa_id, materia="Laboral",
             rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
             consultar=lambda s: s.obtener_detalle_laboral(
                 causa,
@@ -817,7 +818,7 @@ def pjud_cobranza(
     diagnostico_log: str | None = None
     try:
         resultado = _detalle_pjud(
-            db_maestra, tenant, causa_id=causa_id, materia="Cobranza",
+            db_maestra, tenant, db=db, causa_id=causa_id, materia="Cobranza",
             rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
             consultar=lambda s: s.obtener_detalle_cobranza(
                 causa,
@@ -889,7 +890,7 @@ def pjud_penal(
     diagnostico_log: str | None = None
     try:
         resultado = _detalle_pjud(
-            db_maestra, tenant, causa_id=causa_id, materia="Penal",
+            db_maestra, tenant, db=db, causa_id=causa_id, materia="Penal",
             rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
             consultar=lambda s: s.obtener_detalle_penal(
                 causa,
@@ -966,7 +967,7 @@ def pjud_apelaciones(
     diagnostico_log: str | None = None
     try:
         resultado = _detalle_pjud(
-            db_maestra, tenant, causa_id=corte_id, materia="Apelaciones",
+            db_maestra, tenant, db=db, causa_id=corte_id, materia="Apelaciones",
             rol=f"{causa_corte.rol}-{causa_corte.era}", tribunal=causa_corte.corte,
             forzar=forzar,
             consultar=lambda s: s.obtener_detalle_apelaciones(
@@ -1086,7 +1087,7 @@ def _materia_sincronizable(causa) -> str:
 
 
 def _encolar_sincronizacion(
-    db_maestra, tenant, *, causa_id, materia, rol, tribunal, consultar
+    db_maestra, tenant, *, causa_id, materia, rol, tribunal, consultar, db=None
 ) -> PjudSincronizarResponse:
     """Encola un `sincronizar_*` (sin esperar a que termine) y dice qué quedó.
 
@@ -1109,7 +1110,7 @@ def _encolar_sincronizacion(
     mensaje_log = diagnostico_log = None
     try:
         resultado = _detalle_pjud(
-            db_maestra, tenant, causa_id=causa_id, materia=materia, rol=rol,
+            db_maestra, tenant, db=db, causa_id=causa_id, materia=materia, rol=rol,
             tribunal=tribunal, forzar=True, consultar=consultar,
         )
         http_status = 202
@@ -1186,7 +1187,7 @@ def pjud_sincronizar(
     credenciales_dueno = credenciales_del_dueno(db, causa)
     metodo = _SINCRONIZAR_POR_MATERIA[materia][0]
     return _encolar_sincronizacion(
-        db_maestra, tenant, causa_id=causa_id, materia=materia,
+        db_maestra, tenant, db=db, causa_id=causa_id, materia=materia,
         rol=causa.rol, tribunal=causa.tribunal,
         consultar=lambda s: getattr(s, metodo)(
             causa, forzar_sincronizacion=True, credenciales_dueno=credenciales_dueno
@@ -1216,7 +1217,7 @@ def pjud_sincronizar_apelaciones(
         db, SimpleNamespace(rut_efectivo=origen.rut if origen else None)
     )
     return _encolar_sincronizacion(
-        db_maestra, tenant, causa_id=corte_id, materia="Apelaciones",
+        db_maestra, tenant, db=db, causa_id=corte_id, materia="Apelaciones",
         rol=f"{causa_corte.rol}-{causa_corte.era}", tribunal=causa_corte.corte,
         consultar=lambda s: s.obtener_detalle_apelaciones(
             causa_corte, forzar_sincronizacion=True, credenciales_dueno=credenciales_dueno
@@ -1290,14 +1291,20 @@ def pjud_callback(
     return PjudCallbackResponse(exito=fila is not None)
 
 
-def _detalle_pjud(db_maestra, tenant, *, causa_id, materia, rol, tribunal, forzar, consultar) -> dict:
+def _detalle_pjud(
+    db_maestra, tenant, *, causa_id, materia, rol, tribunal, forzar, consultar, db=None
+) -> dict:
     """Corre `consultar(servicio)` (el `obtener_detalle_*` de la materia), pero
     el estado de la sincronización sale de `pjud_sincronizacion`, no de
     `consultar_*`: con un job en curso (o terminado en error) se responde desde
     la base sin tocar al proveedor. `forzar` salta ese atajo y encola otro job.
 
     Cuando el servicio encola un `sincronizar_*` y api-pjud devuelve `job_id`,
-    queda guardado como `sincronizando` hasta que llegue el callback."""
+    queda guardado como `sincronizando` hasta que llegue el callback.
+
+    `db` (la base del cliente) permite descartar la copia que el espejo de api-pjud
+    tiene de esa causa cuando se encola un sync por cualquier vía: sin eso, una
+    consulta del espejo justo después devolvería el detalle anterior."""
     apelaciones = materia == "Apelaciones"
     repo = PjudSincronizacionRepository(db_maestra)
     if not forzar:
@@ -1343,6 +1350,7 @@ def _detalle_pjud(db_maestra, tenant, *, causa_id, materia, rol, tribunal, forza
     try:
         return consultar(servicio)
     finally:
+        _descartar_copias(db, servicio)
         if servicio.job_id:
             try:
                 repo.registrar(
@@ -1356,6 +1364,21 @@ def _detalle_pjud(db_maestra, tenant, *, causa_id, materia, rol, tribunal, forza
             except Exception:
                 db_maestra.rollback()
                 logger.exception("No se pudo guardar el job %s de api-pjud", servicio.job_id)
+
+
+def _descartar_copias(db, servicio) -> None:
+    """Borra la copia del espejo de cada causa cuyo sync se acaba de encolar. La
+    clave es el cuerpo `sincronizar_*` de la causa, el mismo de `consultar_*`. Nunca
+    revienta: en el peor caso la copia vence sola por TTL."""
+    if db is None or not servicio.encolados:
+        return
+    try:
+        copias = PjudCopiaRepository(db)
+        for competencia, cuerpo in servicio.encolados:
+            copias.borrar_de_causa(f"/consultar_{competencia}", clave_de(cuerpo))
+    except Exception:
+        db.rollback()
+        logger.exception("No se pudo descartar la copia PJUD tras encolar el sync")
 
 
 def _sincronizaciones_pjud(db_maestra, cliente_id, causa_ids, apelaciones=False) -> dict:

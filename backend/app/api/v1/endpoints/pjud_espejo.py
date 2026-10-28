@@ -28,7 +28,11 @@ from app.core.config import settings
 from app.core.database import get_db_maestra
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
 from app.models.usuario import Usuario
-from app.repositories.pjud_copia_repository import PREFIJO_MOVIMIENTOS, PjudCopiaRepository
+from app.repositories.pjud_copia_repository import (
+    PREFIJO_MOVIMIENTOS,
+    PjudCopiaRepository,
+    clave_de,
+)
 from app.repositories.pjud_sincronizacion_repository import PjudSincronizacionRepository
 from app.services.pjud_service import (
     _ESTADOS_SINCRONIZANDO,
@@ -57,17 +61,6 @@ COMPETENCIAS = {
     "penal": ("Penal", True),
     "apelaciones": ("Apelaciones", False),
 }
-
-# Campos del cuerpo que no identifican la causa: las credenciales del OJV y el
-# callback (que siempre ponemos nosotros).
-_CAMPOS_FUERA_DE_LA_CLAVE = ("rut", "clave", "metodo_login", "callback_url")
-
-
-def clave_de(cuerpo: dict) -> str:
-    """JSON canónico de la consulta sin credenciales: identifica la causa pedida."""
-    util = {k: v for k, v in cuerpo.items() if k not in _CAMPOS_FUERA_DE_LA_CLAVE}
-    return json.dumps(util, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-
 
 def _servicio() -> PjudService:
     try:

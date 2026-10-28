@@ -164,6 +164,9 @@ class PjudService:
         # el endpoint para mostrar los datos ya guardados de una causa cuya
         # última sincronización quedó en error, sin disparar otro job.
         self.solo_lectura: bool = False
+        # `(competencia, cuerpo_causa)` de cada `sincronizar_*` que api-pjud aceptó
+        # en esta instancia. El endpoint lo usa para descartar la copia del espejo.
+        self.encolados: list[tuple[str, dict]] = []
 
     @staticmethod
     def callback_url() -> str:
@@ -420,6 +423,7 @@ class PjudService:
         )
         try:
             respuesta = self._request("POST", ruta, json=cuerpo)
+            self.encolados.append((competencia, dict(cuerpo_causa)))
             job_id = str((respuesta or {}).get("job_id") or "").strip() or None
             if job_id:
                 self.job_id = job_id

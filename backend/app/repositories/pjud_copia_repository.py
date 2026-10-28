@@ -1,5 +1,6 @@
 """Copia local de las respuestas de api-pjud. Ver `PjudCopia`."""
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -8,6 +9,16 @@ from sqlalchemy.orm import Session
 from app.models.pjud_copia import PjudCopia
 
 PREFIJO_MOVIMIENTOS = "/consultar_movimientos_"
+
+# Campos del cuerpo que no identifican la causa: las credenciales del OJV y el
+# callback (que siempre ponemos nosotros).
+_CAMPOS_FUERA_DE_LA_CLAVE = ("rut", "clave", "metodo_login", "callback_url")
+
+
+def clave_de(cuerpo: dict) -> str:
+    """JSON canónico de la consulta sin credenciales: identifica la causa pedida."""
+    util = {k: v for k, v in cuerpo.items() if k not in _CAMPOS_FUERA_DE_LA_CLAVE}
+    return json.dumps(util, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
 def _aware(fecha: datetime) -> datetime:
