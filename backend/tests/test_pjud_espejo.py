@@ -189,6 +189,26 @@ class TestSincronizar:
         http.post("/pjud/consultar_civil", json=CUERPO)
         assert len(_llamadas("/consultar_civil")) == 2
 
+    def test_no_reenvia_si_ya_hay_un_sync_en_curso_de_la_misma_causa(self, http, bases):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        primero = http.post("/pjud/sincronizar_civil", json=CUERPO)
+        segundo = http.post("/pjud/sincronizar_civil", json={**CUERPO, "rut": "1-9", "clave": "x"})
+        assert primero.json() == segundo.json() == {"job_id": "job-1"}
+        assert len(_llamadas("/sincronizar_civil")) == 1
+
+    def test_otra_causa_o_otro_anio_si_se_encola(self, http):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        http.post("/pjud/sincronizar_civil", json={**CUERPO, "anio": 2025})
+        assert len(_llamadas("/sincronizar_civil")) == 2
+
+    def test_terminado_el_job_se_puede_volver_a_sincronizar(self, http, bases):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=True)
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        assert len(_llamadas("/sincronizar_civil")) == 2
+
     def test_409_se_propaga(self, http):
         FalsoPjud.respuestas["/sincronizar_civil"] = PjudConflicto("ya en curso")
         assert http.post("/pjud/sincronizar_civil", json=CUERPO).status_code == 409

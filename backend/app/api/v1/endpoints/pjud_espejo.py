@@ -17,7 +17,7 @@ Permisos: ver `CONSULTAS_PJUD_POR_POST` y `SINCRONIZAR_PJUD` en `app/core/api_ke
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import Response
@@ -34,7 +34,8 @@ from app.repositories.pjud_copia_repository import (
     clave_de,
 )
 from app.repositories.pjud_sincronizacion_repository import PjudSincronizacionRepository
-from app.services.pjud_dueno_service import credenciales_del_abogado_asignado
+from app.core.credenciales_pjud import credenciales_del_dueno
+from app.services.pjud_dueno_service import causa_asignada
 from app.services.pjud_service import (
     _ESTADOS_SINCRONIZANDO,
     PjudApiError,
@@ -102,11 +103,27 @@ def _es_terminal(competencia: str, datos: Any) -> bool:
     return True
 
 
-def _con_abogado_asignado(db: Session, servicio, competencia: str, cuerpo: dict) -> dict:
+def _credenciales_del_dueno(db: Session, causa) -> Optional[dict]:
+    if causa is None:
+        return None
+    try:
+        return credenciales_del_dueno(db, causa)
+    except Exception:
+        logger.exception("No se pudieron leer las credenciales del abogado asignado")
+        db.rollback()
+        return None
+
+
+def _con_abogado_asignado(
+    db: Session, servicio, competencia: str, cuerpo: dict, causa=None
+) -> dict:
     """El cuerpo a reenviar: si la causa tiene abogado asignado con su clave del OJV
     cargada, se usan SUS credenciales aunque el integrador mande otras; las del
-    integrador solo valen cuando no hay dueño (o no se puede saber cuál es)."""
-    credenciales = credenciales_del_abogado_asignado(db, servicio, competencia, cuerpo)
+    integrador solo valen cuando no hay dueño (o no se puede saber cuál es).
+    `causa` es la ya resuelta con `causa_asignada` (se resuelve acá si no se pasa)."""
+    if causa is None:
+        causa = causa_asignada(db, servicio, competencia, cuerpo)
+    credenciales = _credenciales_del_dueno(db, causa)
     if credenciales is None:
         return cuerpo
     logger.info("Espejo PJUD %s: se usan las credenciales del abogado asignado", competencia)
@@ -149,14 +166,45 @@ def _consultar(ruta: str, competencia: str, cuerpo: dict, db: Session) -> Respon
     return _json(texto)
 
 
+def _identidad(competencia: str, cuerpo: dict) -> tuple[Optional[str], Optional[str]]:
+    """(rol, tribunal) con que se registra el job: completos (`C-1234-2026`,
+    `90/276`) para distinguir causas con el mismo número en otro año o tribunal."""
+    partes = [str(cuerpo.get(k) or "").strip() for k in ("tipo", "rol", "anio")]
+    rol = "-".join(p for p in partes if p)[:50] or None
+    tribunal = "/".join(str(cuerpo.get(k) if cuerpo.get(k) is not None else "") for k in ("corte", "tribunal"))
+    return rol, tribunal[:255] if tribunal != "/" else None
+
+
 def _sincronizar(
     competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto
 ) -> dict:
     servicio = _servicio()
+    materia = COMPETENCIAS[competencia][0]
+    rol, tribunal = _identidad(competencia, cuerpo)
+    causa = causa_asignada(db, servicio, competencia, cuerpo)
+    causa_id = getattr(causa, "id", None)
+    jobs = PjudSincronizacionRepository(db_maestra)
+
+    # Un sync ya en curso de esta causa (lo pidió el integrador, o la app) no se repite:
+    # cada envío es otra sesión en el OJV con la misma clave, y varias a la vez terminan
+    # bloqueadas por "múltiples conexiones", además de un callback por cada una.
+    try:
+        previo = jobs.en_curso(
+            cliente_id=tenant.cliente_id, materia=materia, causa_id=causa_id,
+            rol=rol, tribunal=tribunal,
+        )
+    except Exception:
+        db_maestra.rollback()
+        logger.exception("No se pudo leer pjud_sincronizacion")
+        previo = None
+    if previo is not None:
+        logger.info("Espejo PJUD %s: sync ya en curso (job %s), no se reenvía", competencia, previo.job_id)
+        return {"job_id": previo.job_id}
+
     # El callback es siempre el nuestro (cierra el job en `pjud_sincronizacion`):
     # el que mande el sistema externo se ignora.
     envio = {
-        **_con_abogado_asignado(db, servicio, competencia, cuerpo),
+        **_con_abogado_asignado(db, servicio, competencia, cuerpo, causa),
         "callback_url": servicio.callback_url(),
     }
     try:
@@ -170,13 +218,13 @@ def _sincronizar(
     job_id = str((respuesta or {}).get("job_id") or "").strip() if isinstance(respuesta, dict) else ""
     if job_id:
         try:
-            PjudSincronizacionRepository(db_maestra).registrar(
+            jobs.registrar(
                 job_id=job_id,
                 cliente_id=tenant.cliente_id,
-                causa_id=None,
-                materia=COMPETENCIAS[competencia][0],
-                rol=str(cuerpo.get("rol") or "")[:50] or None,
-                tribunal=str(cuerpo.get("tribunal") or "")[:255] or None,
+                causa_id=causa_id,
+                materia=materia,
+                rol=rol,
+                tribunal=tribunal,
             )
         except Exception:
             db_maestra.rollback()

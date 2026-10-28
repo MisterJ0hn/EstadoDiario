@@ -117,6 +117,40 @@ class PjudSincronizacionRepository:
             creado = creado.replace(tzinfo=timezone.utc)
         return datetime.now(timezone.utc) - creado > VENCIMIENTO
 
+    def en_curso(
+        self,
+        *,
+        cliente_id: Optional[int],
+        materia: Optional[str],
+        causa_id: Optional[int] = None,
+        rol: Optional[str] = None,
+        tribunal: Optional[str] = None,
+    ) -> Optional[PjudSincronizacion]:
+        """Job `sincronizando` (no vencido) de esa causa, para no encolar otro encima.
+        Se reconoce por `causa_id` o, si el job se encoló sin él (espejo de api-pjud),
+        por `materia` + `rol` + `tribunal` tal como se registraron."""
+        coincide = []
+        if causa_id is not None:
+            coincide.append(PjudSincronizacion.causa_id == causa_id)
+        if rol and tribunal:
+            coincide.append(
+                (PjudSincronizacion.rol == rol) & (PjudSincronizacion.tribunal == tribunal)
+            )
+        if not coincide:
+            return None
+        filas = (
+            self.db.query(PjudSincronizacion)
+            .filter(
+                PjudSincronizacion.cliente_id == cliente_id,
+                PjudSincronizacion.estado == SINCRONIZANDO,
+                self._materia_de(materia == "Apelaciones"),
+                or_(*coincide),
+            )
+            .order_by(PjudSincronizacion.creado_en.desc(), PjudSincronizacion.id.desc())
+            .all()
+        )
+        return next((f for f in filas if not self.vencida(f)), None)
+
     def ultimo_de_causa(
         self, *, cliente_id: Optional[int], causa_id: int, apelaciones: bool = False
     ) -> Optional[PjudSincronizacion]:

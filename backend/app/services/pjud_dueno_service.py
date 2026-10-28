@@ -72,7 +72,7 @@ def _unico_rut(ruts: list[Optional[str]]) -> Optional[str]:
 
 def _por_causa(
     db: Session, servicio: PjudService, competencia: str, cuerpo: dict
-) -> Optional[Causa]:
+) -> Optional[SimpleNamespace]:
     numero, anio = _entero(cuerpo.get("rol")), _entero(cuerpo.get("anio"))
     tipo = str(cuerpo.get("tipo") or "").strip().upper()
     origen_id = ultimo_origen_causas_id(db)
@@ -99,9 +99,14 @@ def _por_causa(
         objetivo = _normalizar(tribunal)
         candidatas = [c for c in candidatas if _normalizar(c.tribunal or "") == objetivo]
 
-    if not candidatas or _unico_rut([c.rut_efectivo for c in candidatas]) is None:
+    rut = _unico_rut([c.rut_efectivo for c in candidatas]) if candidatas else None
+    if rut is None:
         return None
-    return candidatas[0]
+    # El id solo si la causa es una sola: con Familia (sin tribunal) pueden calzar
+    # varias del mismo abogado y no se sabe cuál pidió el integrador.
+    return SimpleNamespace(
+        id=candidatas[0].id if len(candidatas) == 1 else None, rut_efectivo=rut
+    )
 
 
 def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
@@ -135,7 +140,30 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
     candidatas = [f for f in filas if coincide(f)]
     ruts = [f.estado_diario_origen.rut if f.estado_diario_origen else None for f in candidatas]
     rut = _unico_rut(ruts) if candidatas else None
-    return SimpleNamespace(rut_efectivo=rut) if rut else None
+    return (
+        SimpleNamespace(id=candidatas[0].id if len(candidatas) == 1 else None, rut_efectivo=rut)
+        if rut else None
+    )
+
+
+def causa_asignada(
+    db: Session, servicio: PjudService, competencia: str, cuerpo: dict
+) -> Optional[SimpleNamespace]:
+    """`SimpleNamespace(id, rut_efectivo)` de la causa que pide `cuerpo`, o `None` si no
+    se puede determinar (ver el docstring del módulo). `id` es `None` si calzan varias
+    causas del mismo abogado; en Apelaciones es el id de `causa_corte`."""
+    try:
+        return (
+            _por_corte(db, cuerpo)
+            if competencia == "apelaciones"
+            else _por_causa(db, servicio, competencia, cuerpo)
+        )
+    except Exception:
+        # Resolver al dueño es una mejora: si falla, el espejo sigue con lo que mandó
+        # el integrador en vez de tumbar la consulta.
+        logger.exception("No se pudo resolver la causa asignada de la consulta PJUD")
+        db.rollback()
+        return None
 
 
 def credenciales_del_abogado_asignado(
@@ -143,16 +171,12 @@ def credenciales_del_abogado_asignado(
 ) -> Optional[dict]:
     """`{"rut", "clave", "metodo_login"}` del abogado asignado a la causa que pide
     `cuerpo`, o `None` si no se puede determinar (ver el docstring del módulo)."""
+    causa = causa_asignada(db, servicio, competencia, cuerpo)
+    if causa is None:
+        return None
     try:
-        causa = (
-            _por_corte(db, cuerpo)
-            if competencia == "apelaciones"
-            else _por_causa(db, servicio, competencia, cuerpo)
-        )
-        return credenciales_del_dueno(db, causa) if causa is not None else None
+        return credenciales_del_dueno(db, causa)
     except Exception:
-        # Resolver al dueño es una mejora: si falla, el espejo sigue con lo que mandó
-        # el integrador en vez de tumbar la consulta.
-        logger.exception("No se pudo resolver el abogado asignado de la consulta PJUD")
+        logger.exception("No se pudieron leer las credenciales del abogado asignado")
         db.rollback()
         return None
