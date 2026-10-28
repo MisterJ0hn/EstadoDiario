@@ -34,6 +34,7 @@ from app.repositories.pjud_copia_repository import (
     clave_de,
 )
 from app.repositories.pjud_sincronizacion_repository import PjudSincronizacionRepository
+from app.services.pjud_dueno_service import credenciales_del_abogado_asignado
 from app.services.pjud_service import (
     _ESTADOS_SINCRONIZANDO,
     PjudApiError,
@@ -101,6 +102,17 @@ def _es_terminal(competencia: str, datos: Any) -> bool:
     return True
 
 
+def _con_abogado_asignado(db: Session, servicio, competencia: str, cuerpo: dict) -> dict:
+    """El cuerpo a reenviar: si la causa tiene abogado asignado con su clave del OJV
+    cargada, se usan SUS credenciales aunque el integrador mande otras; las del
+    integrador solo valen cuando no hay dueño (o no se puede saber cuál es)."""
+    credenciales = credenciales_del_abogado_asignado(db, servicio, competencia, cuerpo)
+    if credenciales is None:
+        return cuerpo
+    logger.info("Espejo PJUD %s: se usan las credenciales del abogado asignado", competencia)
+    return {**cuerpo, **credenciales}
+
+
 def _json(texto: str) -> Response:
     return Response(
         content=PjudService.reescribir_documentos(texto), media_type="application/json"
@@ -117,8 +129,11 @@ def _consultar(ruta: str, competencia: str, cuerpo: dict, db: Session) -> Respon
     if copia is not None:
         return _json(copia.respuesta)
 
+    servicio = _servicio()
     try:
-        datos = _servicio().reenviar(ruta, cuerpo)
+        # Los movimientos solo traen `identificador`: no hay de dónde sacar al dueño.
+        envio = cuerpo if es_movimientos else _con_abogado_asignado(db, servicio, competencia, cuerpo)
+        datos = servicio.reenviar(ruta, envio)
     except PjudApiError as e:
         raise _error_http(e)
 
@@ -140,7 +155,10 @@ def _sincronizar(
     servicio = _servicio()
     # El callback es siempre el nuestro (cierra el job en `pjud_sincronizacion`):
     # el que mande el sistema externo se ignora.
-    envio = {**cuerpo, "callback_url": servicio.callback_url()}
+    envio = {
+        **_con_abogado_asignado(db, servicio, competencia, cuerpo),
+        "callback_url": servicio.callback_url(),
+    }
     try:
         respuesta = servicio.reenviar(f"/sincronizar_{competencia}", envio)
     except PjudApiError as e:

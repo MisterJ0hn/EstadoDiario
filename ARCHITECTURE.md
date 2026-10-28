@@ -467,6 +467,16 @@ Competencias: `civil`, `familia`, `laboral`, `cobranza`, `penal`, `apelaciones`.
   `causa.estado` deje de ser `sincronizando`.
 - **Credenciales del OJV** (`rut`, `clave`, `metodo_login`): opcionales, como en api-pjud;
   viajan al proveedor pero **no se guardan ni forman parte de la clave de la copia**.
+  **Gana el abogado asignado** (`app/services/pjud_dueno_service.py`): en `sincronizar_*`
+  y en `consultar_<competencia>` (cuando hace falta ir al proveedor) se busca la causa en la
+  cartera vigente a partir del cuerpo y, si tiene dueño con su clave del OJV cargada
+  (`credenciales_del_dueno`), se usan SUS credenciales aunque el integrador mande otras. Las
+  del integrador solo valen cuando no hay dueño. La causa se encuentra así: rol
+  (`tipo-rol-anio`, o `rol-anio` en Penal) más el tribunal que dan los ids de `corte`/`tribunal`
+  según el catálogo; Familia (`0/0`) por rol y año; Apelaciones por corte, rol y era, con el
+  dueño del archivo de origen. **Ante la duda no hay dueño** (causa ausente, o varias con
+  dueños distintos o alguno sin dueño). `consultar_movimientos_*` no resuelve dueño: solo
+  trae el `identificador`.
 - **Documentos.** Las URLs absolutas del proveedor (`…/public/…`) salen reescritas a
   `<PUBLIC_BASE_URL>/api/v1/pjud/public/…`; los nombres relativos quedan igual. El GET
   reutiliza `PjudService.abrir_documento` (solo sirve rutas `/public/` del proveedor).
