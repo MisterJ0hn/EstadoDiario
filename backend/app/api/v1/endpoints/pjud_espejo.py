@@ -214,6 +214,30 @@ def _agregar_consultas(competencia: str) -> None:
 
 _registrar_rutas()
 
+# Competencias con catálogo de tribunales en api-pjud. Familia (se consulta con
+# `corte: 0, tribunal: 0`) y Apelaciones (`corte` es el nombre) no tienen.
+_CON_CATALOGO = ("civil", "laboral", "cobranza", "penal")
+
+
+@router.get(
+    "/catalogo/tribunales",
+    summary="Cortes y tribunales (ids para `corte` y `tribunal`), igual que api-pjud",
+)
+def catalogo_tribunales(
+    competencia: str,
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    if competencia not in _CON_CATALOGO:
+        # api-pjud responde 400 "Error en campo [competencia]" en estos casos.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error en campo [competencia]: use una de {', '.join(_CON_CATALOGO)}",
+        )
+    try:
+        return {"cortes": _servicio().catalogo_tribunales(competencia)}
+    except PjudApiError as e:
+        raise _error_http(e)
+
 
 @router.get(
     "/public/{identificador}/{cuaderno}/{archivo:path}",

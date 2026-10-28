@@ -50,6 +50,10 @@ class FalsoPjud:
 
     reescribir_documentos = staticmethod(PjudService.reescribir_documentos)
 
+    def catalogo_tribunales(self, competencia):
+        FalsoPjud.llamados.append(("catalogo", competencia))
+        return [{"id": 90, "nombre": "C.A. de Santiago", "tribunales": [{"id": 276, "nombre": "1° Juzgado Civil"}]}]
+
 
 @pytest.fixture()
 def bases():
@@ -188,6 +192,22 @@ class TestSincronizar:
     def test_409_se_propaga(self, http):
         FalsoPjud.respuestas["/sincronizar_civil"] = PjudConflicto("ya en curso")
         assert http.post("/pjud/sincronizar_civil", json=CUERPO).status_code == 409
+
+
+class TestCatalogo:
+    @pytest.mark.parametrize("competencia", ["civil", "laboral", "cobranza", "penal"])
+    def test_entrega_los_ids_con_la_forma_de_api_pjud(self, http, competencia):
+        r = http.get("/pjud/catalogo/tribunales", params={"competencia": competencia})
+        assert r.status_code == 200
+        assert r.json()["cortes"][0]["tribunales"][0] == {"id": 276, "nombre": "1° Juzgado Civil"}
+
+    @pytest.mark.parametrize("competencia", ["familia", "apelaciones", "otra"])
+    def test_sin_catalogo_da_400_como_api_pjud(self, http, competencia):
+        r = http.get("/pjud/catalogo/tribunales", params={"competencia": competencia})
+        assert r.status_code == 400
+
+    def test_competencia_es_obligatoria(self, http):
+        assert http.get("/pjud/catalogo/tribunales").status_code == 422
 
 
 class TestRepositorio:

@@ -200,8 +200,11 @@ def test_sincronizar_en_el_espejo_exige_escritura_y_se_audita():
     assert not api_key.es_lectura("POST", path)
 
 
-def test_los_documentos_del_espejo_se_leen_por_get():
-    path = "/api/v1/pjud/public/abc/1/a.pdf"
+@pytest.mark.parametrize("path", [
+    "/api/v1/pjud/public/abc/1/a.pdf",
+    "/api/v1/pjud/catalogo/tribunales",
+])
+def test_documentos_y_catalogo_del_espejo_se_leen_por_get(path):
     assert api_key.motivo_de_denegacion("GET", path, permite_escritura=False) is None
 
 

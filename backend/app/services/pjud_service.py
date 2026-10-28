@@ -316,6 +316,12 @@ class PjudService:
                 PjudService._catalogo_ts[competencia] = time.monotonic()
             return PjudService._catalogo.get(competencia) or []
 
+    def catalogo_tribunales(self, competencia: str) -> list[dict]:
+        """Cortes y tribunales de api-pjud de esa competencia, tal como los entrega
+        `/catalogo/tribunales` (cacheados por proceso). Lo expone el espejo para que
+        un sistema externo obtenga los ids que piden `consultar_*` y `sincronizar_*`."""
+        return self._obtener_catalogo(competencia)
+
     def resolver_tribunal(
         self, nombre_tribunal: str, competencia: str = "civil"
     ) -> tuple[int, int]:

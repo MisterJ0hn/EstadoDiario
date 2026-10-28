@@ -450,6 +450,7 @@ base y el header: `X-API-Key` en vez de `Authorization: Bearer`.
 | `POST /consultar_movimientos_<competencia>` | `POST /api/v1/pjud/consultar_movimientos_<competencia>` |
 | `POST /sincronizar_<competencia>` | `POST /api/v1/pjud/sincronizar_<competencia>` |
 | `GET /public/<identificador>/<cuaderno>/<archivo>` | `GET /api/v1/pjud/public/<identificador>/<cuaderno>/<archivo>` |
+| `GET /catalogo/tribunales?competencia=` | `GET /api/v1/pjud/catalogo/tribunales?competencia=` |
 
 Competencias: `civil`, `familia`, `laboral`, `cobranza`, `penal`, `apelaciones`.
 `app/api/v1/endpoints/pjud_espejo.py`.
@@ -469,6 +470,11 @@ Competencias: `civil`, `familia`, `laboral`, `cobranza`, `penal`, `apelaciones`.
 - **Documentos.** Las URLs absolutas del proveedor (`…/public/…`) salen reescritas a
   `<PUBLIC_BASE_URL>/api/v1/pjud/public/…`; los nombres relativos quedan igual. El GET
   reutiliza `PjudService.abrir_documento` (solo sirve rutas `/public/` del proveedor).
+- **`corte` y `tribunal`.** El espejo reenvía el cuerpo tal cual (no deduce nada del rol ni
+  hay un `causa_id`). Civil, Laboral, Cobranza y Penal piden los ids del catálogo
+  (`/catalogo/tribunales`, `competencia=civil|laboral|cobranza|penal`; en otro caso, 400);
+  Familia se consulta con `corte: 0, tribunal: 0`; Apelaciones lleva `corte` con el
+  nombre de la corte y no lleva `tribunal`.
 - **Errores** como en api-pjud: 404 (no tiene la causa: sincronízala), 409 (sync en curso
   o muy pronto); cualquier otra falla del proveedor, 502.
 - **Permisos.** Las consultas por POST cuentan como lectura para cualquier key y no se
