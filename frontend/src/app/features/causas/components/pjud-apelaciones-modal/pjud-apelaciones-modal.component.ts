@@ -131,7 +131,7 @@ const INTERVALO_POLL_MS = 5000;
                 </div>
               }
 
-              @if ((d.estado === 'listo' || d.estado === 'sincronizando') && d.causa; as c) {
+              @if ((d.estado === 'listo' || d.estado === 'sincronizando' || d.estado === 'error') && d.causa; as c) {
 
                 <!-- ── Vista: el recurso o el expediente de primera instancia ──── -->
                 <div class="border-b border-neutral-200">

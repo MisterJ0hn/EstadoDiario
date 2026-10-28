@@ -1098,13 +1098,26 @@ def _detalle_pjud(db_maestra, tenant, *, causa_id, materia, rol, tribunal, forza
                 "diagnostico": f"estado desde BD: sincronizando job_id={sincronizacion.job_id}",
             }
         if sincronizacion and sincronizacion.estado == SINC_ERROR:
-            return {
+            error = {
                 "estado": "error",
                 "mensaje": _MENSAJE_ERROR_SYNC,
                 "detalle_estado": sincronizacion.mensaje_error,
                 "ultimo_error": sincronizacion.mensaje_error,
                 "diagnostico": f"estado desde BD: error job_id={sincronizacion.job_id}",
             }
+            # Que el job haya fallado no borra lo que api-pjud ya tenía de la
+            # causa: se lee con `consultar_*` (sin encolar otro sync) y se
+            # entrega junto al error, para que la pantalla muestre ambos.
+            try:
+                servicio = PjudService()
+                servicio.solo_lectura = True
+                datos = consultar(servicio)
+            except Exception:
+                logger.exception("No se pudieron leer los datos previos de la causa %s", causa_id)
+                return error
+            if not datos.get("causa"):
+                return error
+            return {**datos, **error, "diagnostico": f"{error['diagnostico']} · {datos.get('diagnostico')}"}
 
     servicio = PjudService()
     try:

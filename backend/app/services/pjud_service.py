@@ -160,6 +160,10 @@ class PjudService:
         # instancia (None si no encoló ninguno). El endpoint lo guarda en
         # `pjud_sincronizacion` para cerrarlo cuando llegue el callback.
         self.job_id: Optional[str] = None
+        # True = solo leer (`consultar_*`): `_sincronizar` no encola nada. Lo usa
+        # el endpoint para mostrar los datos ya guardados de una causa cuya
+        # última sincronización quedó en error, sin disparar otro job.
+        self.solo_lectura: bool = False
 
     @staticmethod
     def callback_url() -> str:
@@ -378,6 +382,8 @@ class PjudService:
         Best-effort: un 409 (ya en curso) o cualquier otra falla acá no corta la
         pantalla. Devuelve una nota corta de qué pasó, para el log de
         diagnóstico (no se le muestra al usuario)."""
+        if self.solo_lectura:
+            return f"sincronizar_{competencia}: omitido (solo lectura)"
         cuerpo = {
             **self._con_credenciales(cuerpo_causa, credenciales),
             "callback_url": self.callback_url(),

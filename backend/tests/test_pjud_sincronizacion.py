@@ -142,13 +142,34 @@ class TestDetallePjud:
 
         assert self._llamar(db, no_debe_llamarse)["estado"] == "sincronizando"
 
-    def test_error_en_bd_devuelve_el_mensaje(self, db):
+    def _con_error_en_bd(self, db, monkeypatch):
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
         repo = PjudSincronizacionRepository(db)
         _registrar(repo)
         repo.cerrar("job-1", exito=False, mensaje_error="No fue posible conectar con pjud")
-        resultado = self._llamar(db, lambda s: pytest.fail("no debía consultar"))
+
+    def test_error_en_bd_sin_datos_devuelve_el_mensaje(self, db, monkeypatch):
+        self._con_error_en_bd(db, monkeypatch)
+        resultado = self._llamar(db, lambda s: {"estado": "sincronizando", "causa": None})
         assert resultado["estado"] == "error"
         assert resultado["ultimo_error"] == "No fue posible conectar con pjud"
+        assert not resultado.get("causa")
+
+    def test_error_en_bd_conserva_los_datos_ya_guardados(self, db, monkeypatch):
+        self._con_error_en_bd(db, monkeypatch)
+        vistos = []
+
+        def consultar(servicio):
+            vistos.append(servicio.solo_lectura)
+            return {"estado": "listo", "causa": {"rol": "C-1-2026"}, "historia": [{"folio": 1}]}
+
+        resultado = self._llamar(db, consultar)
+        assert vistos == [True]  # lee, sin encolar otro sincronizar_*
+        assert resultado["estado"] == "error"
+        assert resultado["ultimo_error"] == "No fue posible conectar con pjud"
+        assert resultado["causa"] == {"rol": "C-1-2026"}
+        assert resultado["historia"] == [{"folio": 1}]
 
     def test_forzar_salta_el_atajo_y_guarda_el_job_nuevo(self, db, monkeypatch):
         monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")

@@ -189,7 +189,7 @@ const INTERVALO_POLL_MS = 5000;
                 </div>
               }
 
-              @if ((d.estado === 'listo' || d.estado === 'sincronizando') && d.causa; as c) {
+              @if ((d.estado === 'listo' || d.estado === 'sincronizando' || d.estado === 'error') && d.causa; as c) {
 
                 <!-- ── Panel de datos de la causa ──── -->
                 <div class="rounded-lg border border-neutral-200 bg-neutral-50">
