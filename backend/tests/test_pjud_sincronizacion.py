@@ -193,6 +193,62 @@ class TestDetallePjud:
         assert self._llamar(db, lambda s: {"estado": "listo"})["estado"] == "listo"
 
 
+class TestSincronizarDesdeLaApp:
+    """`PjudService._sincronizar` reserva el cupo de la causa antes de llamar a api-pjud."""
+
+    CUERPO = {"corte": 90, "tribunal": 276, "tipo": "C", "rol": 1, "anio": 2026}
+
+    @pytest.fixture()
+    def servicio(self, db, monkeypatch):
+        import types
+        from app.services.pjud_service import PjudService
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
+        s = PjudService()
+        s.llamados = []
+        s.respuesta = {"job_id": "job-1"}
+
+        def _request(metodo, ruta, **kw):
+            s.llamados.append(ruta)
+            if isinstance(s.respuesta, Exception):
+                raise s.respuesta
+            return s.respuesta
+
+        monkeypatch.setattr(s, "_request", _request)
+        s.guardia = causas._GuardiaSync(
+            PjudSincronizacionRepository(db), db, cliente_id=None, causa_id=10,
+            materia="Civil", rol="C-1-2026", tribunal="1° Juzgado",
+        )
+        return s
+
+    def test_confirma_la_reserva_con_el_job_id_real(self, db, servicio):
+        servicio._sincronizar(self.CUERPO, None)
+        filas = db.query(PjudSincronizacion).all()
+        assert [(f.job_id, f.estado) for f in filas] == [("job-1", SINCRONIZANDO)]
+        assert servicio.guardia.registrado
+
+    def test_con_un_sync_en_curso_no_llama_al_proveedor(self, db, servicio):
+        _registrar(PjudSincronizacionRepository(db), "job-0")
+        nota = servicio._sincronizar(self.CUERPO, None)
+        assert "omitido" in nota and servicio.llamados == []
+
+    def test_dos_seguidos_envian_uno_solo(self, db, servicio):
+        servicio._sincronizar(self.CUERPO, None)
+        servicio._sincronizar(self.CUERPO, None)
+        assert servicio.llamados == ["/sincronizar_civil"]
+
+    def test_si_el_proveedor_rechaza_suelta_el_cupo(self, db, servicio):
+        from app.services.pjud_service import PjudConflicto
+        servicio.respuesta = PjudConflicto("ocupado")
+        servicio._sincronizar(self.CUERPO, None)
+        assert db.query(PjudSincronizacion).count() == 0
+
+    def test_sin_job_id_suelta_el_cupo(self, db, servicio):
+        servicio.respuesta = {}
+        servicio._sincronizar(self.CUERPO, None)
+        assert db.query(PjudSincronizacion).count() == 0
+
+
 class TestSincronizarParaIntegradores:
     """`POST /causas/{id}/pjud/sincronizar` y `GET /causas/{id}/pjud/estado`."""
 

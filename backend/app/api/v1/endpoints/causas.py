@@ -1291,6 +1291,42 @@ def pjud_callback(
     return PjudCallbackResponse(exito=fila is not None)
 
 
+class _GuardiaSync:
+    """Reserva del cupo de sync de una causa para `PjudService._sincronizar`.
+
+    Comparte `PjudSincronizacionRepository.reservar` con el espejo, así que la app
+    y el integrador no se pisan. `confirmar` y `liberar` nunca lanzan."""
+
+    def __init__(self, repo, db_maestra, *, cliente_id, causa_id, materia, rol, tribunal):
+        self._repo, self._db = repo, db_maestra
+        self._datos = dict(
+            cliente_id=cliente_id, causa_id=causa_id, materia=materia, rol=rol, tribunal=tribunal
+        )
+        self.registrado = False  # el job ya quedó guardado con su job_id real
+
+    def reservar(self):
+        """La reserva, o None si ya hay un sync en curso de la causa."""
+        fila, nueva = self._repo.reservar(**self._datos)
+        return fila if nueva else None
+
+    def confirmar(self, reserva, job_id: str) -> bool:
+        try:
+            self._repo.confirmar(reserva, job_id)
+        except Exception:
+            self._db.rollback()
+            logger.exception("No se pudo confirmar el job %s de api-pjud", job_id)
+            return False
+        self.registrado = True
+        return True
+
+    def liberar(self, reserva) -> None:
+        try:
+            self._repo.liberar(reserva)
+        except Exception:
+            self._db.rollback()
+            logger.exception("No se pudo soltar la reserva de sync (vence sola)")
+
+
 def _detalle_pjud(
     db_maestra, tenant, *, causa_id, materia, rol, tribunal, forzar, consultar, db=None
 ) -> dict:
@@ -1347,11 +1383,16 @@ def _detalle_pjud(
             return {**datos, **error, "diagnostico": f"{error['diagnostico']} · {datos.get('diagnostico')}"}
 
     servicio = PjudService()
+    guardia = _GuardiaSync(
+        repo, db_maestra, cliente_id=tenant.cliente_id, causa_id=causa_id,
+        materia=materia, rol=rol, tribunal=tribunal,
+    )
+    servicio.guardia = guardia
     try:
         return consultar(servicio)
     finally:
         _descartar_copias(db, servicio)
-        if servicio.job_id:
+        if servicio.job_id and not guardia.registrado:
             try:
                 repo.registrar(
                     job_id=servicio.job_id,

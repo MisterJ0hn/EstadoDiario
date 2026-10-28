@@ -167,6 +167,12 @@ class PjudService:
         # `(competencia, cuerpo_causa)` de cada `sincronizar_*` que api-pjud aceptó
         # en esta instancia. El endpoint lo usa para descartar la copia del espejo.
         self.encolados: list[tuple[str, dict]] = []
+        # Reserva del cupo de sync de la causa (ver `PjudSincronizacionRepository.reservar`).
+        # Si el endpoint la pone, `_sincronizar` reserva ANTES de llamar a api-pjud: sin
+        # eso, dos consultas simultáneas de la misma causa encolan las dos. Tiene
+        # `reservar()` (None = ya hay uno en curso), `confirmar(reserva, job_id)` y
+        # `liberar(reserva)`; estos dos nunca lanzan.
+        self.guardia = None
 
     @staticmethod
     def callback_url() -> str:
@@ -421,12 +427,25 @@ class PjudService:
             f"body={self._cuerpo_para_log(cuerpo_causa, credenciales)} "
             f"callback_url={cuerpo['callback_url']}"
         )
+        reserva = None
+        if self.guardia is not None:
+            try:
+                reserva = self.guardia.reservar()
+            except Exception:
+                # Reservar es una mejora: si falla se envía como antes.
+                logger.exception("PJUD: no se pudo reservar el sync, se envía sin reserva")
+            else:
+                if reserva is None:
+                    return f"sincronizar_{competencia}: omitido (ya hay un sync en curso de esta causa)"
+        confirmada = False
         try:
             respuesta = self._request("POST", ruta, json=cuerpo)
             self.encolados.append((competencia, dict(cuerpo_causa)))
             job_id = str((respuesta or {}).get("job_id") or "").strip() or None
             if job_id:
                 self.job_id = job_id
+                if reserva is not None:
+                    confirmada = self.guardia.confirmar(reserva, job_id)
                 return f"sincronizar_{competencia}: 200 (encolado) job_id={job_id} {enviado}"
             return f"sincronizar_{competencia}: 200 (encolado, sin job_id) {enviado}"
         except PjudConflicto:
@@ -437,6 +456,10 @@ class PjudService:
         except PjudApiError as e:
             logger.warning("PJUD: %s falló, se sigue igual: %s", ruta, e)
             return f"sincronizar_{competencia}: error ({e}) {enviado}"
+        finally:
+            # Sin job no habrá callback que cierre la reserva: se devuelve el cupo.
+            if reserva is not None and not confirmada:
+                self.guardia.liberar(reserva)
 
     @_diagnostico_en_error
     def obtener_detalle(

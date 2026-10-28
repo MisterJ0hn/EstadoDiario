@@ -38,7 +38,10 @@ from app.repositories.pjud_copia_repository import (
     PjudCopiaRepository,
     clave_de,
 )
-from app.repositories.pjud_sincronizacion_repository import PjudSincronizacionRepository
+from app.repositories.pjud_sincronizacion_repository import (
+    PREFIJO_RESERVA,
+    PjudSincronizacionRepository,
+)
 from app.core.credenciales_pjud import credenciales_del_dueno
 from app.services.pjud_dueno_service import causa_asignada
 from app.services.pjud_service import (
@@ -224,7 +227,17 @@ def _encolar(
     if previo is not None:
         logger.info("Espejo PJUD %s: sync ya en curso (job %s), no se reenvía", competencia, previo.job_id)
         nota.update(resultado="ya_en_curso", http_status=200, diagnostico=f"ya en curso job_id={previo.job_id}; no se reenvió")
-        return {"job_id": previo.job_id}
+        # Se le avisa a la integración que ya hay una sincronización en proceso de esta
+        # causa y que no se envió otra. Si el primer envío aún no tiene `job_id` real
+        # (api-pjud no ha respondido), no se le entrega el provisorio.
+        real = not previo.job_id.startswith(PREFIJO_RESERVA)
+        return {
+            "job_id": previo.job_id if real else None,
+            "estado": "sincronizando",
+            "ya_en_curso": True,
+            "mensaje": "Ya hay una sincronización en proceso de esta causa; no se envió otra. "
+            "Espera a que termine para volver a sincronizar.",
+        }
 
     # El callback es siempre el nuestro (cierra el job en `pjud_sincronizacion`):
     # el que mande el sistema externo se ignora.

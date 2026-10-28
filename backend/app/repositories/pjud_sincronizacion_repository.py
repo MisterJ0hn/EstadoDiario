@@ -18,6 +18,10 @@ SINCRONIZANDO = "sincronizando"
 LISTO = "listo"
 ERROR = "error"
 
+# `job_id` provisorio de un envío que api-pjud todavía no respondió (ver `reservar`).
+# No es un job real: no se le entrega a nadie.
+PREFIJO_RESERVA = "reserva-"
+
 # Si el callback nunca llega (api-pjud caído, URL inalcanzable) la causa no puede
 # quedar "sincronizando" para siempre: pasado este plazo se ignora la fila y se
 # vuelve a consultar al proveedor. Es el `sincronizacion_en_curso` de api-pjud.
@@ -88,7 +92,7 @@ class PjudSincronizacionRepository:
             self.db.rollback()  # suelta el candado
             return previo, False
         fila = self.registrar(
-            job_id=f"reserva-{uuid.uuid4().hex}",
+            job_id=f"{PREFIJO_RESERVA}{uuid.uuid4().hex}",
             cliente_id=cliente_id, causa_id=causa_id,
             materia=materia, rol=rol, tribunal=tribunal,
         )

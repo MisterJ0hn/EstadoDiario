@@ -195,7 +195,11 @@ class TestSincronizar:
         FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
         primero = http.post("/pjud/sincronizar_civil", json=CUERPO)
         segundo = http.post("/pjud/sincronizar_civil", json={**CUERPO, "rut": "1-9", "clave": "x"})
-        assert primero.json() == segundo.json() == {"job_id": "job-1"}
+        assert primero.json() == {"job_id": "job-1"}
+        assert segundo.status_code == 200
+        assert segundo.json()["job_id"] == "job-1"
+        assert segundo.json()["ya_en_curso"] is True and segundo.json()["estado"] == "sincronizando"
+        assert "en proceso" in segundo.json()["mensaje"]
         assert len(_llamadas("/sincronizar_civil")) == 1
 
     def test_otra_causa_o_otro_anio_si_se_encola(self, http):
@@ -232,7 +236,9 @@ class TestSincronizar:
         )
         FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-2"}
         r = http.post("/pjud/sincronizar_civil", json=CUERPO)
-        assert r.status_code == 200 and r.json()["job_id"].startswith("reserva-")
+        assert r.status_code == 200
+        assert r.json()["job_id"] is None  # el provisorio no se entrega
+        assert r.json()["estado"] == "sincronizando" and r.json()["ya_en_curso"] is True
         assert _llamadas("/sincronizar_civil") == []
 
     def test_la_reserva_se_suelta_si_el_proveedor_rechaza(self, http, bases):
