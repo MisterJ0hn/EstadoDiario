@@ -4,10 +4,12 @@ Los escribe `PjudService` al encolar (vía el endpoint) y el callback público d
 api-pjud al terminar. Ver `PjudSincronizacion`.
 """
 
+import uuid
+import zlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.models.maestra.pjud_sincronizacion import PjudSincronizacion
@@ -54,6 +56,64 @@ class PjudSincronizacionRepository:
         fila.actualizado_en = ahora
         self.db.commit()
         return fila
+
+    def reservar(
+        self,
+        *,
+        cliente_id: Optional[int],
+        causa_id: Optional[int],
+        materia: Optional[str],
+        rol: Optional[str],
+        tribunal: Optional[str],
+    ) -> tuple[PjudSincronizacion, bool]:
+        """`(fila, nueva)`: toma el cupo de sync de la causa **antes** de llamar a
+        api-pjud. Si ya hay uno en curso devuelve ese con `nueva=False`.
+
+        Sin esto, `en_curso` + enviar + `registrar` no es atómico: el job recién
+        existe cuando api-pjud responde, y una ráfaga de la misma causa pasa
+        entera el chequeo y se envía completa. La reserva es una fila
+        `sincronizando` con un `job_id` provisorio; el candado (Postgres) hace que
+        chequear y reservar sea una sola operación entre workers, y se suelta con
+        el commit. Si el proceso muere con la reserva puesta, `VENCIMIENTO` la
+        descarta como a cualquier job sin callback."""
+        if self.db.get_bind().dialect.name == "postgresql":
+            clave = f"{cliente_id}|{materia == 'Apelaciones'}|{rol or causa_id}|{tribunal}"
+            self.db.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"), {"k": zlib.crc32(clave.encode())}
+            )
+        previo = self.en_curso(
+            cliente_id=cliente_id, materia=materia, causa_id=causa_id, rol=rol, tribunal=tribunal
+        )
+        if previo is not None:
+            self.db.rollback()  # suelta el candado
+            return previo, False
+        fila = self.registrar(
+            job_id=f"reserva-{uuid.uuid4().hex}",
+            cliente_id=cliente_id, causa_id=causa_id,
+            materia=materia, rol=rol, tribunal=tribunal,
+        )
+        return fila, True
+
+    def confirmar(self, fila: PjudSincronizacion, job_id: str) -> None:
+        """Cambia el `job_id` provisorio por el que devolvió api-pjud. Si ese job ya
+        existe (api-pjud lo repitió) la reserva sobra y se reinicia el existente."""
+        if self.por_job_id(job_id) is not None:
+            datos = dict(
+                cliente_id=fila.cliente_id, causa_id=fila.causa_id,
+                materia=fila.materia, rol=fila.rol, tribunal=fila.tribunal,
+            )
+            self.liberar(fila)
+            self.registrar(job_id=job_id, **datos)
+            return
+        fila.job_id = job_id
+        fila.actualizado_en = datetime.now(timezone.utc)
+        self.db.commit()
+
+    def liberar(self, fila: PjudSincronizacion) -> None:
+        """Suelta la reserva: api-pjud rechazó el envío o no devolvió `job_id`, así
+        que no habrá callback que la cierre."""
+        self.db.delete(fila)
+        self.db.commit()
 
     def por_job_id(self, job_id: str) -> Optional[PjudSincronizacion]:
         return (

@@ -180,6 +180,17 @@ def _identidad(competencia: str, cuerpo: dict) -> tuple[Optional[str], Optional[
     return rol, tribunal[:255] if tribunal != "/" else None
 
 
+def _soltar(jobs: PjudSincronizacionRepository, db_maestra: Session, reserva) -> None:
+    """Devuelve el cupo reservado cuando el envío no llegó a ser un job. Nunca revienta."""
+    if reserva is None:
+        return
+    try:
+        jobs.liberar(reserva)
+    except Exception:
+        db_maestra.rollback()
+        logger.exception("No se pudo soltar la reserva de sync (vence sola)")
+
+
 def _encolar(
     competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto,
     nota: dict,
@@ -196,14 +207,19 @@ def _encolar(
     # Un sync ya en curso de esta causa (lo pidió el integrador, o la app) no se repite:
     # cada envío es otra sesión en el OJV con la misma clave, y varias a la vez terminan
     # bloqueadas por "múltiples conexiones", además de un callback por cada una.
+    # El cupo se reserva ANTES de llamar a api-pjud: si se registrara al volver, una
+    # ráfaga de la misma causa pasaría entera el chequeo.
+    reserva = None
     try:
-        previo = jobs.en_curso(
-            cliente_id=tenant.cliente_id, materia=materia, causa_id=causa_id,
-            rol=rol, tribunal=tribunal,
+        previo, nueva = jobs.reservar(
+            cliente_id=tenant.cliente_id, causa_id=causa_id,
+            materia=materia, rol=rol, tribunal=tribunal,
         )
+        if nueva:
+            reserva, previo = previo, None
     except Exception:
         db_maestra.rollback()
-        logger.exception("No se pudo leer pjud_sincronizacion")
+        logger.exception("No se pudo reservar el sync en pjud_sincronizacion")
         previo = None
     if previo is not None:
         logger.info("Espejo PJUD %s: sync ya en curso (job %s), no se reenvía", competencia, previo.job_id)
@@ -219,7 +235,10 @@ def _encolar(
     nota["con_clave_del_abogado"] = envio.get("rut") != cuerpo.get("rut") or envio.get("clave") != cuerpo.get("clave")
     try:
         respuesta = servicio.reenviar(f"/sincronizar_{competencia}", envio)
-    except PjudApiError as e:
+    except BaseException as e:
+        _soltar(jobs, db_maestra, reserva)
+        if not isinstance(e, PjudApiError):
+            raise
         nota.update(
             resultado="error", http_status=409 if isinstance(e, PjudConflicto) else 502,
             mensaje=str(e), diagnostico=f"el proveedor respondió: {e}",
@@ -232,17 +251,22 @@ def _encolar(
     job_id = str((respuesta or {}).get("job_id") or "").strip() if isinstance(respuesta, dict) else ""
     if job_id:
         try:
-            jobs.registrar(
-                job_id=job_id,
-                cliente_id=tenant.cliente_id,
-                causa_id=causa_id,
-                materia=materia,
-                rol=rol,
-                tribunal=tribunal,
-            )
+            if reserva is not None:
+                jobs.confirmar(reserva, job_id)
+            else:  # la reserva falló arriba: se registra como antes
+                jobs.registrar(
+                    job_id=job_id,
+                    cliente_id=tenant.cliente_id,
+                    causa_id=causa_id,
+                    materia=materia,
+                    rol=rol,
+                    tribunal=tribunal,
+                )
         except Exception:
             db_maestra.rollback()
             logger.exception("No se pudo guardar el job %s de api-pjud", job_id)
+    else:
+        _soltar(jobs, db_maestra, reserva)  # sin job_id no habrá callback que la cierre
     nota.update(
         resultado="sincronizando", http_status=200,
         diagnostico=f"encolado job_id={job_id or '(sin job_id)'}"

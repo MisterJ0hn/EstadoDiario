@@ -225,6 +225,35 @@ class TestSincronizar:
         FalsoPjud.respuestas["/sincronizar_civil"] = PjudConflicto("ya en curso")
         assert http.post("/pjud/sincronizar_civil", json=CUERPO).status_code == 409
 
+    def test_un_envio_aun_sin_job_id_ya_ocupa_el_cupo_de_la_causa(self, http, bases):
+        """Ráfaga: el primero está en vuelo (api-pjud no respondió) y el segundo llega."""
+        PjudSincronizacionRepository(bases[1]).reservar(
+            cliente_id=1, causa_id=None, materia="Civil", rol="C-1234-2026", tribunal="90/276"
+        )
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-2"}
+        r = http.post("/pjud/sincronizar_civil", json=CUERPO)
+        assert r.status_code == 200 and r.json()["job_id"].startswith("reserva-")
+        assert _llamadas("/sincronizar_civil") == []
+
+    def test_la_reserva_se_suelta_si_el_proveedor_rechaza(self, http, bases):
+        FalsoPjud.respuestas["/sincronizar_civil"] = PjudConflicto("ocupado")
+        assert http.post("/pjud/sincronizar_civil", json=CUERPO).status_code == 409
+        assert bases[1].query(PjudSincronizacion).count() == 0
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-3"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        assert len(_llamadas("/sincronizar_civil")) == 2
+
+    def test_la_reserva_se_suelta_si_no_hay_job_id(self, http, bases):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        assert bases[1].query(PjudSincronizacion).count() == 0
+
+    def test_la_reserva_queda_con_el_job_id_real(self, http, bases):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-5"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        filas = bases[1].query(PjudSincronizacion).all()
+        assert [(f.job_id, f.estado) for f in filas] == [("job-5", "sincronizando")]
+
 
 class TestCatalogo:
     @pytest.mark.parametrize("competencia", ["civil", "laboral", "cobranza", "penal"])
