@@ -191,3 +191,84 @@ class TestDetallePjud:
         _registrar(repo)
         repo.cerrar("job-1", exito=True)
         assert self._llamar(db, lambda s: {"estado": "listo"})["estado"] == "listo"
+
+
+class TestSincronizarParaIntegradores:
+    """`POST /causas/{id}/pjud/sincronizar` y `GET /causas/{id}/pjud/estado`."""
+
+    def _tenant(self):
+        import types
+        return types.SimpleNamespace(cliente_id=None)
+
+    def _encolar(self, db, consultar, causa_id=10, materia="Civil"):
+        return causas._encolar_sincronizacion(
+            db, self._tenant(), causa_id=causa_id, materia=materia,
+            rol="C-1-2026", tribunal="1° Juzgado", consultar=consultar,
+        )
+
+    @pytest.fixture(autouse=True)
+    def _sin_log_ni_proveedor(self, monkeypatch):
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
+        monkeypatch.setattr(causas, "_registrar_llamado_pjud", lambda *a, **k: None)
+
+    def test_encola_y_devuelve_el_job_y_las_rutas(self, db):
+        def consultar(servicio):
+            servicio.job_id = "job-9"
+            return {"estado": "sincronizando", "mensaje": "x"}
+
+        # Lo que hace `_detalle_pjud` al ver un `job_id` nuevo: guardarlo.
+        r = self._encolar(db, consultar)
+        assert (r.estado, r.job_id, r.ya_en_curso) == ("sincronizando", "job-9", False)
+        assert r.consultar_estado == "/api/v1/causas/10/pjud/estado"
+        assert r.consultar_detalle == "/api/v1/causas/10/pjud/movimientos"
+
+    def test_con_un_job_en_curso_no_encola_otro(self, db):
+        _registrar(PjudSincronizacionRepository(db), "job-1")
+
+        def no_debe_llamarse(_):
+            raise AssertionError("no debía encolar")
+
+        r = self._encolar(db, no_debe_llamarse)
+        assert (r.estado, r.job_id, r.ya_en_curso) == ("sincronizando", "job-1", True)
+
+    def test_tras_un_error_si_vuelve_a_encolar(self, db):
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo, "job-1")
+        repo.cerrar("job-1", exito=False, mensaje_error="boom")
+
+        def consultar(servicio):
+            servicio.job_id = "job-2"
+            return {"estado": "sincronizando"}
+
+        r = self._encolar(db, consultar)
+        assert (r.job_id, r.ya_en_curso) == ("job-2", False)
+
+    def test_apelaciones_usa_las_rutas_de_cortes(self, db):
+        def consultar(servicio):
+            servicio.job_id = "job-c"
+            return {"estado": "sincronizando"}
+
+        r = self._encolar(db, consultar, causa_id=7, materia="Apelaciones")
+        assert r.consultar_estado == "/api/v1/causas/cortes/7/pjud/estado"
+        assert r.consultar_detalle == "/api/v1/causas/cortes/7/pjud/apelaciones"
+
+    def test_materia_no_sincronizable_da_422(self):
+        import types
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as e:
+            causas._materia_sincronizable(types.SimpleNamespace(materia="Otra"))
+        assert e.value.status_code == 422
+
+    def test_estado_sin_sincronizar(self, db):
+        r = causas._estado_sincronizacion(db, self._tenant(), causa_id=10, materia="Civil")
+        assert r.estado == "sin_sincronizar" and r.job_id is None
+
+    def test_estado_refleja_el_ultimo_job(self, db):
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo, "job-1")
+        r = causas._estado_sincronizacion(db, self._tenant(), causa_id=10, materia="Civil")
+        assert (r.estado, r.job_id) == ("sincronizando", "job-1")
+        repo.cerrar("job-1", exito=False, mensaje_error="No fue posible conectar con pjud")
+        r = causas._estado_sincronizacion(db, self._tenant(), causa_id=10, materia="Civil")
+        assert (r.estado, r.mensaje_error) == ("error", "No fue posible conectar con pjud")

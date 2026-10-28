@@ -12,6 +12,7 @@ varios minutos. Por eso la respuesta de este módulo lleva un `estado`
 en vez de tratar ese caso como un error.
 """
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -871,3 +872,33 @@ class PjudPorRolResponse(BaseModel):
     la API del PJUD."""
 
     causa: CausaResponse | None = None
+
+
+class PjudSincronizarResponse(BaseModel):
+    """Respuesta de `POST /causas/{id}/pjud/sincronizar` (sistemas externos).
+
+    `ya_en_curso`: había un job sin terminar y NO se encoló otro. Para saber
+    cuándo termina, consultar `consultar_estado`; los datos, `consultar_detalle`."""
+
+    causa_id: int
+    materia: str
+    estado: Literal["sincronizando", "listo", "error", "sin_credenciales"]
+    job_id: str | None = None
+    ya_en_curso: bool = False
+    mensaje: str | None = None
+    consultar_estado: str
+    consultar_detalle: str
+
+
+class PjudEstadoSincronizacionResponse(BaseModel):
+    """Respuesta de `GET /causas/{id}/pjud/estado`: el último job de sincronización
+    de la causa, leído de la base (no consulta a api-pjud)."""
+
+    causa_id: int
+    materia: str
+    estado: Literal["sin_sincronizar", "sincronizando", "listo", "error"]
+    job_id: str | None = None
+    mensaje_error: str | None = None
+    iniciado_en: datetime | None = None
+    actualizado_en: datetime | None = None
+    consultar_detalle: str

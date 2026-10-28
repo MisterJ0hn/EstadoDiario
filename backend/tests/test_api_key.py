@@ -163,6 +163,23 @@ def test_una_key_solo_lectura_no_escribe_ni_en_causas():
     )
 
 
+@pytest.mark.parametrize("path", [
+    "/api/v1/causas/5/pjud/sincronizar",
+    "/api/v1/causas/cortes/5/pjud/sincronizar",
+])
+def test_sincronizar_pjud_exige_key_con_escritura(path):
+    assert api_key.motivo_de_denegacion("POST", path, permite_escritura=False) == "key_solo_lectura"
+    assert api_key.motivo_de_denegacion("POST", path, permite_escritura=True) is None
+
+
+@pytest.mark.parametrize("path", [
+    "/api/v1/causas/5/pjud/estado",
+    "/api/v1/causas/cortes/5/pjud/estado",
+])
+def test_estado_de_sincronizacion_pjud_lo_lee_cualquier_key(path):
+    assert api_key.motivo_de_denegacion("GET", path, permite_escritura=False) is None
+
+
 def test_una_key_con_escritura_escribe_en_causas():
     assert (
         api_key.motivo_de_denegacion("POST", "/api/v1/causas/upload", permite_escritura=True)

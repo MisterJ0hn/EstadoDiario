@@ -57,11 +57,13 @@ from app.schemas.pjud import (
     PjudCallbackResponse,
     PjudCobranzaMovimientosResponse,
     PjudDisponibleResponse,
+    PjudEstadoSincronizacionResponse,
     PjudFamiliaMovimientosResponse,
     PjudLaboralMovimientosResponse,
     PjudPenalMovimientosResponse,
     PjudMovimientosResponse,
     PjudPorRolResponse,
+    PjudSincronizarResponse,
 )
 from app.services.causa_api_service import CausaApiService, materia_canonica
 from app.services.causa_import_service import CausaImportService, parse_nombre_archivo
@@ -1043,6 +1045,218 @@ def _causa_origen_de_apelacion(db: Session, detalle: dict | None) -> dict | None
         "id": causa.id, "rol": causa.rol, "tribunal": causa.tribunal,
         "materia": causa.materia, "caratulado": causa.caratulado,
     }
+
+
+# ── Sincronizar y consultar el estado (sistemas externos) ─────────────────
+
+# materia → (método de `PjudService` que sincroniza y consulta, segmento de la
+# ruta del GET que trae el detalle de esa materia).
+_SINCRONIZAR_POR_MATERIA = {
+    "Civil": ("obtener_detalle", "movimientos"),
+    "Familia": ("obtener_detalle_familia", "familia"),
+    "Laboral": ("obtener_detalle_laboral", "laboral"),
+    "Cobranza": ("obtener_detalle_cobranza", "cobranza"),
+    "Penal": ("obtener_detalle_penal", "penal"),
+}
+
+
+def _rutas_pjud(causa_id: int, materia: str) -> tuple[str, str]:
+    """(consultar_estado, consultar_detalle) de la causa."""
+    if materia == "Apelaciones":
+        base = f"/api/v1/causas/cortes/{causa_id}/pjud"
+        return f"{base}/estado", f"{base}/apelaciones"
+    base = f"/api/v1/causas/{causa_id}/pjud"
+    return f"{base}/estado", f"{base}/{_SINCRONIZAR_POR_MATERIA[materia][1]}"
+
+
+def _materia_sincronizable(causa) -> str:
+    materia = materia_canonica(causa.materia or "")
+    if materia not in _SINCRONIZAR_POR_MATERIA:
+        raise HTTPException(
+            status_code=422,
+            detail="La causa no es de una materia que se pueda sincronizar con el PJUD",
+        )
+    return materia
+
+
+def _encolar_sincronizacion(
+    db_maestra, tenant, *, causa_id, materia, rol, tribunal, consultar
+) -> PjudSincronizarResponse:
+    """Encola un `sincronizar_*` (sin esperar a que termine) y dice qué quedó.
+
+    Si ya hay un job en curso no encola otro: api-pjud exige 30 minutos entre
+    syncs de una misma causa y respondería 409."""
+    estado_url, detalle_url = _rutas_pjud(causa_id, materia)
+    apelaciones = materia == "Apelaciones"
+    previo = _sincronizaciones_pjud(
+        db_maestra, tenant.cliente_id, [causa_id], apelaciones
+    ).get(causa_id)
+    if previo is not None and previo.estado == SINC_SINCRONIZANDO:
+        return PjudSincronizarResponse(
+            causa_id=causa_id, materia=materia, estado="sincronizando",
+            job_id=previo.job_id, ya_en_curso=True, mensaje=_MENSAJE_SINCRONIZANDO,
+            consultar_estado=estado_url, consultar_detalle=detalle_url,
+        )
+
+    inicio = time.monotonic()
+    resultado_log, http_status = "error", 502
+    mensaje_log = diagnostico_log = None
+    try:
+        resultado = _detalle_pjud(
+            db_maestra, tenant, causa_id=causa_id, materia=materia, rol=rol,
+            tribunal=tribunal, forzar=True, consultar=consultar,
+        )
+        http_status = 202
+        resultado_log = resultado.get("estado") or "listo"
+        mensaje_log = resultado.get("mensaje")
+        diagnostico_log = resultado.get("diagnostico")
+        nuevo = _sincronizaciones_pjud(
+            db_maestra, tenant.cliente_id, [causa_id], apelaciones
+        ).get(causa_id)
+        if nuevo is not None and (previo is None or nuevo.job_id != previo.job_id):
+            # Se encoló un job: ese es el estado, sea cual sea lo que ya tuviera
+            # guardado el proveedor de la causa.
+            return PjudSincronizarResponse(
+                causa_id=causa_id, materia=materia, estado="sincronizando",
+                job_id=nuevo.job_id, mensaje=_MENSAJE_SINCRONIZANDO,
+                consultar_estado=estado_url, consultar_detalle=detalle_url,
+            )
+        return PjudSincronizarResponse(
+            causa_id=causa_id, materia=materia,
+            estado=resultado.get("estado") or "listo", mensaje=resultado.get("mensaje"),
+            consultar_estado=estado_url, consultar_detalle=detalle_url,
+        )
+    except PjudApiError as e:
+        mensaje_log = str(e)
+        diagnostico_log = e.diagnostico
+        raise HTTPException(status_code=502, detail=mensaje_log)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra, tenant=tenant, causa_id=causa_id, rol=rol, tribunal=tribunal,
+            materia=materia, forzar=True, resultado=resultado_log, http_status=http_status,
+            mensaje=mensaje_log, diagnostico=diagnostico_log,
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
+
+
+def _estado_sincronizacion(
+    db_maestra, tenant, *, causa_id, materia
+) -> PjudEstadoSincronizacionResponse:
+    fila = _sincronizaciones_pjud(
+        db_maestra, tenant.cliente_id, [causa_id], materia == "Apelaciones"
+    ).get(causa_id)
+    return PjudEstadoSincronizacionResponse(
+        causa_id=causa_id,
+        materia=materia,
+        estado=fila.estado if fila else "sin_sincronizar",
+        job_id=fila.job_id if fila else None,
+        mensaje_error=fila.mensaje_error if fila else None,
+        iniciado_en=fila.creado_en if fila else None,
+        actualizado_en=fila.actualizado_en if fila else None,
+        consultar_detalle=_rutas_pjud(causa_id, materia)[1],
+    )
+
+
+@router.post(
+    "/{causa_id}/pjud/sincronizar",
+    status_code=202,
+    dependencies=[Depends(requerir_pjud_habilitado)],
+    response_model=PjudSincronizarResponse,
+    summary="Pide a api-pjud que sincronice una causa (no espera el resultado)",
+)
+def pjud_sincronizar(
+    causa_id: int,
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    """Para sistemas externos con API key de escritura. Responde de inmediato;
+    el avance se consulta en `consultar_estado` y los datos en `consultar_detalle`."""
+    causa = CausaRepository(db).find_by_id(causa_id)
+    if not causa:
+        raise HTTPException(status_code=404, detail="Causa no encontrada")
+    materia = _materia_sincronizable(causa)
+    credenciales_dueno = credenciales_del_dueno(db, causa)
+    metodo = _SINCRONIZAR_POR_MATERIA[materia][0]
+    return _encolar_sincronizacion(
+        db_maestra, tenant, causa_id=causa_id, materia=materia,
+        rol=causa.rol, tribunal=causa.tribunal,
+        consultar=lambda s: getattr(s, metodo)(
+            causa, forzar_sincronizacion=True, credenciales_dueno=credenciales_dueno
+        ),
+    )
+
+
+@router.post(
+    "/cortes/{corte_id}/pjud/sincronizar",
+    status_code=202,
+    dependencies=[Depends(requerir_pjud_habilitado)],
+    response_model=PjudSincronizarResponse,
+    summary="Pide a api-pjud que sincronice una causa de Corte de Apelaciones",
+)
+def pjud_sincronizar_apelaciones(
+    corte_id: int,
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    causa_corte = db.get(CausaCorte, corte_id)
+    if not causa_corte:
+        raise HTTPException(status_code=404, detail="Causa de corte no encontrada")
+    origen = causa_corte.estado_diario_origen
+    credenciales_dueno = credenciales_del_dueno(
+        db, SimpleNamespace(rut_efectivo=origen.rut if origen else None)
+    )
+    return _encolar_sincronizacion(
+        db_maestra, tenant, causa_id=corte_id, materia="Apelaciones",
+        rol=f"{causa_corte.rol}-{causa_corte.era}", tribunal=causa_corte.corte,
+        consultar=lambda s: s.obtener_detalle_apelaciones(
+            causa_corte, forzar_sincronizacion=True, credenciales_dueno=credenciales_dueno
+        ),
+    )
+
+
+@router.get(
+    "/{causa_id}/pjud/estado",
+    dependencies=[Depends(requerir_pjud_habilitado)],
+    response_model=PjudEstadoSincronizacionResponse,
+    summary="Estado de la última sincronización PJUD de una causa (liviano, sin llamar a api-pjud)",
+)
+def pjud_estado(
+    causa_id: int,
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    causa = CausaRepository(db).find_by_id(causa_id)
+    if not causa:
+        raise HTTPException(status_code=404, detail="Causa no encontrada")
+    return _estado_sincronizacion(
+        db_maestra, tenant, causa_id=causa_id, materia=_materia_sincronizable(causa)
+    )
+
+
+@router.get(
+    "/cortes/{corte_id}/pjud/estado",
+    dependencies=[Depends(requerir_pjud_habilitado)],
+    response_model=PjudEstadoSincronizacionResponse,
+    summary="Estado de la última sincronización PJUD de una causa de Corte de Apelaciones",
+)
+def pjud_estado_apelaciones(
+    corte_id: int,
+    db: Session = Depends(get_db_tenant),
+    tenant: TenantContexto = Depends(get_tenant_actual),
+    db_maestra: Session = Depends(get_db_maestra),
+    current_user: Usuario = Depends(get_usuario_actual),
+):
+    if not db.get(CausaCorte, corte_id):
+        raise HTTPException(status_code=404, detail="Causa de corte no encontrada")
+    return _estado_sincronizacion(
+        db_maestra, tenant, causa_id=corte_id, materia="Apelaciones"
+    )
 
 
 @router.post(

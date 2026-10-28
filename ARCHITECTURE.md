@@ -420,6 +420,24 @@ Las keys las emite el administrador de la plataforma desde `admin_api`
 (`/api/v1/admin/clientes/{id}/api-keys`: listar, emitir, cambiar límite,
 revocar), y desde `admin_app` en la pestaña **API keys** de la ficha del cliente.
 
+#### Sincronizar y consultar el PJUD desde el sistema externo
+
+Tres llamadas, en este orden (todas exigen que el cliente tenga `pjud_habilitado`):
+
+1. `POST /api/v1/causas/{id}/pjud/sincronizar` (Apelaciones: `/causas/cortes/{id}/pjud/sincronizar`)
+   → **202** `{estado, job_id, ya_en_curso, consultar_estado, consultar_detalle}`.
+   Encola un `sincronizar_*` y no espera. Es una escritura: pide la key con
+   `permite_escritura` (queda en la bitácora como `api_key_escritura`). Si ya hay un
+   job sin terminar no encola otro y responde `ya_en_curso: true` (api-pjud exige 30
+   min entre syncs de una causa).
+2. `GET /api/v1/causas/{id}/pjud/estado` (Apelaciones: `/causas/cortes/{id}/pjud/estado`)
+   → `{estado: sin_sincronizar|sincronizando|listo|error, job_id, mensaje_error,
+   iniciado_en, actualizado_en}`. Lee solo `pjud_sincronizacion` (la cierra el
+   callback de api-pjud), sin llamar a api-pjud: sirve para polling.
+3. `GET` a la URL `consultar_detalle` (el detalle por materia de siempre, **sin**
+   `forzar`) para los datos. Con el último sync en `error` igual devuelve los datos
+   que api-pjud ya tenía, junto al error.
+
 #### Credenciales del OJV para el sistema externo
 
 Un sistema externo puede necesitar entrar al Poder Judicial como el abogado dueño
