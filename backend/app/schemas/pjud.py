@@ -14,9 +14,29 @@ en vez de tratar ese caso como un error.
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.schemas.causa import CausaResponse
+
+
+class PjudCallbackRequest(BaseModel):
+    """Aviso de api-pjud al terminar un `sincronizar_*` (ver `callback_url`).
+
+    Éxito: `{"exito": true, "job_id": "..."}`. Error:
+    `{"exito": false, "mensaje_error": "...", "job_id": "..."}`. Acepta también
+    `éxito` con tilde, tal como lo describió el proveedor."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    exito: bool = Field(validation_alias=AliasChoices("exito", "éxito"))
+    job_id: str
+    mensaje_error: str | None = None
+
+
+class PjudCallbackResponse(BaseModel):
+    # False cuando el `job_id` no es de ningún job nuestro: se responde 200 igual
+    # para que el proveedor no reintente un aviso que nunca vamos a poder aplicar.
+    recibido: bool
 
 
 class PjudDocumentoRef(BaseModel):

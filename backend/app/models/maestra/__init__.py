@@ -21,6 +21,7 @@ from app.models.maestra import (  # noqa: F401
     factura,
     pago,
     pjud_llamado,
+    pjud_sincronizacion,
     password_historial_admin,
     tarifa_cliente,
     usuario_admin,

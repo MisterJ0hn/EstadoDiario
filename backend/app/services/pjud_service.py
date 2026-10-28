@@ -156,6 +156,17 @@ class PjudService:
                 "(faltan las credenciales de api-pjud.codifica.cl)."
             )
         self._base_url = settings.PJUD_API_BASE_URL.rstrip("/")
+        # `job_id` del último `sincronizar_*` que api-pjud aceptó en esta
+        # instancia (None si no encoló ninguno). El endpoint lo guarda en
+        # `pjud_sincronizacion` para cerrarlo cuando llegue el callback.
+        self.job_id: Optional[str] = None
+
+    @staticmethod
+    def callback_url() -> str:
+        """Dirección completa de nuestro endpoint que api-pjud llama al terminar
+        un `sincronizar_*`. Sale de PUBLIC_BASE_URL y no de `request.base_url`:
+        detrás de nginx el request llega como `http://backend:8000`."""
+        return f"{settings.PUBLIC_BASE_URL.rstrip('/')}/api/v1/causas/pjud/callback"
 
     # ── HTTP ──────────────────────────────────────────────────
 
@@ -367,12 +378,22 @@ class PjudService:
         Best-effort: un 409 (ya en curso) o cualquier otra falla acá no corta la
         pantalla. Devuelve una nota corta de qué pasó, para el log de
         diagnóstico (no se le muestra al usuario)."""
-        cuerpo = self._con_credenciales(cuerpo_causa, credenciales)
+        cuerpo = {
+            **self._con_credenciales(cuerpo_causa, credenciales),
+            "callback_url": self.callback_url(),
+        }
         ruta = f"/sincronizar_{competencia}"
-        enviado = f"body={self._cuerpo_para_log(cuerpo_causa, credenciales)}"
+        enviado = (
+            f"body={self._cuerpo_para_log(cuerpo_causa, credenciales)} "
+            f"callback_url={cuerpo['callback_url']}"
+        )
         try:
-            self._request("POST", ruta, json=cuerpo)
-            return f"sincronizar_{competencia}: 200 (encolado) {enviado}"
+            respuesta = self._request("POST", ruta, json=cuerpo)
+            job_id = str((respuesta or {}).get("job_id") or "").strip() or None
+            if job_id:
+                self.job_id = job_id
+                return f"sincronizar_{competencia}: 200 (encolado) job_id={job_id} {enviado}"
+            return f"sincronizar_{competencia}: 200 (encolado, sin job_id) {enviado}"
         except PjudConflicto:
             # Ya hay un job en curso, o se pidió otro antes del intervalo mínimo
             # del proveedor (30 min). Si esto se repite en cada intento y la

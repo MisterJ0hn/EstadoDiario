@@ -812,6 +812,15 @@ configurar la casilla son de la plataforma.
 | GET    | /api/v1/estado-diario/{id}/agendas          | Listar agendas               |
 | POST   | /api/v1/estado-diario/{id}/agenda           | Crear entrada de agenda      |
 | POST   | /api/v1/estado-diario/request-tw            | Webhook Twilio (público)     |
+| POST   | /api/v1/causas/pjud/callback                | Callback api-pjud (público)  |
+
+`/causas/pjud/callback` lo llama api-pjud al terminar un `sincronizar_*` (la URL
+va en `callback_url`, armada con `PUBLIC_BASE_URL`). Body `{"exito": true,
+"job_id"}` o `{"exito": false, "mensaje_error", "job_id"}`. El job se guarda al
+encolar en `pjud_sincronizacion` (base principal) y el callback lo cierra
+(`listo`/`error`); el estado de las causas se lee de esa tabla y no de
+`consultar_*`. Solo se valida que el `job_id` exista; un job `sincronizando` sin
+aviso vence a los 15 minutos.
 
 ### Webhook de Twilio (`/api/v1/estado-diario/request-tw`)
 

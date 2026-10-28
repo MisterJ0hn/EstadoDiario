@@ -180,6 +180,39 @@ class TestObtenerDetalle:
         assert cuerpos[0]["clave"] == "secreta"
         assert cuerpos[0]["metodo_login"] == 1
 
+    def test_sincronizar_manda_callback_url_y_guarda_job_id(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.pjud_service.settings.PUBLIC_BASE_URL", "https://ed.temposoft.cl/"
+        )
+        cuerpos: list[dict] = []
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": PjudNoEncontrado("no está"),
+            "/sincronizar_civil": {"exito": True, "job_id": "xxssw2232"},
+        })
+        original = servicio._request
+
+        def espia(metodo, ruta, **kwargs):
+            if ruta == "/sincronizar_civil":
+                cuerpos.append(kwargs.get("json"))
+            return original(metodo, ruta, **kwargs)
+
+        monkeypatch.setattr(servicio, "_request", espia)
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=_CREDS)
+        assert cuerpos[0]["callback_url"] == "https://ed.temposoft.cl/api/v1/causas/pjud/callback"
+        assert servicio.job_id == "xxssw2232"
+        assert "job_id=xxssw2232" in resultado["diagnostico"]
+        # La clave sigue tapada en el diagnóstico.
+        assert "secreta" not in resultado["diagnostico"]
+
+    def test_sincronizar_sin_job_id_no_rompe(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_civil": PjudNoEncontrado("no está"),
+            "/sincronizar_civil": {"exito": True},
+        })
+        resultado = servicio.obtener_detalle(_causa_civil(), credenciales_dueno=None)
+        assert servicio.job_id is None
+        assert resultado["estado"] == "sincronizando"
+
     def test_causa_en_proceso_devuelve_sincronizando(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
             "/consultar_civil": {"causa": {

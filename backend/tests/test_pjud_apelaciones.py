@@ -38,7 +38,9 @@ class TestObtenerDetalleApelaciones:
         })
         r = servicio.obtener_detalle_apelaciones(_corte(), credenciales_dueno=_CREDS)
         assert r["estado"] == "sincronizando"
-        assert self.cuerpos["/sincronizar_apelaciones"] == {
+        cuerpo = dict(self.cuerpos["/sincronizar_apelaciones"])
+        assert cuerpo.pop("callback_url").endswith("/api/v1/causas/pjud/callback")
+        assert cuerpo == {
             "rol": 23414, "anio": 2026, "corte": "C.A. de Santiago", "libro": "Civil", **_CREDS,
         }
 
@@ -48,7 +50,9 @@ class TestObtenerDetalleApelaciones:
             "/sincronizar_apelaciones": {"exito": True},
         })
         servicio.obtener_detalle_apelaciones(_corte(), credenciales_dueno=None)
-        assert self.cuerpos["/sincronizar_apelaciones"] == {
+        cuerpo = dict(self.cuerpos["/sincronizar_apelaciones"])
+        assert cuerpo.pop("callback_url").endswith("/api/v1/causas/pjud/callback")
+        assert cuerpo == {
             "rol": 23414, "anio": 2026, "corte": "C.A. de Santiago", "libro": "Civil",
         }
 

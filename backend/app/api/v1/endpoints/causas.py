@@ -12,7 +12,7 @@ import mimetypes
 import os
 import time
 import uuid
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import unquote, urlsplit
 
@@ -35,6 +35,11 @@ from app.models.usuario import Usuario
 from app.repositories.causa_corte_repository import CausaCorteRepository
 from app.repositories.causa_repository import FINALIZADAS, SIN_MATERIA, VIGENTES, CausaRepository
 from app.repositories.pjud_llamado_repository import PjudLlamadoRepository
+from app.repositories.pjud_sincronizacion_repository import (
+    ERROR as SINC_ERROR,
+    SINCRONIZANDO as SINC_SINCRONIZANDO,
+    PjudSincronizacionRepository,
+)
 from app.schemas.causa import (
     CargarCausasResponse,
     CausaCorteListResponse,
@@ -48,6 +53,8 @@ from app.schemas.causa import (
 )
 from app.schemas.pjud import (
     PjudApelacionesMovimientosResponse,
+    PjudCallbackRequest,
+    PjudCallbackResponse,
     PjudCobranzaMovimientosResponse,
     PjudDisponibleResponse,
     PjudFamiliaMovimientosResponse,
@@ -58,7 +65,13 @@ from app.schemas.pjud import (
 )
 from app.services.causa_api_service import CausaApiService, materia_canonica
 from app.services.causa_import_service import CausaImportService, parse_nombre_archivo
-from app.services.pjud_service import PjudApiError, PjudNoEncontrado, PjudService
+from app.services.pjud_service import (
+    _MENSAJE_ERROR_SYNC,
+    _MENSAJE_SINCRONIZANDO,
+    PjudApiError,
+    PjudNoEncontrado,
+    PjudService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -230,11 +243,17 @@ def listar_cortes(
     )
     estados_pjud = {}
     if settings.pjud_api_activo:
-        estados_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
-            cliente_id=tenant.cliente_id,
-            causa_ids=[c.id for c in items if c.tipo == "apelaciones"],
-            apelaciones=True,
+        ids_apelaciones = [c.id for c in items if c.tipo == "apelaciones"]
+        llamados = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
+            cliente_id=tenant.cliente_id, causa_ids=ids_apelaciones, apelaciones=True,
         )
+        sincronizaciones = _sincronizaciones_pjud(
+            db_maestra, tenant.cliente_id, ids_apelaciones, apelaciones=True
+        )
+        for causa_id in ids_apelaciones:
+            estado = SimpleNamespace(pjud_estado=None, pjud_fecha_sincronizacion=None)
+            _aplicar_estado_pjud(estado, llamados.get(causa_id), sincronizaciones.get(causa_id))
+            estados_pjud[causa_id] = estado
     return CausaCorteListResponse(
         total=total,
         page=pagina,
@@ -257,8 +276,10 @@ def listar_cortes(
                 estado_procesal=c.estado_procesal,
                 institucion=c.institucion,
                 fecha_archivo=c.estado_diario_origen.fecha if c.estado_diario_origen else None,
-                pjud_estado=estados_pjud[c.id].resultado if c.id in estados_pjud else None,
-                pjud_fecha_sincronizacion=estados_pjud[c.id].fecha_hora if c.id in estados_pjud else None,
+                pjud_estado=estados_pjud[c.id].pjud_estado if c.id in estados_pjud else None,
+                pjud_fecha_sincronizacion=(
+                    estados_pjud[c.id].pjud_fecha_sincronizacion if c.id in estados_pjud else None
+                ),
             )
             for c in items
         ],
@@ -373,11 +394,11 @@ def listar(
         ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
             cliente_id=tenant.cliente_id, causa_ids=pjud_ids,
         )
+        sincronizaciones = _sincronizaciones_pjud(
+            db_maestra, tenant.cliente_id, pjud_ids
+        )
         for r in causas_resp:
-            llamado = ultimos_pjud.get(r.id)
-            if llamado:
-                r.pjud_estado = llamado.resultado
-                r.pjud_fecha_sincronizacion = llamado.fecha_hora
+            _aplicar_estado_pjud(r, ultimos_pjud.get(r.id), sincronizaciones.get(r.id))
 
     credenciales = api_pjud = pjud_habilitado = None
     if sellador is not None:
@@ -471,10 +492,11 @@ def pjud_por_rol(
         ultimos_pjud = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
             cliente_id=tenant.cliente_id, causa_ids=[causa.id],
         )
-        llamado = ultimos_pjud.get(causa.id)
-        if llamado:
-            respuesta.pjud_estado = llamado.resultado
-            respuesta.pjud_fecha_sincronizacion = llamado.fecha_hora
+        _aplicar_estado_pjud(
+            respuesta,
+            ultimos_pjud.get(causa.id),
+            _sincronizaciones_pjud(db_maestra, tenant.cliente_id, [causa.id]).get(causa.id),
+        )
     return PjudPorRolResponse(causa=respuesta)
 
 
@@ -563,11 +585,15 @@ def pjud_movimientos(
     mensaje_log: str | None = None
     diagnostico_log: str | None = None
     try:
-        resultado = PjudService().obtener_detalle(
-            causa,
-            forzar_sincronizacion=forzar,
-            cuaderno_id=cuaderno,
-            credenciales_dueno=credenciales_dueno,
+        resultado = _detalle_pjud(
+            db_maestra, tenant, causa_id=causa_id, materia="Civil",
+            rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
+            consultar=lambda s: s.obtener_detalle(
+                causa,
+                forzar_sincronizacion=forzar,
+                cuaderno_id=cuaderno,
+                credenciales_dueno=credenciales_dueno,
+            ),
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -637,10 +663,14 @@ def pjud_familia(
     mensaje_log: str | None = None
     diagnostico_log: str | None = None
     try:
-        resultado = PjudService().obtener_detalle_familia(
-            causa,
-            forzar_sincronizacion=forzar,
-            credenciales_dueno=credenciales_dueno,
+        resultado = _detalle_pjud(
+            db_maestra, tenant, causa_id=causa_id, materia="Familia",
+            rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
+            consultar=lambda s: s.obtener_detalle_familia(
+                causa,
+                forzar_sincronizacion=forzar,
+                credenciales_dueno=credenciales_dueno,
+            ),
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -705,10 +735,14 @@ def pjud_laboral(
     mensaje_log: str | None = None
     diagnostico_log: str | None = None
     try:
-        resultado = PjudService().obtener_detalle_laboral(
-            causa,
-            forzar_sincronizacion=forzar,
-            credenciales_dueno=credenciales_dueno,
+        resultado = _detalle_pjud(
+            db_maestra, tenant, causa_id=causa_id, materia="Laboral",
+            rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
+            consultar=lambda s: s.obtener_detalle_laboral(
+                causa,
+                forzar_sincronizacion=forzar,
+                credenciales_dueno=credenciales_dueno,
+            ),
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -774,11 +808,15 @@ def pjud_cobranza(
     mensaje_log: str | None = None
     diagnostico_log: str | None = None
     try:
-        resultado = PjudService().obtener_detalle_cobranza(
-            causa,
-            forzar_sincronizacion=forzar,
-            cuaderno_id=cuaderno,
-            credenciales_dueno=credenciales_dueno,
+        resultado = _detalle_pjud(
+            db_maestra, tenant, causa_id=causa_id, materia="Cobranza",
+            rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
+            consultar=lambda s: s.obtener_detalle_cobranza(
+                causa,
+                forzar_sincronizacion=forzar,
+                cuaderno_id=cuaderno,
+                credenciales_dueno=credenciales_dueno,
+            ),
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -842,11 +880,15 @@ def pjud_penal(
     mensaje_log: str | None = None
     diagnostico_log: str | None = None
     try:
-        resultado = PjudService().obtener_detalle_penal(
-            causa,
-            forzar_sincronizacion=forzar,
-            cuaderno_id=cuaderno,
-            credenciales_dueno=credenciales_dueno,
+        resultado = _detalle_pjud(
+            db_maestra, tenant, causa_id=causa_id, materia="Penal",
+            rol=causa.rol, tribunal=causa.tribunal, forzar=forzar,
+            consultar=lambda s: s.obtener_detalle_penal(
+                causa,
+                forzar_sincronizacion=forzar,
+                cuaderno_id=cuaderno,
+                credenciales_dueno=credenciales_dueno,
+            ),
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -915,10 +957,15 @@ def pjud_apelaciones(
     mensaje_log: str | None = None
     diagnostico_log: str | None = None
     try:
-        resultado = PjudService().obtener_detalle_apelaciones(
-            causa_corte,
-            forzar_sincronizacion=forzar,
-            credenciales_dueno=credenciales_dueno,
+        resultado = _detalle_pjud(
+            db_maestra, tenant, causa_id=corte_id, materia="Apelaciones",
+            rol=f"{causa_corte.rol}-{causa_corte.era}", tribunal=causa_corte.corte,
+            forzar=forzar,
+            consultar=lambda s: s.obtener_detalle_apelaciones(
+                causa_corte,
+                forzar_sincronizacion=forzar,
+                credenciales_dueno=credenciales_dueno,
+            ),
         )
         estado = resultado.get("estado")
         diagnostico_log = resultado.pop("diagnostico", None)
@@ -996,6 +1043,116 @@ def _causa_origen_de_apelacion(db: Session, detalle: dict | None) -> dict | None
         "id": causa.id, "rol": causa.rol, "tribunal": causa.tribunal,
         "materia": causa.materia, "caratulado": causa.caratulado,
     }
+
+
+@router.post(
+    "/pjud/callback",
+    response_model=PjudCallbackResponse,
+    summary="Aviso de api-pjud al terminar un sincronizar_*",
+)
+def pjud_callback(
+    datos: PjudCallbackRequest,
+    db_maestra: Session = Depends(get_db_maestra),
+):
+    """Webhook público: api-pjud lo llama con el `callback_url` que le enviamos
+    en cada `sincronizar_*`. Sin `get_tenant_actual` ni Bearer a propósito
+    (arrastran HTTPBearer y devolverían 403); la única validación es que el
+    `job_id` exista en `pjud_sincronizacion`, de donde sale el cliente.
+
+    Éxito → la sincronización queda `listo` (el botón pasa al martillo). Error →
+    queda `error` con el `mensaje_error`. Siempre 200: un job desconocido no se
+    arregla reintentando."""
+    fila = PjudSincronizacionRepository(db_maestra).cerrar(
+        datos.job_id, exito=datos.exito, mensaje_error=datos.mensaje_error
+    )
+    if fila is None:
+        logger.warning("Callback de api-pjud con job_id desconocido: %s", datos.job_id)
+    return PjudCallbackResponse(recibido=fila is not None)
+
+
+def _detalle_pjud(db_maestra, tenant, *, causa_id, materia, rol, tribunal, forzar, consultar) -> dict:
+    """Corre `consultar(servicio)` (el `obtener_detalle_*` de la materia), pero
+    el estado de la sincronización sale de `pjud_sincronizacion`, no de
+    `consultar_*`: con un job en curso (o terminado en error) se responde desde
+    la base sin tocar al proveedor. `forzar` salta ese atajo y encola otro job.
+
+    Cuando el servicio encola un `sincronizar_*` y api-pjud devuelve `job_id`,
+    queda guardado como `sincronizando` hasta que llegue el callback."""
+    apelaciones = materia == "Apelaciones"
+    repo = PjudSincronizacionRepository(db_maestra)
+    if not forzar:
+        try:
+            sincronizacion = repo.ultimo_de_causa(
+                cliente_id=tenant.cliente_id, causa_id=causa_id, apelaciones=apelaciones
+            )
+        except Exception:
+            # Sin la tabla (despliegue a medio hacer) se cae al flujo anterior.
+            logger.exception("No se pudo leer pjud_sincronizacion")
+            db_maestra.rollback()
+            sincronizacion = None
+        if sincronizacion and sincronizacion.estado == SINC_SINCRONIZANDO:
+            return {
+                "estado": "sincronizando",
+                "mensaje": _MENSAJE_SINCRONIZANDO,
+                "detalle_estado": None,
+                "diagnostico": f"estado desde BD: sincronizando job_id={sincronizacion.job_id}",
+            }
+        if sincronizacion and sincronizacion.estado == SINC_ERROR:
+            return {
+                "estado": "error",
+                "mensaje": _MENSAJE_ERROR_SYNC,
+                "detalle_estado": sincronizacion.mensaje_error,
+                "ultimo_error": sincronizacion.mensaje_error,
+                "diagnostico": f"estado desde BD: error job_id={sincronizacion.job_id}",
+            }
+
+    servicio = PjudService()
+    try:
+        return consultar(servicio)
+    finally:
+        if servicio.job_id:
+            try:
+                repo.registrar(
+                    job_id=servicio.job_id,
+                    cliente_id=tenant.cliente_id,
+                    causa_id=causa_id,
+                    materia=materia,
+                    rol=rol,
+                    tribunal=tribunal,
+                )
+            except Exception:
+                db_maestra.rollback()
+                logger.exception("No se pudo guardar el job %s de api-pjud", servicio.job_id)
+
+
+def _sincronizaciones_pjud(db_maestra, cliente_id, causa_ids, apelaciones=False) -> dict:
+    """Último job de sincronización por causa. Si la tabla no está (despliegue a
+    medio hacer) devuelve vacío y el listado cae al log de llamados."""
+    try:
+        return PjudSincronizacionRepository(db_maestra).ultimos_por_causa(
+            cliente_id=cliente_id, causa_ids=causa_ids, apelaciones=apelaciones
+        )
+    except Exception:
+        logger.exception("No se pudo leer pjud_sincronizacion")
+        db_maestra.rollback()
+        return {}
+
+
+def _aplicar_estado_pjud(respuesta, llamado, sincronizacion) -> None:
+    """Pinta `pjud_estado` y `pjud_fecha_sincronizacion` con lo más reciente entre
+    el último job de sincronización y el último llamado de consulta."""
+    if sincronizacion and (
+        llamado is None or _aware(sincronizacion.actualizado_en) >= _aware(llamado.fecha_hora)
+    ):
+        respuesta.pjud_estado = sincronizacion.estado
+        respuesta.pjud_fecha_sincronizacion = sincronizacion.actualizado_en
+    elif llamado:
+        respuesta.pjud_estado = llamado.resultado
+        respuesta.pjud_fecha_sincronizacion = llamado.fecha_hora
+
+
+def _aware(fecha):
+    return fecha if fecha.tzinfo else fecha.replace(tzinfo=timezone.utc)
 
 
 def _registrar_llamado_pjud(db_maestra, *, tenant, causa_id, rol, tribunal, forzar,
