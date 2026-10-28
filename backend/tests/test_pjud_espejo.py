@@ -60,6 +60,8 @@ def bases():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     PjudCopia.metadata.create_all(bind=engine, tables=[PjudCopia.__table__])
     PjudSincronizacion.metadata.create_all(bind=engine, tables=[PjudSincronizacion.__table__])
+    from app.models.maestra.pjud_llamado import PjudLlamado
+    PjudLlamado.__table__.create(bind=engine, checkfirst=True)
     sesion = sessionmaker(bind=engine)
     tenant, maestra = sesion(), sesion()
     yield tenant, maestra
@@ -208,6 +210,16 @@ class TestSincronizar:
         PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=True)
         http.post("/pjud/sincronizar_civil", json=CUERPO)
         assert len(_llamadas("/sincronizar_civil")) == 2
+
+    def test_cada_llamado_queda_en_pjud_llamado(self, http, bases):
+        from app.models.maestra.pjud_llamado import PjudLlamado
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        filas = bases[1].query(PjudLlamado).order_by(PjudLlamado.id).all()
+        assert [f.resultado for f in filas] == ["sincronizando", "ya_en_curso"]
+        assert filas[0].rol == "C-1234-2026" and "job-1" in filas[0].diagnostico
+        assert "clave" not in (filas[0].diagnostico or "").replace("clave del abogado", "")
 
     def test_409_se_propaga(self, http):
         FalsoPjud.respuestas["/sincronizar_civil"] = PjudConflicto("ya en curso")

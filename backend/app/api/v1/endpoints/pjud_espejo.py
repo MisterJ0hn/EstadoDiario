@@ -17,13 +17,18 @@ Permisos: ver `CONSULTAS_PJUD_POR_POST` y `SINCRONIZAR_PJUD` en `app/core/api_ke
 
 import json
 import logging
+import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.v1.endpoints.causas import requerir_pjud_habilitado, responder_documento_pjud
+from app.api.v1.endpoints.causas import (
+    _registrar_llamado_pjud,
+    requerir_pjud_habilitado,
+    responder_documento_pjud,
+)
 from app.core.config import settings
 from app.core.database import get_db_maestra
 from app.core.deps import TenantContexto, get_db_tenant, get_tenant_actual, get_usuario_actual
@@ -175,14 +180,17 @@ def _identidad(competencia: str, cuerpo: dict) -> tuple[Optional[str], Optional[
     return rol, tribunal[:255] if tribunal != "/" else None
 
 
-def _sincronizar(
-    competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto
+def _encolar(
+    competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto,
+    nota: dict,
 ) -> dict:
+    """Hace el sync y deja en `nota` lo que pasó, para el log de `pjud_llamado`."""
     servicio = _servicio()
     materia = COMPETENCIAS[competencia][0]
     rol, tribunal = _identidad(competencia, cuerpo)
     causa = causa_asignada(db, servicio, competencia, cuerpo)
     causa_id = getattr(causa, "id", None)
+    nota["causa_id"] = causa_id
     jobs = PjudSincronizacionRepository(db_maestra)
 
     # Un sync ya en curso de esta causa (lo pidió el integrador, o la app) no se repite:
@@ -199,6 +207,7 @@ def _sincronizar(
         previo = None
     if previo is not None:
         logger.info("Espejo PJUD %s: sync ya en curso (job %s), no se reenvía", competencia, previo.job_id)
+        nota.update(resultado="ya_en_curso", http_status=200, diagnostico=f"ya en curso job_id={previo.job_id}; no se reenvió")
         return {"job_id": previo.job_id}
 
     # El callback es siempre el nuestro (cierra el job en `pjud_sincronizacion`):
@@ -207,9 +216,14 @@ def _sincronizar(
         **_con_abogado_asignado(db, servicio, competencia, cuerpo, causa),
         "callback_url": servicio.callback_url(),
     }
+    nota["con_clave_del_abogado"] = envio.get("rut") != cuerpo.get("rut") or envio.get("clave") != cuerpo.get("clave")
     try:
         respuesta = servicio.reenviar(f"/sincronizar_{competencia}", envio)
     except PjudApiError as e:
+        nota.update(
+            resultado="error", http_status=409 if isinstance(e, PjudConflicto) else 502,
+            mensaje=str(e), diagnostico=f"el proveedor respondió: {e}",
+        )
         raise _error_http(e)
 
     # La copia de esta causa ya no sirve: la siguiente consulta trae lo nuevo.
@@ -229,7 +243,32 @@ def _sincronizar(
         except Exception:
             db_maestra.rollback()
             logger.exception("No se pudo guardar el job %s de api-pjud", job_id)
+    nota.update(
+        resultado="sincronizando", http_status=200,
+        diagnostico=f"encolado job_id={job_id or '(sin job_id)'}"
+        + (" con la clave del abogado asignado" if nota["con_clave_del_abogado"] else " con las credenciales del integrador"),
+    )
     return respuesta
+
+
+def _sincronizar(
+    competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto
+) -> dict:
+    """Cada llamado queda en `pjud_llamado` (la consola lo muestra), también los que
+    el dedupe frena y los que el proveedor rechaza."""
+    inicio = time.monotonic()
+    rol, tribunal = _identidad(competencia, cuerpo)
+    nota: dict = {"resultado": "error", "http_status": 500, "mensaje": None, "diagnostico": None, "causa_id": None}
+    try:
+        return _encolar(competencia, cuerpo, db, db_maestra, tenant, nota)
+    finally:
+        _registrar_llamado_pjud(
+            db_maestra, tenant=tenant, causa_id=nota["causa_id"], rol=rol, tribunal=tribunal,
+            materia=COMPETENCIAS[competencia][0], forzar=True, resultado=nota["resultado"],
+            http_status=nota["http_status"], mensaje=nota["mensaje"],
+            diagnostico="espejo " + (nota["diagnostico"] or "falló antes de llamar al proveedor"),
+            duracion_ms=int((time.monotonic() - inicio) * 1000),
+        )
 
 
 def _registrar_rutas() -> None:
