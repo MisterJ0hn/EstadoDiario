@@ -528,6 +528,12 @@ def pjud_documento(
     La descarga del proveedor es servidor-a-servidor; el `url` se valida contra
     `PJUD_API_BASE_URL` en `PjudService.abrir_documento` (no es un proxy
     abierto)."""
+    return responder_documento_pjud(url)
+
+
+def responder_documento_pjud(url: str) -> StreamingResponse:
+    """Baja el documento del proveedor y lo reenvía (ver `pjud_documento`). Lo usa
+    también el espejo de api-pjud para sistemas externos."""
     try:
         upstream = PjudService().abrir_documento(url)
     except PjudNoEncontrado:

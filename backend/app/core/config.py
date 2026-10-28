@@ -196,6 +196,10 @@ class Settings(BaseSettings):
     # Algunos endpoints del catálogo lo piden además del bearer del login.
     PJUD_API_CLIENT_KEY: str = ""
     PJUD_API_TIMEOUT_SEGUNDOS: float = 20.0
+    # Cuánto vale la copia local de una respuesta de api-pjud que se sirve a los
+    # sistemas externos (espejo `/api/v1/pjud`). 30 min = el intervalo mínimo que
+    # api-pjud deja entre dos syncs de una misma causa: antes no puede haber nada nuevo.
+    PJUD_COPIA_TTL_MIN: int = 30
 
     @property
     def pjud_api_activo(self) -> bool:

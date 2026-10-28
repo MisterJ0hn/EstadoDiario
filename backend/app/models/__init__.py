@@ -27,6 +27,7 @@ from app.models import (  # noqa: F401
     movimiento,
     movimiento_corte,
     password_historial,
+    pjud_copia,
     reporte_plantilla,
     usuario,
     usuario_rut,

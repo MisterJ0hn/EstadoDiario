@@ -236,6 +236,7 @@ TABLAS_TENANT = (
     "log_actividades",
     "movimiento",
     "movimiento_corte",
+    "pjud_copia",
     "reporte_plantilla",
     "usuario",
     "usuario_password_historial",

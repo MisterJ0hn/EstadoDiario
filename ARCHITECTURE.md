@@ -438,6 +438,46 @@ Tres llamadas, en este orden (todas exigen que el cliente tenga `pjud_habilitado
    `forzar`) para los datos. Con el último sync en `error` igual devuelve los datos
    que api-pjud ya tenía, junto al error.
 
+#### Espejo de api-pjud (`/api/v1/pjud`)
+
+Para que un integrador no tenga que hablar con api-pjud, el espejo ofrece **el mismo
+contrato del proveedor** (rutas, cuerpo y JSON de respuesta). Migrar es cambiar la URL
+base y el header: `X-API-Key` en vez de `Authorization: Bearer`.
+
+| api-pjud | Espejo |
+|---|---|
+| `POST /consultar_<competencia>` | `POST /api/v1/pjud/consultar_<competencia>` |
+| `POST /consultar_movimientos_<competencia>` | `POST /api/v1/pjud/consultar_movimientos_<competencia>` |
+| `POST /sincronizar_<competencia>` | `POST /api/v1/pjud/sincronizar_<competencia>` |
+| `GET /public/<identificador>/<cuaderno>/<archivo>` | `GET /api/v1/pjud/public/<identificador>/<cuaderno>/<archivo>` |
+
+Competencias: `civil`, `familia`, `laboral`, `cobranza`, `penal`, `apelaciones`.
+`app/api/v1/endpoints/pjud_espejo.py`.
+
+- **Copia local.** `consultar_*` se sirve de `pjud_copia` (base del cliente; guarda la
+  respuesta cruda del proveedor) mientras sea más nueva que `PJUD_COPIA_TTL_MIN` (30 min,
+  el intervalo mínimo entre syncs de api-pjud). Si no hay copia vigente se hace un solo
+  pull en vivo, se guarda y se responde. **No se guarda** una cabecera que siga
+  `sincronizando` (ni, en Civil/Cobranza/Penal, una sin cuadernos), para que el polling vea
+  el avance real; los movimientos solo se guardan si hay cabecera vigente.
+- **`sincronizar_*`** reenvía al proveedor con **nuestro** `callback_url` (el que mande el
+  sistema se ignora), registra el `job_id` en `pjud_sincronizacion` y descarta la copia de
+  esa causa. Confirmar que terminó = volver a `consultar_<competencia>` hasta que
+  `causa.estado` deje de ser `sincronizando`.
+- **Credenciales del OJV** (`rut`, `clave`, `metodo_login`): opcionales, como en api-pjud;
+  viajan al proveedor pero **no se guardan ni forman parte de la clave de la copia**.
+- **Documentos.** Las URLs absolutas del proveedor (`…/public/…`) salen reescritas a
+  `<PUBLIC_BASE_URL>/api/v1/pjud/public/…`; los nombres relativos quedan igual. El GET
+  reutiliza `PjudService.abrir_documento` (solo sirve rutas `/public/` del proveedor).
+- **Errores** como en api-pjud: 404 (no tiene la causa: sincronízala), 409 (sync en curso
+  o muy pronto); cualquier otra falla del proveedor, 502.
+- **Permisos.** Las consultas por POST cuentan como lectura para cualquier key y no se
+  auditan; `sincronizar_*` exige `permite_escritura` y queda en la bitácora
+  (`CONSULTAS_PJUD_POR_POST` / `SINCRONIZAR_PJUD` en `app/core/api_key.py`). Todo exige
+  `Cliente.pjud_habilitado`.
+
+El `api_pjud` sellado que se entrega con las credenciales (ver abajo) se mantiene por ahora.
+
 #### Credenciales del OJV para el sistema externo
 
 Un sistema externo puede necesitar entrar al Poder Judicial como el abogado dueño

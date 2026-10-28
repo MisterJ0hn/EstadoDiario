@@ -75,6 +75,9 @@ PREFIJOS_LECTURA = (
     "/api/v1/reportes",
     "/api/v1/dashboard",
     "/api/v1/jurisdicciones",
+    # Espejo de api-pjud: aquí solo se leen los documentos (GET `public/...`); las
+    # consultas por POST y el sync tienen sus propios patrones, más abajo.
+    "/api/v1/pjud",
 )
 # Dónde puede ESCRIBIR una key con `permite_escritura` y sin lista propia.
 PREFIJOS_ESCRITURA_DEFECTO = ("/api/v1/causas",)
@@ -87,7 +90,21 @@ ESCRITURAS_PUNTUALES = re.compile(
     r"^/api/v1/estado-diario/[^/]+/(leido|no-leido|pendiente)$"
 )
 
+# Espejo de api-pjud (`app/api/v1/endpoints/pjud_espejo.py`): igual que el proveedor,
+# consultar es un POST con cuerpo. Es una LECTURA aunque el método sea POST: la puede
+# hacer cualquier key y no se audita (sería una fila por consulta).
+CONSULTAS_PJUD_POR_POST = re.compile(r"^/api/v1/pjud/consultar(_movimientos)?_[a-z]+$")
+# Pedir un sync al proveedor sí es una escritura: exige `permite_escritura` y se audita.
+SINCRONIZAR_PJUD = re.compile(r"^/api/v1/pjud/sincronizar_[a-z]+$")
+
 METODOS_DE_LECTURA = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def es_lectura(metodo: str, path: str) -> bool:
+    """Lectura de verdad (GET...) o consulta que el espejo de api-pjud recibe por POST."""
+    return metodo.upper() in METODOS_DE_LECTURA or (
+        metodo.upper() == "POST" and bool(CONSULTAS_PJUD_POR_POST.match(path))
+    )
 
 # Una key con uso reciente no vuelve a escribir `ultimo_uso` hasta que pase esto.
 _REFRESCO_ULTIMO_USO = timedelta(seconds=60)
@@ -162,14 +179,16 @@ def motivo_de_denegacion(
     if ".." in path or "//" in path:
         return "ruta_sospechosa"
 
-    if metodo.upper() in METODOS_DE_LECTURA:
-        if _bajo_prefijo(path, PREFIJOS_LECTURA):
+    if es_lectura(metodo, path):
+        if metodo.upper() == "POST" or _bajo_prefijo(path, PREFIJOS_LECTURA):
             return None
         return "modulo_no_permitido"
 
     if not permite_escritura:
         return "key_solo_lectura"
-    if metodo.upper() == "POST" and ESCRITURAS_PUNTUALES.match(path):
+    if metodo.upper() == "POST" and (
+        ESCRITURAS_PUNTUALES.match(path) or SINCRONIZAR_PJUD.match(path)
+    ):
         return None
     if not _bajo_prefijo(path, prefijos_escritura):
         return "escritura_no_permitida_en_la_ruta"
@@ -491,7 +510,7 @@ def autenticar(
             detail="Esta API key no tiene permiso para este recurso",
         )
 
-    if metodo.upper() not in METODOS_DE_LECTURA:
+    if not es_lectura(metodo, path):
         # Antes del handler y no después: una escritura que falla a la mitad
         # también tiene que dejar rastro de quién la intentó.
         _auditar(identidad, auditoria.ACCION_API_KEY_ESCRITURA, ip, f"{metodo} {path}")

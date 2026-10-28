@@ -148,6 +148,8 @@ def test_todas_las_tablas_del_tenant_se_copian_o_se_justifican():
     #   historial (ver `_hashes_vetados` en app/services/password_service.py).
     # - `webhook_envio`: la cola del webhook es posterior a la migración; una
     #   instalación vieja no tiene entregas pendientes que conservar.
+    # - `pjud_copia`: caché del espejo de api-pjud, posterior a la migración y
+    #   reconstruible consultando de nuevo al proveedor.
     aparte = {
         "usuario",
         "log_actividades",
@@ -157,6 +159,7 @@ def test_todas_las_tablas_del_tenant_se_copian_o_se_justifican():
         "causa_corte",
         "usuario_password_historial",
         "webhook_envio",
+        "pjud_copia",
     }
     sin_cubrir = set(BaseTenant.metadata.tables) - set(TABLAS_A_COPIAR) - aparte
     assert not sin_cubrir, (

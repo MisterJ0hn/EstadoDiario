@@ -180,6 +180,41 @@ def test_estado_de_sincronizacion_pjud_lo_lee_cualquier_key(path):
     assert api_key.motivo_de_denegacion("GET", path, permite_escritura=False) is None
 
 
+@pytest.mark.parametrize("path", [
+    "/api/v1/pjud/consultar_civil",
+    "/api/v1/pjud/consultar_movimientos_familia",
+])
+def test_el_espejo_de_api_pjud_consulta_por_post_con_cualquier_key(path):
+    assert api_key.motivo_de_denegacion("POST", path, permite_escritura=False) is None
+    assert api_key.es_lectura("POST", path)  # y por eso no se audita como escritura
+
+
+def test_sincronizar_en_el_espejo_exige_escritura_y_se_audita():
+    path = "/api/v1/pjud/sincronizar_civil"
+    assert api_key.motivo_de_denegacion("POST", path, permite_escritura=False) == "key_solo_lectura"
+    assert api_key.motivo_de_denegacion("POST", path, permite_escritura=True) is None
+    # Aunque la key tenga prefijos de escritura propios que no incluyen el espejo.
+    assert api_key.motivo_de_denegacion(
+        "POST", path, permite_escritura=True, prefijos_escritura=("/api/v1/otra",)
+    ) is None
+    assert not api_key.es_lectura("POST", path)
+
+
+def test_los_documentos_del_espejo_se_leen_por_get():
+    path = "/api/v1/pjud/public/abc/1/a.pdf"
+    assert api_key.motivo_de_denegacion("GET", path, permite_escritura=False) is None
+
+
+@pytest.mark.parametrize("metodo,path", [
+    ("DELETE", "/api/v1/pjud/consultar_civil"),
+    ("PUT", "/api/v1/pjud/consultar_civil"),
+    ("POST", "/api/v1/pjud/otra_cosa"),
+    ("POST", "/api/v1/pjud/consultar_civil/../x"),
+])
+def test_en_el_espejo_no_se_abre_nada_mas(metodo, path):
+    assert api_key.motivo_de_denegacion(metodo, path, permite_escritura=False) is not None
+
+
 def test_una_key_con_escritura_escribe_en_causas():
     assert (
         api_key.motivo_de_denegacion("POST", "/api/v1/causas/upload", permite_escritura=True)

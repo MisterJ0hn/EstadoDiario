@@ -226,6 +226,25 @@ class PjudService:
         except ValueError as e:
             raise PjudApiError("El servicio de detalle PJUD devolvió una respuesta ilegible.") from e
 
+    def reenviar(self, ruta: str, cuerpo: dict) -> dict:
+        """POST a api-pjud con el cuerpo tal cual y la respuesta JSON cruda, sin
+        normalizar. Es lo que usa el espejo para sistemas externos, que esperan el
+        mismo contrato del proveedor. Las credenciales del OJV (`rut`/`clave`) viajan
+        solo en el request, nunca se guardan ni se escriben en el log."""
+        return self._request("POST", ruta, json=cuerpo)
+
+    @staticmethod
+    def reescribir_documentos(texto: str) -> str:
+        """Cambia las URLs absolutas de documentos del proveedor
+        (`http(s)://<host de api-pjud>/public/...`) por las de nuestro espejo
+        (`<PUBLIC_BASE_URL>/api/v1/pjud/public/...`), para que el sistema externo
+        baje los PDF de nosotros y no necesite acceso a api-pjud."""
+        host = urlsplit(settings.PJUD_API_BASE_URL).netloc
+        if not host:
+            return texto
+        nuestra = f"{settings.PUBLIC_BASE_URL.rstrip('/')}/api/v1/pjud/public/"
+        return re.sub(rf"https?://{re.escape(host)}/public/", nuestra, texto)
+
     @staticmethod
     def _mensaje_error(respuesta) -> Optional[str]:
         """El `mensaje` del cuerpo de error del proveedor, si trae uno."""

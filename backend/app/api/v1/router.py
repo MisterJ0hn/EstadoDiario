@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     jurisdicciones,
     movimientos,
     pagos,
+    pjud_espejo,
     reportes,
 )
 
@@ -19,6 +20,7 @@ api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(auth.router)
 api_router.include_router(causas.router)
+api_router.include_router(pjud_espejo.router)
 api_router.include_router(facturas.router)
 api_router.include_router(pagos.router)
 api_router.include_router(dashboard.router)
