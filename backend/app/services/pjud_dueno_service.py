@@ -99,9 +99,12 @@ def _por_causa(
         objetivo = _normalizar(tribunal)
         candidatas = [c for c in candidatas if _normalizar(c.tribunal or "") == objetivo]
 
-    rut = _unico_rut([c.rut_efectivo for c in candidatas]) if candidatas else None
-    if rut is None:
+    if not candidatas:
         return None
+    # Qué causa es y quién es su dueño son dos preguntas: una causa sin abogado se
+    # identifica igual (sus jobs de sync tienen que poder encontrarse por `causa_id`),
+    # solo que `rut_efectivo` queda en None y no se usan credenciales de nadie.
+    rut = _unico_rut([c.rut_efectivo for c in candidatas])
     # El id solo si la causa es una sola: con Familia (sin tribunal) pueden calzar
     # varias del mismo abogado y no se sabe cuál pidió el integrador.
     return SimpleNamespace(
@@ -138,11 +141,11 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
         )
 
     candidatas = [f for f in filas if coincide(f)]
+    if not candidatas:
+        return None
     ruts = [f.estado_diario_origen.rut if f.estado_diario_origen else None for f in candidatas]
-    rut = _unico_rut(ruts) if candidatas else None
-    return (
-        SimpleNamespace(id=candidatas[0].id if len(candidatas) == 1 else None, rut_efectivo=rut)
-        if rut else None
+    return SimpleNamespace(
+        id=candidatas[0].id if len(candidatas) == 1 else None, rut_efectivo=_unico_rut(ruts)
     )
 
 

@@ -18,7 +18,7 @@ from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.models.usuario import Usuario
 from app.models.usuario_rut import UsuarioRut
-from app.services.pjud_dueno_service import credenciales_del_abogado_asignado
+from app.services.pjud_dueno_service import causa_asignada, credenciales_del_abogado_asignado
 
 ABOGADO = {"rut": "11", "clave": "121212", "metodo_login": 2}
 DEL_INTEGRADOR = {"rut": "99", "clave": "ajena", "metodo_login": 1}
@@ -109,6 +109,16 @@ class TestCausas:
         _abogado(db, "Ana", "16952077-1")
         _causa(db, _origen(db, "16952077-1"))
         assert _resolver(db, rol=9999) is None
+
+    def test_causa_sin_abogado_se_identifica_pero_no_tiene_credenciales(self, db):
+        """Sus jobs de sync deben poder encontrarse por `causa_id` aunque no haya dueño."""
+        origen = _origen(db, None)
+        causa = _causa(db, origen)
+        asignada = causa_asignada(db, ServicioFalso(), "civil", {
+            "corte": 90, "tribunal": 276, "tipo": "C", "rol": 1234, "anio": 2026,
+        })
+        assert asignada.id == causa.id and asignada.rut_efectivo is None
+        assert _resolver(db) is None  # y no se usan credenciales de nadie
 
     def test_abogado_sin_clave_cargada_no_es_dueno(self, db):
         _abogado(db, "Ana", "16952077-1", con_clave=False)
