@@ -1155,14 +1155,11 @@ PAUSA_RECONCILIAR = 20.0
 _ultima_reconciliacion: dict[tuple, float] = {}
 
 
-def _reconciliar_con_api_pjud(db_maestra, cliente_id, fila, causa_id, materia, reconciliar) -> bool:
-    """¿api-pjud ya tiene la causa completa aunque nuestro job siga `sincronizando`?
-
-    El estado de un job lo cierra el callback; si no llegó (o llegó antes de registrar el
-    job) la causa quedaba "sincronizando" con los datos ya completos. Se pregunta a
-    api-pjud, solo lectura, y si dice `listo` el job se cierra de verdad para que las
-    siguientes lecturas no repitan la pregunta. Nunca revienta."""
-    if reconciliar is None or fila is None or fila.estado != SINC_SINCRONIZANDO:
+def _toca_reconciliar(cliente_id, materia, causa_id, fila) -> bool:
+    """¿Corresponde preguntarle a api-pjud por esta causa `sincronizando`? Pasada la
+    gracia del job y respetando la pausa entre preguntas. Si responde que sí, deja
+    anotado que se preguntó ahora."""
+    if fila is None or fila.estado != SINC_SINCRONIZANDO:
         return False
     if datetime.now(timezone.utc) - _aware(fila.creado_en) < GRACIA_RECONCILIAR:
         return False
@@ -1171,6 +1168,18 @@ def _reconciliar_con_api_pjud(db_maestra, cliente_id, fila, causa_id, materia, r
     if ahora - _ultima_reconciliacion.get(clave, -PAUSA_RECONCILIAR) < PAUSA_RECONCILIAR:
         return False
     _ultima_reconciliacion[clave] = ahora
+    return True
+
+
+def _reconciliar_con_api_pjud(db_maestra, cliente_id, fila, causa_id, materia, reconciliar) -> bool:
+    """¿api-pjud ya tiene la causa completa aunque nuestro job siga `sincronizando`?
+
+    El estado de un job lo cierra el callback; si no llegó (o llegó antes de registrar el
+    job) la causa quedaba "sincronizando" con los datos ya completos. Se pregunta a
+    api-pjud, solo lectura, y si dice `listo` el job se cierra de verdad para que las
+    siguientes lecturas no repitan la pregunta. Nunca revienta."""
+    if reconciliar is None or not _toca_reconciliar(cliente_id, materia, causa_id, fila):
+        return False
     try:
         if reconciliar() != "listo":
             return False
@@ -1441,11 +1450,32 @@ def _detalle_pjud(
             db_maestra.rollback()
             sincronizacion = None
         if sincronizacion and sincronizacion.estado == SINC_SINCRONIZANDO:
-            return {
+            en_proceso = {
                 "estado": "sincronizando",
                 "mensaje": _MENSAJE_SINCRONIZANDO,
                 "detalle_estado": None,
                 "diagnostico": f"estado desde BD: sincronizando job_id={sincronizacion.job_id}",
+            }
+            # El callback pudo no llegar (o llegar antes de registrar el job): antes de
+            # decir "sincronizando" se confirma con api-pjud, solo lectura. Si la causa ya
+            # está lista se cierra el job y se entregan sus datos.
+            if not _toca_reconciliar(tenant.cliente_id, materia, causa_id, sincronizacion):
+                return en_proceso
+            try:
+                lectura = PjudService()
+                lectura.solo_lectura = True
+                datos = consultar(lectura)
+                if datos.get("estado") != "listo":
+                    return en_proceso
+                repo.cerrar(sincronizacion.job_id, exito=True)
+            except Exception:
+                logger.exception("No se pudo reconciliar la causa %s con api-pjud", causa_id)
+                db_maestra.rollback()
+                return en_proceso
+            return {
+                **datos,
+                "diagnostico": f"job_id={sincronizacion.job_id} cerrado: api-pjud ya la tiene lista"
+                f" · {datos.get('diagnostico')}",
             }
         if sincronizacion and sincronizacion.estado == SINC_ERROR:
             error = {

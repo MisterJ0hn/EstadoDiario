@@ -310,6 +310,65 @@ class TestEstadoConLlamados:
         assert (r.estado, r.mensaje_error) == ("listo", None)
 
 
+class TestDetalleReconciliadoConApiPjud:
+    """El atajo del detalle ("hay un job sincronizando") tampoco puede afirmarlo a ciegas."""
+
+    @pytest.fixture(autouse=True)
+    def _entorno(self, monkeypatch):
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
+        causas._ultima_reconciliacion.clear()
+        yield
+        causas._ultima_reconciliacion.clear()
+
+    def _job(self, db, hace):
+        fila = _registrar(PjudSincronizacionRepository(db))
+        fila.creado_en = fila.actualizado_en = datetime.now(timezone.utc) - hace
+        db.commit()
+
+    def _llamar(self, db, consultar):
+        import types
+        return causas._detalle_pjud(
+            db, types.SimpleNamespace(cliente_id=None), causa_id=10, materia="Civil",
+            rol="C-1-2026", tribunal="1° Juzgado", forzar=False, consultar=consultar,
+        )
+
+    def test_api_pjud_completa_entrega_los_datos_y_cierra_el_job(self, db):
+        self._job(db, hace=timedelta(minutes=3))
+        vistos = []
+
+        def consultar(servicio):
+            vistos.append(servicio.solo_lectura)
+            return {"estado": "listo", "causa": {"estado": "Completo"}, "diagnostico": "x"}
+
+        r = self._llamar(db, consultar)
+        assert r["estado"] == "listo" and r["causa"] == {"estado": "Completo"}
+        assert vistos == [True]  # solo lectura: no encola otro sync
+        assert PjudSincronizacionRepository(db).por_job_id("job-1").estado == LISTO
+
+    def test_api_pjud_aun_sincronizando_mantiene_el_aviso(self, db):
+        self._job(db, hace=timedelta(minutes=3))
+        r = self._llamar(db, lambda s: {"estado": "sincronizando"})
+        assert r["estado"] == "sincronizando" and "estado desde BD" in r["diagnostico"]
+        assert PjudSincronizacionRepository(db).por_job_id("job-1").estado == SINCRONIZANDO
+
+    def test_job_recien_encolado_no_pregunta(self, db):
+        self._job(db, hace=timedelta(seconds=10))
+
+        def no_debe_llamarse(_):
+            raise AssertionError("no debía consultar")
+
+        assert self._llamar(db, no_debe_llamarse)["estado"] == "sincronizando"
+
+    def test_si_la_consulta_falla_mantiene_el_aviso(self, db):
+        self._job(db, hace=timedelta(minutes=3))
+
+        def falla(_):
+            raise RuntimeError("api-pjud caído")
+
+        assert self._llamar(db, falla)["estado"] == "sincronizando"
+
+
 class TestEstadoReconciliadoConApiPjud:
     """Si el callback no cerró el job pero api-pjud ya tiene la causa completa, el estado
     no puede seguir diciendo `sincronizando`."""
