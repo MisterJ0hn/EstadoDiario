@@ -257,6 +257,59 @@ class TestDetallePjud:
         assert self._llamar(db, lambda s: {"estado": "listo"})["estado"] == "listo"
 
 
+class TestEstadoConLlamados:
+    """`GET /causas/{id}/pjud/estado` toma lo más reciente entre el job y el llamado."""
+
+    def _llamado(self, db, resultado, hace):
+        from app.models.maestra.pjud_llamado import PjudLlamado
+        PjudLlamado.__table__.create(bind=db.get_bind(), checkfirst=True)
+        db.add(PjudLlamado(
+            fecha_hora=datetime.now(timezone.utc) - hace, causa_id=10, materia="Civil",
+            rol="C-1-2026", forzar=False, resultado=resultado,
+        ))
+        db.commit()
+
+    def _estado(self, db):
+        import types
+        return causas._estado_sincronizacion(
+            db, types.SimpleNamespace(cliente_id=None), causa_id=10, materia="Civil"
+        )
+
+    def _job(self, db, hace):
+        fila = _registrar(PjudSincronizacionRepository(db))
+        fila.creado_en = fila.actualizado_en = datetime.now(timezone.utc) - hace
+        db.commit()
+
+    def test_un_llamado_listo_posterior_gana_sobre_un_job_pegado(self, db):
+        self._job(db, hace=timedelta(minutes=8))  # sincronizando, sin callback
+        self._llamado(db, "listo", hace=timedelta(minutes=2))
+        r = self._estado(db)
+        assert (r.estado, r.job_id) == ("listo", "job-1")
+
+    def test_un_llamado_listo_anterior_al_job_no_lo_pisa(self, db):
+        self._llamado(db, "listo", hace=timedelta(minutes=8))
+        self._job(db, hace=timedelta(minutes=2))
+        assert self._estado(db).estado == "sincronizando"
+
+    def test_un_llamado_sincronizando_no_cambia_el_estado_del_job(self, db):
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo)
+        repo.cerrar("job-1", exito=True)
+        self._llamado(db, "sincronizando", hace=timedelta(seconds=0))
+        assert self._estado(db).estado == "listo"
+
+    def test_un_llamado_listo_posterior_a_un_error_gana(self, db):
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo)
+        repo.cerrar("job-1", exito=False, mensaje_error="boom")
+        fila = repo.por_job_id("job-1")
+        fila.actualizado_en = datetime.now(timezone.utc) - timedelta(minutes=5)
+        db.commit()
+        self._llamado(db, "listo", hace=timedelta(minutes=1))
+        r = self._estado(db)
+        assert (r.estado, r.mensaje_error) == ("listo", None)
+
+
 class TestEnfriamientoTrasElCallback:
     """Un callback `listo` no debe reabrir la compuerta a otro sync de inmediato."""
 

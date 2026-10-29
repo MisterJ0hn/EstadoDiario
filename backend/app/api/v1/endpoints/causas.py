@@ -1149,17 +1149,38 @@ def _encolar_sincronizacion(
 def _estado_sincronizacion(
     db_maestra, tenant, *, causa_id, materia
 ) -> PjudEstadoSincronizacionResponse:
-    fila = _sincronizaciones_pjud(
-        db_maestra, tenant.cliente_id, [causa_id], materia == "Apelaciones"
-    ).get(causa_id)
+    apelaciones = materia == "Apelaciones"
+    fila = _sincronizaciones_pjud(db_maestra, tenant.cliente_id, [causa_id], apelaciones).get(causa_id)
+    estado = fila.estado if fila else "sin_sincronizar"
+    mensaje_error = fila.mensaje_error if fila else None
+    actualizado_en = fila.actualizado_en if fila else None
+
+    # Mismo criterio que el listado (`_aplicar_estado_pjud`): manda lo más reciente
+    # entre el job y el último llamado. Un llamado `listo` posterior al job —api-pjud ya
+    # entregó la causa completa— gana sobre un job que quedó `sincronizando` por un
+    # callback que no llegó, o sobre un `error` anterior.
+    try:
+        llamado = PjudLlamadoRepository(db_maestra).ultimos_por_causa(
+            cliente_id=tenant.cliente_id, causa_ids=[causa_id], apelaciones=apelaciones
+        ).get(causa_id)
+    except Exception:
+        logger.exception("No se pudo leer pjud_llamado")
+        db_maestra.rollback()
+        llamado = None
+    if (
+        llamado is not None and llamado.resultado == "listo"
+        and (fila is None or _aware(llamado.fecha_hora) > _aware(fila.actualizado_en))
+    ):
+        estado, mensaje_error, actualizado_en = "listo", None, llamado.fecha_hora
+
     return PjudEstadoSincronizacionResponse(
         causa_id=causa_id,
         materia=materia,
-        estado=fila.estado if fila else "sin_sincronizar",
+        estado=estado,
         job_id=fila.job_id if fila else None,
-        mensaje_error=fila.mensaje_error if fila else None,
+        mensaje_error=mensaje_error,
         iniciado_en=fila.creado_en if fila else None,
-        actualizado_en=fila.actualizado_en if fila else None,
+        actualizado_en=actualizado_en,
         consultar_detalle=_rutas_pjud(causa_id, materia)[1],
     )
 
