@@ -249,10 +249,12 @@ class PjudSincronizacionRepository:
 
     @staticmethod
     def _despues(a: datetime, b: datetime) -> bool:
-        """a >= b, tolerando fechas sin zona (SQLite)."""
+        """a > b, tolerando fechas sin zona (SQLite). Estricto: con el reloj grueso de
+        Windows un `listo` y la creación del job siguiente pueden caer en el mismo
+        instante, y ahí el job nuevo no está resuelto."""
         a = a if a.tzinfo else a.replace(tzinfo=timezone.utc)
         b = b if b.tzinfo else b.replace(tzinfo=timezone.utc)
-        return a >= b
+        return a > b
 
     @staticmethod
     def enfriando(fila: PjudSincronizacion) -> bool:

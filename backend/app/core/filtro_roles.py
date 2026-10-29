@@ -70,6 +70,18 @@ def _norm(columna):
     return func.upper(func.trim(columna))
 
 
+# `º` (ordinal, U+00BA) y `ª` (U+00AA) se escriben donde el PJUD pone `°` (grado,
+# U+00B0): "30º Juzgado Civil" y "30° Juzgado Civil" son el mismo tribunal pero no el
+# mismo texto, y según de dónde venga (Excel, teclado, URL) aparece una u otra.
+def norm_tribunal_sql(columna):
+    return func.upper(func.trim(func.replace(func.replace(columna, "º", "°"), "ª", "°")))
+
+
+def norm_tribunal(valor: str) -> str:
+    """Lo mismo que `norm_tribunal_sql`, del lado del valor que se busca."""
+    return valor.replace("º", "°").replace("ª", "°").strip().upper()
+
+
 def condicion_roles(col_rol, col_tribunal, roles: list[RolFiltro] | None):
     """Condición SQL de `roles` (OR entre entradas), o None si no hay filtro.
     Va aparte de `filtrar_por_roles` para poder combinarla con otras condiciones
@@ -83,7 +95,10 @@ def condicion_roles(col_rol, col_tribunal, roles: list[RolFiltro] | None):
     for rol, tribunal in roles:
         if tribunal is not None:
             condiciones.append(
-                and_(_norm(col_rol) == rol.upper(), _norm(col_tribunal) == tribunal.upper())
+                and_(
+                    _norm(col_rol) == rol.upper(),
+                    norm_tribunal_sql(col_tribunal) == norm_tribunal(tribunal),
+                )
             )
     return or_(*condiciones)
 

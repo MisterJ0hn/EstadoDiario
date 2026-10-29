@@ -19,6 +19,7 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.filtro_roles import norm_tribunal, norm_tribunal_sql
 from app.models.causa import ORIGEN_DATO_API, Causa
 from app.repositories.causa_repository import ultimo_origen_causas_id
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
@@ -74,7 +75,7 @@ class CausaApiService:
             .filter(
                 Causa.estado_diario_origen_id == origen_id,
                 func.lower(func.trim(Causa.rol)) == _norm(rol),
-                func.lower(func.trim(Causa.tribunal)) == _norm(tribunal),
+                norm_tribunal_sql(Causa.tribunal) == norm_tribunal(tribunal),
             )
             .order_by(Causa.id)
             .first()

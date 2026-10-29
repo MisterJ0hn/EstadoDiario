@@ -83,6 +83,15 @@ def test_ignora_mayusculas_y_espacios_de_borde(repo):
     assert _roles_de(repo, [("c-55-2021", "2° JUZGADO CIVIL DE SANTIAGO")]) == ["C-55-2021"]
 
 
+@pytest.mark.parametrize("tribunal", [
+    "2º Juzgado Civil de Santiago",  # ordinal (U+00BA), como llega por URL o teclado
+    "2ª Juzgado Civil de Santiago",
+    "2° Juzgado Civil de Santiago",  # grado (U+00B0), como lo escribe el PJUD
+])
+def test_ordinal_y_grado_son_el_mismo_tribunal(repo, tribunal):
+    assert _roles_de(repo, [("C-55-2021", tribunal)]) == ["C-55-2021"]
+
+
 def test_mismo_rol_en_otro_tribunal_se_distingue(repo):
     items, total, _, _ = repo.find_filtered(roles=[("C-55-2021", "1° Juzgado Civil de Puente Alto")])
     assert total == 1 and items[0].tribunal == "1° Juzgado Civil de Puente Alto"
