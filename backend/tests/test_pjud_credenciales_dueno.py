@@ -325,3 +325,24 @@ def test_copiar_causa_de_api_conserva_la_credencial(db):
     recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
     nueva = copiar_causa_de_api(db, causa, causa.estado_diario_origen_id)
     assert credenciales_del_dueno(db, nueva)["clave"] == "claveCliente"
+
+
+def test_al_asignarse_abogado_su_clave_manda_sobre_la_guardada(db):
+    """La causa ya guardó la clave del integrador; cuando un estado diario le pone
+    abogado, se usa la del abogado."""
+    _abogado(db, "Ana", "16952077-1")
+    causa = _causa(db, None, origen_dato=ORIGEN_DATO_API)
+    recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
+    assert credenciales_del_dueno(db, causa)["clave"] == "claveCliente"
+    causa.rut_asignado = "16952077-1"
+    assert credenciales_del_dueno(db, causa) == {"rut": "11", "clave": "121212", "metodo_login": 2}
+
+
+def test_abogado_asignado_sin_clave_no_cae_a_la_guardada(db):
+    """Con abogado pero sin clave del OJV cargada no se usa la del integrador desde
+    nuestro lado: va sin credencial (en el espejo sigue la que mande el integrador)."""
+    _abogado(db, "Ana", "16952077-1", con_clave=False)
+    causa = _causa(db, None, origen_dato=ORIGEN_DATO_API)
+    recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
+    causa.rut_asignado = "16952077-1"
+    assert credenciales_del_dueno(db, causa) is None

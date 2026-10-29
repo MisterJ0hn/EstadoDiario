@@ -20,7 +20,7 @@ import logging
 import time
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -455,7 +455,13 @@ def documento(
     identificador: str,
     cuaderno: str,
     archivo: str,
+    request: Request,
     usuario: Usuario = Depends(get_usuario_actual),
 ):
     base = settings.PJUD_API_BASE_URL.rstrip("/")
-    return responder_documento_pjud(f"{base}/public/{identificador}/{cuaderno}/{archivo}")
+    url = f"{base}/public/{identificador}/{cuaderno}/{archivo}"
+    # Los documentos de api-pjud (Familia) vienen firmados: `?t=<vencimiento>.<firma>`.
+    # Sin ese query el proveedor rechaza el pedido, así que se reenvía tal cual.
+    if request.url.query:
+        url += f"?{request.url.query}"
+    return responder_documento_pjud(url)

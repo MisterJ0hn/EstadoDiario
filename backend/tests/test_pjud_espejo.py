@@ -9,6 +9,7 @@ import types
 
 import pytest
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -383,3 +384,22 @@ class TestCredencialDeLaIntegracion:
             TenantContexto(guid="g", cliente_id=1, usuario_id=1), recordar_credencial=True,
         )
         assert len(espiado) == 1
+
+
+class TestDocumento:
+    def test_reenvia_el_query_firmado_de_api_pjud(self, http, monkeypatch):
+        pedidas = []
+        monkeypatch.setattr(
+            pjud_espejo, "responder_documento_pjud", lambda url: pedidas.append(url) or Response("ok")
+        )
+        r = http.get("/pjud/public/familia/e10d2c59/historia_folio339.pdf?t=1793280401.abc123")
+        assert r.status_code == 200
+        assert pedidas[0].endswith("/public/familia/e10d2c59/historia_folio339.pdf?t=1793280401.abc123")
+
+    def test_sin_query_no_agrega_signo(self, http, monkeypatch):
+        pedidas = []
+        monkeypatch.setattr(
+            pjud_espejo, "responder_documento_pjud", lambda url: pedidas.append(url) or Response("ok")
+        )
+        http.get("/pjud/public/abc/1/a.pdf")
+        assert pedidas[0].endswith("/public/abc/1/a.pdf")
