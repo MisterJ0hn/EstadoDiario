@@ -54,17 +54,31 @@ class PjudSincronizacionRepository:
         if fila is None:
             fila = PjudSincronizacion(job_id=job_id)
             self.db.add(fila)
+        # Callback que llegó antes que el registro: el job ya terminó, no se reinicia.
+        adelantado = self._es_adelantado(fila)
         fila.cliente_id = cliente_id
         fila.causa_id = causa_id
         fila.materia = materia
         fila.rol = rol
         fila.tribunal = tribunal
-        fila.estado = SINCRONIZANDO
-        fila.mensaje_error = None
-        fila.creado_en = ahora
-        fila.actualizado_en = ahora
+        if not adelantado:
+            fila.estado = SINCRONIZANDO
+            fila.mensaje_error = None
+            fila.creado_en = ahora
+            fila.actualizado_en = ahora
+        elif fila.estado == LISTO:
+            self._cerrar_hermanos(fila)
         self.db.commit()
         return fila
+
+    @staticmethod
+    def _es_adelantado(fila: PjudSincronizacion) -> bool:
+        """Fila creada por un callback que llegó antes de que se registrara el job
+        (ver `cerrar`): ya cerrada y sin los datos de la causa."""
+        return (
+            fila.id is not None and fila.estado != SINCRONIZANDO
+            and fila.causa_id is None and fila.rol is None
+        )
 
     def reservar(
         self,
@@ -134,16 +148,58 @@ class PjudSincronizacionRepository:
     def cerrar(
         self, job_id: str, *, exito: bool, mensaje_error: Optional[str] = None
     ) -> Optional[PjudSincronizacion]:
-        """Aplica el aviso de api-pjud. `None` si el job no existe. Idempotente:
-        repetir el mismo aviso deja la fila igual."""
+        """Aplica el aviso de api-pjud. Idempotente: repetir el mismo aviso deja la fila
+        igual.
+
+        Si el job aún no existe se guarda igual, ya cerrado y sin datos de la causa: los
+        syncs rápidos terminan y avisan ANTES de que el endpoint alcance a registrar el
+        `job_id` que api-pjud le acaba de responder, y descartar el aviso dejaba el job
+        `sincronizando` (sin callback que lo cierre) hasta `VENCIMIENTO`. `registrar`
+        completa la fila después."""
         fila = self.por_job_id(job_id)
         if fila is None:
-            return None
+            ahora = datetime.now(timezone.utc)
+            fila = PjudSincronizacion(job_id=job_id, creado_en=ahora, actualizado_en=ahora)
+            self.db.add(fila)
         fila.estado = LISTO if exito else ERROR
         fila.mensaje_error = None if exito else (mensaje_error or "").strip() or None
         fila.actualizado_en = datetime.now(timezone.utc)
+        if exito:
+            self._cerrar_hermanos(fila)
         self.db.commit()
         return fila
+
+    def _cerrar_hermanos(self, fila: PjudSincronizacion) -> None:
+        """Un `listo` cierra también los demás jobs `sincronizando` de la misma causa.
+
+        Tras una ráfaga hay varios jobs de la misma causa y api-pjud no avisa de todos
+        (sincroniza la causa una vez). Los que no reciben callback quedaban
+        `sincronizando` hasta `VENCIMIENTO`, y la pantalla seguía diciendo "sincronizando"
+        con la causa ya completa."""
+        coincide = []
+        if fila.causa_id is not None:
+            coincide.append(PjudSincronizacion.causa_id == fila.causa_id)
+        if fila.rol and fila.tribunal:
+            coincide.append(
+                (PjudSincronizacion.rol == fila.rol) & (PjudSincronizacion.tribunal == fila.tribunal)
+            )
+        if not coincide:
+            return
+        hermanos = (
+            self.db.query(PjudSincronizacion)
+            .filter(
+                PjudSincronizacion.id != fila.id,
+                PjudSincronizacion.cliente_id == fila.cliente_id,
+                PjudSincronizacion.estado == SINCRONIZANDO,
+                self._materia_de(fila.materia == "Apelaciones"),
+                or_(*coincide),
+            )
+            .all()
+        )
+        for hermano in hermanos:
+            hermano.estado = LISTO
+            hermano.mensaje_error = None
+            hermano.actualizado_en = fila.actualizado_en
 
     @staticmethod
     def _materia_de(apelaciones: bool):
@@ -175,7 +231,28 @@ class PjudSincronizacionRepository:
         ultimos: dict[int, PjudSincronizacion] = {}
         for fila in filas:
             ultimos.setdefault(fila.causa_id, fila)
+        # Un `sincronizando` con un `listo` posterior a su creación ya está resuelto: api-pjud
+        # sincroniza la causa una vez y no avisa de cada job repetido (los de antes de
+        # `_cerrar_hermanos`). Se entrega ese `listo`, no el job pegado.
+        for causa_id, ultimo in list(ultimos.items()):
+            if ultimo.estado != SINCRONIZANDO:
+                continue
+            listo = next(
+                (f for f in filas
+                 if f.causa_id == causa_id and f.estado == LISTO
+                 and self._despues(f.actualizado_en, ultimo.creado_en)),
+                None,
+            )
+            if listo is not None:
+                ultimos[causa_id] = listo
         return {c: f for c, f in ultimos.items() if not self.vencida(f)}
+
+    @staticmethod
+    def _despues(a: datetime, b: datetime) -> bool:
+        """a >= b, tolerando fechas sin zona (SQLite)."""
+        a = a if a.tzinfo else a.replace(tzinfo=timezone.utc)
+        b = b if b.tzinfo else b.replace(tzinfo=timezone.utc)
+        return a >= b
 
     @staticmethod
     def enfriando(fila: PjudSincronizacion) -> bool:

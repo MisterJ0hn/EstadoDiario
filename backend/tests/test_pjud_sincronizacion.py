@@ -34,10 +34,10 @@ def db():
     sesion.close()
 
 
-def _registrar(repo, job_id="job-1", causa_id=10, materia="Civil"):
+def _registrar(repo, job_id="job-1", causa_id=10, materia="Civil", rol="C-1-2026"):
     return repo.registrar(
         job_id=job_id, cliente_id=None, causa_id=causa_id,
-        materia=materia, rol="C-1-2026", tribunal="1° Juzgado",
+        materia=materia, rol=rol, tribunal="1° Juzgado",
     )
 
 
@@ -57,8 +57,63 @@ class TestRepositorio:
         fila = repo.cerrar("job-1", exito=False, mensaje_error="No fue posible conectar con pjud")
         assert (fila.estado, fila.mensaje_error) == (ERROR, "No fue posible conectar con pjud")
 
-    def test_job_desconocido_devuelve_none(self, db):
-        assert PjudSincronizacionRepository(db).cerrar("nada", exito=True) is None
+    def test_un_listo_cierra_los_otros_jobs_de_la_misma_causa(self, db):
+        """Ráfaga: api-pjud avisa de uno solo; los demás no deben quedar sincronizando."""
+        repo = PjudSincronizacionRepository(db)
+        for job in ("a", "b", "c"):
+            _registrar(repo, job, causa_id=10)
+        _registrar(repo, "otra-causa", causa_id=11, rol="C-2-2026")
+        _registrar(repo, "otra-materia", causa_id=10, materia="Apelaciones")
+        repo.cerrar("a", exito=True)
+        estados = {f.job_id: f.estado for f in db.query(PjudSincronizacion).all()}
+        assert estados == {
+            "a": LISTO, "b": LISTO, "c": LISTO,
+            "otra-causa": SINCRONIZANDO, "otra-materia": SINCRONIZANDO,
+        }
+        assert repo.en_curso(cliente_id=None, materia="Civil", causa_id=10) is None
+
+    def test_un_error_no_cierra_los_otros_jobs(self, db):
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo, "a")
+        _registrar(repo, "b")
+        repo.cerrar("a", exito=False, mensaje_error="boom")
+        assert repo.por_job_id("b").estado == SINCRONIZANDO
+
+    def test_callback_adelantado_no_deja_el_job_sincronizando(self, db):
+        """api-pjud avisa ANTES de que registremos el job que acaba de responder."""
+        repo = PjudSincronizacionRepository(db)
+        assert repo.cerrar("rapido", exito=True).estado == LISTO  # aún no existe: se guarda
+        fila = _registrar(repo, "rapido")
+        assert (fila.estado, fila.causa_id, fila.rol) == (LISTO, 10, "C-1-2026")
+        assert repo.en_curso(cliente_id=None, materia="Civil", causa_id=10) is None
+        assert db.query(PjudSincronizacion).count() == 1
+
+    def test_callback_adelantado_con_error_conserva_el_error(self, db):
+        repo = PjudSincronizacionRepository(db)
+        repo.cerrar("rapido", exito=False, mensaje_error="boom")
+        fila = _registrar(repo, "rapido")
+        assert (fila.estado, fila.mensaje_error) == (ERROR, "boom")
+
+    def test_un_sincronizando_con_un_listo_posterior_se_lee_como_listo(self, db):
+        """Filas pegadas de antes: el listo posterior a su creación las resuelve."""
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo, "a")
+        _registrar(repo, "b")  # el más nuevo, sin callback
+        a = repo.por_job_id("a")
+        a.estado, a.actualizado_en = LISTO, datetime.now(timezone.utc) + timedelta(seconds=5)
+        db.commit()
+        ultimo = repo.ultimos_por_causa(cliente_id=None, causa_ids=[10])[10]
+        assert ultimo.job_id == "a" and ultimo.estado == LISTO
+
+    def test_un_sincronizando_mas_nuevo_que_el_listo_sigue_sincronizando(self, db):
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo, "a")
+        repo.cerrar("a", exito=True)
+        a = repo.por_job_id("a")
+        a.actualizado_en = datetime.now(timezone.utc) - timedelta(hours=1)
+        db.commit()
+        _registrar(repo, "b")
+        assert repo.ultimos_por_causa(cliente_id=None, causa_ids=[10])[10].job_id == "b"
 
     def test_ultimo_por_causa_y_materia(self, db):
         repo = PjudSincronizacionRepository(db)
@@ -109,9 +164,10 @@ class TestCallback:
         fila = PjudSincronizacionRepository(db).por_job_id("343sfdfer")
         assert (fila.estado, fila.mensaje_error) == (ERROR, "No fue posible conectar con pjud")
 
-    def test_job_desconocido_responde_200_sin_aplicar(self, cliente_http):
+    def test_job_aun_no_registrado_responde_200_y_queda_guardado(self, db, cliente_http):
         r = cliente_http.post("/causas/pjud/callback", json={"exito": True, "job_id": "nada"})
-        assert r.status_code == 200 and r.json() == {"exito": False}
+        assert r.status_code == 200 and r.json() == {"exito": True}
+        assert PjudSincronizacionRepository(db).por_job_id("nada").estado == LISTO
 
     def test_repetido_es_idempotente(self, db, cliente_http):
         _registrar(PjudSincronizacionRepository(db), "j")

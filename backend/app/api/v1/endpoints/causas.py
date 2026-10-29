@@ -1286,8 +1286,10 @@ def pjud_callback(
     fila = PjudSincronizacionRepository(db_maestra).cerrar(
         datos.job_id, exito=datos.exito, mensaje_error=datos.mensaje_error
     )
-    if fila is None:
-        logger.warning("Callback de api-pjud con job_id desconocido: %s", datos.job_id)
+    if fila is not None and fila.causa_id is None and fila.rol is None:
+        # Aún no registramos ese job: el aviso llegó antes que la respuesta del
+        # `sincronizar_*`. Queda guardado y `registrar` lo completa.
+        logger.info("Callback de api-pjud adelantado al registro del job: %s", datos.job_id)
     return PjudCallbackResponse(exito=fila is not None)
 
 
