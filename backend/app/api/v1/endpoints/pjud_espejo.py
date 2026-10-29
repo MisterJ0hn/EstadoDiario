@@ -212,6 +212,34 @@ def _encolar(
     # bloqueadas por "múltiples conexiones", además de un callback por cada una.
     # El cupo se reserva ANTES de llamar a api-pjud: si se registrara al volver, una
     # ráfaga de la misma causa pasaría entera el chequeo.
+    # Si el último sync de la causa terminó bien hace poco, tampoco se reenvía: la
+    # integración que repite `sincronizar_*` cada pocos segundos nunca se entera de que
+    # ya terminó (el callback es nuestro, no suyo) y cada repetición abriría otro job
+    # y otro callback. Se le responde que la causa está lista y que consulte.
+    try:
+        ultimo = jobs.ultimo_de(
+            cliente_id=tenant.cliente_id, materia=materia, causa_id=causa_id,
+            rol=rol, tribunal=tribunal,
+        )
+    except Exception:
+        db_maestra.rollback()
+        logger.exception("No se pudo leer pjud_sincronizacion")
+        ultimo = None
+    if ultimo is not None and jobs.enfriando(ultimo):
+        logger.info("Espejo PJUD %s: sync ya terminado (job %s), no se reenvía", competencia, ultimo.job_id)
+        nota.update(
+            resultado="listo", http_status=200,
+            diagnostico=f"ya terminado job_id={ultimo.job_id}; no se reenvió",
+        )
+        return {
+            "job_id": ultimo.job_id,
+            "estado": "listo",
+            "ya_en_curso": False,
+            "ya_sincronizada": True,
+            "mensaje": "La sincronización de esta causa ya terminó; no se envió otra. "
+            f"Consulta la causa con consultar_{competencia}.",
+        }
+
     reserva = None
     try:
         previo, nueva = jobs.reservar(

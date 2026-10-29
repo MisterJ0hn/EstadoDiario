@@ -234,6 +234,37 @@ class PjudSincronizacionRepository:
         )
         return next((f for f in filas if not self.vencida(f)), None)
 
+    def ultimo_de(
+        self,
+        *,
+        cliente_id: Optional[int],
+        materia: Optional[str],
+        causa_id: Optional[int] = None,
+        rol: Optional[str] = None,
+        tribunal: Optional[str] = None,
+    ) -> Optional[PjudSincronizacion]:
+        """El job más reciente de esa causa, en cualquier estado (se reconoce igual que
+        en `en_curso`). Sirve para ver si el último terminó bien hace poco (`enfriando`)."""
+        coincide = []
+        if causa_id is not None:
+            coincide.append(PjudSincronizacion.causa_id == causa_id)
+        if rol and tribunal:
+            coincide.append(
+                (PjudSincronizacion.rol == rol) & (PjudSincronizacion.tribunal == tribunal)
+            )
+        if not coincide:
+            return None
+        return (
+            self.db.query(PjudSincronizacion)
+            .filter(
+                PjudSincronizacion.cliente_id == cliente_id,
+                self._materia_de(materia == "Apelaciones"),
+                or_(*coincide),
+            )
+            .order_by(PjudSincronizacion.creado_en.desc(), PjudSincronizacion.id.desc())
+            .first()
+        )
+
     def ultimo_de_causa(
         self, *, cliente_id: Optional[int], causa_id: int, apelaciones: bool = False
     ) -> Optional[PjudSincronizacion]:

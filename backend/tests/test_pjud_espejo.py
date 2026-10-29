@@ -202,6 +202,27 @@ class TestSincronizar:
         assert "en proceso" in segundo.json()["mensaje"]
         assert len(_llamadas("/sincronizar_civil")) == 1
 
+    def test_si_el_ultimo_sync_termino_bien_hace_poco_avisa_lista_y_no_reenvia(self, http, bases):
+        """Integración que repite sincronizar cada pocos segundos: tras el callback
+        `listo` no se abre otro job, se le dice que la causa ya está lista."""
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=True)
+        r = http.post("/pjud/sincronizar_civil", json=CUERPO)
+        assert r.status_code == 200
+        assert r.json()["estado"] == "listo" and r.json()["ya_sincronizada"] is True
+        assert r.json()["job_id"] == "job-1"
+        assert len(_llamadas("/sincronizar_civil")) == 1
+
+    def test_pasado_el_enfriamiento_se_puede_sincronizar_de_nuevo(self, http, bases):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        fila = PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=True)
+        fila.actualizado_en = datetime.now(timezone.utc) - timedelta(hours=1)
+        bases[1].commit()
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        assert len(_llamadas("/sincronizar_civil")) == 2
+
     def test_otra_causa_o_otro_anio_si_se_encola(self, http):
         FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
         http.post("/pjud/sincronizar_civil", json=CUERPO)
@@ -211,7 +232,16 @@ class TestSincronizar:
     def test_terminado_el_job_se_puede_volver_a_sincronizar(self, http, bases):
         FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
         http.post("/pjud/sincronizar_civil", json=CUERPO)
-        PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=True)
+        fila = PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=True)
+        fila.actualizado_en = datetime.now(timezone.utc) - timedelta(hours=1)
+        bases[1].commit()
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        assert len(_llamadas("/sincronizar_civil")) == 2
+
+    def test_tras_un_error_se_puede_reintentar_enseguida(self, http, bases):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=False, mensaje_error="boom")
         http.post("/pjud/sincronizar_civil", json=CUERPO)
         assert len(_llamadas("/sincronizar_civil")) == 2
 
