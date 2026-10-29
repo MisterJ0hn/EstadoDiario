@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     # API keys de sistemas externos (ver app/core/api_key.py). Límite de
     # peticiones por minuto con el que nace una key si no se indica otro.
     API_KEY_LIMITE_POR_MINUTO: int = 60
+    # Si se hace cumplir ese límite. Apagado: ninguna key recibe 429 y no se cuenta
+    # nada; el valor por key sigue guardado y vuelve a valer al encenderlo.
+    API_KEY_LIMITE_ACTIVO: bool = False
     # Cuántos proxies confiables hay delante del backend (1 si solo está Nginx).
     # De esto depende qué entrada de X-Forwarded-For se toma como IP del que
     # llama; ver `api_key.ip_confiable`. Un valor mayor al real deja pasar una IP

@@ -485,7 +485,10 @@ def autenticar(
     if redes and not ip_en_redes(ip, redes):
         raise _rechazar_por_ip(identidad, ip, ahora)
 
-    dentro, contador, reintentar_en = consumir_cupo(identidad.api_key_id, limite, ahora)
+    if settings.API_KEY_LIMITE_ACTIVO:
+        dentro, contador, reintentar_en = consumir_cupo(identidad.api_key_id, limite, ahora)
+    else:
+        dentro, contador, reintentar_en = True, 0, 0
     if not dentro:
         # Una línea por ventana, no por petición rechazada: de otro modo quien
         # se pasa del límite llenaría la bitácora del cliente.

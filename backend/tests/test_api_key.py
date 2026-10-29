@@ -420,6 +420,20 @@ def test_actualiza_ultimo_uso_y_ip(base):
 # ── Límite de velocidad ───────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _limite_activo():
+    """El límite viene apagado por defecto; estos tests lo ejercen encendido."""
+    with patch.object(api_key.settings, "API_KEY_LIMITE_ACTIVO", True):
+        yield
+
+
+def test_con_el_limite_apagado_no_hay_429(base):
+    key = _emitir(base, limite_por_minuto=1)
+    with patch.object(api_key.settings, "API_KEY_LIMITE_ACTIVO", False):
+        for _ in range(5):
+            assert api_key.autenticar(key, "GET", "/api/v1/causas").guid == "guid-uno"
+
+
 def test_el_limite_corta_con_429_y_retry_after(base):
     key = _emitir(base, limite_por_minuto=3)
     for _ in range(3):
