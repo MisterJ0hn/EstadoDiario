@@ -310,6 +310,77 @@ class TestEstadoConLlamados:
         assert (r.estado, r.mensaje_error) == ("listo", None)
 
 
+class TestEstadoReconciliadoConApiPjud:
+    """Si el callback no cerró el job pero api-pjud ya tiene la causa completa, el estado
+    no puede seguir diciendo `sincronizando`."""
+
+    @pytest.fixture(autouse=True)
+    def _sin_pausa_previa(self):
+        causas._ultima_reconciliacion.clear()
+        yield
+        causas._ultima_reconciliacion.clear()
+
+    def _job(self, db, hace):
+        fila = _registrar(PjudSincronizacionRepository(db))
+        fila.creado_en = fila.actualizado_en = datetime.now(timezone.utc) - hace
+        db.commit()
+
+    def _estado(self, db, reconciliar):
+        import types
+        return causas._estado_sincronizacion(
+            db, types.SimpleNamespace(cliente_id=None), causa_id=10, materia="Civil",
+            reconciliar=reconciliar,
+        )
+
+    def test_api_pjud_completa_deja_el_estado_listo_y_cierra_el_job(self, db):
+        self._job(db, hace=timedelta(minutes=3))
+        assert self._estado(db, lambda: "listo").estado == "listo"
+        assert PjudSincronizacionRepository(db).por_job_id("job-1").estado == LISTO
+
+    def test_api_pjud_aun_sincronizando_mantiene_sincronizando(self, db):
+        self._job(db, hace=timedelta(minutes=3))
+        assert self._estado(db, lambda: "sincronizando").estado == "sincronizando"
+        assert PjudSincronizacionRepository(db).por_job_id("job-1").estado == SINCRONIZANDO
+
+    def test_un_job_recien_encolado_no_se_reconcilia(self, db):
+        self._job(db, hace=timedelta(seconds=10))
+
+        def no_debe_llamarse():
+            raise AssertionError("no debía preguntar")
+
+        assert self._estado(db, no_debe_llamarse).estado == "sincronizando"
+
+    def test_si_api_pjud_falla_sigue_sincronizando(self, db):
+        self._job(db, hace=timedelta(minutes=3))
+
+        def falla():
+            raise RuntimeError("api-pjud caído")
+
+        assert self._estado(db, falla).estado == "sincronizando"
+
+    def test_no_pregunta_dos_veces_seguidas(self, db):
+        self._job(db, hace=timedelta(minutes=3))
+        llamadas = []
+
+        def aun_no():
+            llamadas.append(1)
+            return "sincronizando"
+
+        self._estado(db, aun_no)
+        self._estado(db, aun_no)
+        assert len(llamadas) == 1
+
+    def test_un_job_ya_listo_no_pregunta(self, db):
+        repo = PjudSincronizacionRepository(db)
+        _registrar(repo)
+        repo.cerrar("job-1", exito=True)
+
+        def no_debe_llamarse():
+            raise AssertionError("no debía preguntar")
+
+        assert self._estado(db, no_debe_llamarse).estado == "listo"
+
+
 class TestEnfriamientoTrasElCallback:
     """Un callback `listo` no debe reabrir la compuerta a otro sync de inmediato."""
 

@@ -12,7 +12,7 @@ import mimetypes
 import os
 import time
 import uuid
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import unquote, urlsplit
 
@@ -1146,8 +1146,44 @@ def _encolar_sincronizacion(
         )
 
 
+# Un job recién encolado se cree `sincronizando` sin preguntar: api-pjud puede tardar unos
+# segundos en tomarlo y hasta entonces todavía muestra la causa del sync anterior.
+GRACIA_RECONCILIAR = timedelta(seconds=60)
+# Cada cuánto, como mínimo, se vuelve a preguntar a api-pjud por la misma causa: el
+# endpoint de estado se usa para polling y no puede costar dos llamadas por consulta.
+PAUSA_RECONCILIAR = 20.0
+_ultima_reconciliacion: dict[tuple, float] = {}
+
+
+def _reconciliar_con_api_pjud(db_maestra, cliente_id, fila, causa_id, materia, reconciliar) -> bool:
+    """¿api-pjud ya tiene la causa completa aunque nuestro job siga `sincronizando`?
+
+    El estado de un job lo cierra el callback; si no llegó (o llegó antes de registrar el
+    job) la causa quedaba "sincronizando" con los datos ya completos. Se pregunta a
+    api-pjud, solo lectura, y si dice `listo` el job se cierra de verdad para que las
+    siguientes lecturas no repitan la pregunta. Nunca revienta."""
+    if reconciliar is None or fila is None or fila.estado != SINC_SINCRONIZANDO:
+        return False
+    if datetime.now(timezone.utc) - _aware(fila.creado_en) < GRACIA_RECONCILIAR:
+        return False
+    clave = (cliente_id, materia, causa_id)
+    ahora = time.monotonic()
+    if ahora - _ultima_reconciliacion.get(clave, -PAUSA_RECONCILIAR) < PAUSA_RECONCILIAR:
+        return False
+    _ultima_reconciliacion[clave] = ahora
+    try:
+        if reconciliar() != "listo":
+            return False
+        PjudSincronizacionRepository(db_maestra).cerrar(fila.job_id, exito=True)
+        return True
+    except Exception:
+        logger.exception("No se pudo reconciliar el estado de la causa %s con api-pjud", causa_id)
+        db_maestra.rollback()
+        return False
+
+
 def _estado_sincronizacion(
-    db_maestra, tenant, *, causa_id, materia
+    db_maestra, tenant, *, causa_id, materia, reconciliar=None
 ) -> PjudEstadoSincronizacionResponse:
     apelaciones = materia == "Apelaciones"
     fila = _sincronizaciones_pjud(db_maestra, tenant.cliente_id, [causa_id], apelaciones).get(causa_id)
@@ -1172,6 +1208,12 @@ def _estado_sincronizacion(
         and (fila is None or _aware(llamado.fecha_hora) > _aware(fila.actualizado_en))
     ):
         estado, mensaje_error, actualizado_en = "listo", None, llamado.fecha_hora
+
+    # Si el job sigue `sincronizando`, se confirma con api-pjud antes de decirlo.
+    if estado == "sincronizando" and _reconciliar_con_api_pjud(
+        db_maestra, tenant.cliente_id, fila, causa_id, materia, reconciliar
+    ):
+        estado, mensaje_error, actualizado_en = "listo", None, datetime.now(timezone.utc)
 
     return PjudEstadoSincronizacionResponse(
         causa_id=causa_id,
@@ -1262,8 +1304,19 @@ def pjud_estado(
     causa = CausaRepository(db).find_by_id(causa_id)
     if not causa:
         raise HTTPException(status_code=404, detail="Causa no encontrada")
+    materia = _materia_sincronizable(causa)
+    metodo = _SINCRONIZAR_POR_MATERIA[materia][0]
+
+    def reconciliar():
+        servicio = PjudService()
+        servicio.solo_lectura = True  # pregunta, no encola otro sync
+        return getattr(servicio, metodo)(
+            causa, forzar_sincronizacion=False,
+            credenciales_dueno=credenciales_del_dueno(db, causa),
+        ).get("estado")
+
     return _estado_sincronizacion(
-        db_maestra, tenant, causa_id=causa_id, materia=_materia_sincronizable(causa)
+        db_maestra, tenant, causa_id=causa_id, materia=materia, reconciliar=reconciliar
     )
 
 
@@ -1280,10 +1333,20 @@ def pjud_estado_apelaciones(
     db_maestra: Session = Depends(get_db_maestra),
     current_user: Usuario = Depends(get_usuario_actual),
 ):
-    if not db.get(CausaCorte, corte_id):
+    causa_corte = db.get(CausaCorte, corte_id)
+    if not causa_corte:
         raise HTTPException(status_code=404, detail="Causa de corte no encontrada")
+
+    def reconciliar():
+        servicio = PjudService()
+        servicio.solo_lectura = True
+        return servicio.obtener_detalle_apelaciones(
+            causa_corte, forzar_sincronizacion=False,
+            credenciales_dueno=credenciales_del_dueno(db, causa_corte),
+        ).get("estado")
+
     return _estado_sincronizacion(
-        db_maestra, tenant, causa_id=corte_id, materia="Apelaciones"
+        db_maestra, tenant, causa_id=corte_id, materia="Apelaciones", reconciliar=reconciliar
     )
 
 
