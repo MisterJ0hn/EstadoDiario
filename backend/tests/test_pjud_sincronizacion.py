@@ -193,6 +193,51 @@ class TestDetallePjud:
         assert self._llamar(db, lambda s: {"estado": "listo"})["estado"] == "listo"
 
 
+class TestEnfriamientoTrasElCallback:
+    """Un callback `listo` no debe reabrir la compuerta a otro sync de inmediato."""
+
+    @pytest.fixture(autouse=True)
+    def _proveedor(self, monkeypatch):
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_EMAIL", "bot@x.cl")
+        monkeypatch.setattr("app.services.pjud_service.settings.PJUD_API_PASSWORD", "x")
+
+    def _listo(self, db, hace=timedelta(minutes=1)):
+        repo = PjudSincronizacionRepository(db)
+        fila = _registrar(repo)
+        repo.cerrar("job-1", exito=True)
+        fila.actualizado_en = datetime.now(timezone.utc) - hace
+        db.commit()
+
+    def _solo_lectura(self, db, forzar=False):
+        import types
+        vistos = []
+
+        def consultar(servicio):
+            vistos.append(servicio.solo_lectura)
+            return {"estado": "sincronizando"}
+
+        causas._detalle_pjud(
+            db, types.SimpleNamespace(cliente_id=None), causa_id=10, materia="Civil",
+            rol="C-1-2026", tribunal="1° Juzgado", forzar=forzar, consultar=consultar,
+        )
+        return vistos[0]
+
+    def test_listo_reciente_consulta_sin_encolar(self, db):
+        self._listo(db)
+        assert self._solo_lectura(db) is True
+
+    def test_listo_viejo_puede_encolar(self, db):
+        self._listo(db, hace=timedelta(hours=2))
+        assert self._solo_lectura(db) is False
+
+    def test_forzar_puede_encolar_aunque_sea_reciente(self, db):
+        self._listo(db)
+        assert self._solo_lectura(db, forzar=True) is False
+
+    def test_sin_jobs_puede_encolar(self, db):
+        assert self._solo_lectura(db) is False
+
+
 class TestSincronizarDesdeLaApp:
     """`PjudService._sincronizar` reserva el cupo de la causa antes de llamar a api-pjud."""
 

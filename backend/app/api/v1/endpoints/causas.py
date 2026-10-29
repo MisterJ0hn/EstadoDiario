@@ -1343,6 +1343,7 @@ def _detalle_pjud(
     consulta del espejo justo después devolvería el detalle anterior."""
     apelaciones = materia == "Apelaciones"
     repo = PjudSincronizacionRepository(db_maestra)
+    enfriando = False
     if not forzar:
         try:
             sincronizacion = repo.ultimo_de_causa(
@@ -1381,8 +1382,13 @@ def _detalle_pjud(
             if not datos.get("causa"):
                 return error
             return {**datos, **error, "diagnostico": f"{error['diagnostico']} · {datos.get('diagnostico')}"}
+        # Recién terminó un sync: se lee lo que api-pjud ya tiene, sin encolar otro
+        # aunque `consultar_*` todavía diga "sincronizando" (ver `enfriando`).
+        enfriando = bool(sincronizacion and repo.enfriando(sincronizacion))
 
     servicio = PjudService()
+    if enfriando:
+        servicio.solo_lectura = True
     guardia = _GuardiaSync(
         repo, db_maestra, cliente_id=tenant.cliente_id, causa_id=causa_id,
         materia=materia, rol=rol, tribunal=tribunal,

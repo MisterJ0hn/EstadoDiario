@@ -27,6 +27,11 @@ PREFIJO_RESERVA = "reserva-"
 # vuelve a consultar al proveedor. Es el `sincronizacion_en_curso` de api-pjud.
 VENCIMIENTO = timedelta(minutes=15)
 
+# Tras un job `listo` la consulta de detalle no vuelve a encolar sola durante este
+# plazo: es el intervalo mínimo entre syncs de una causa en api-pjud (más pronto
+# responde 409), así que reintentar antes no podía servir de nada.
+ENFRIAMIENTO = timedelta(minutes=30)
+
 
 class PjudSincronizacionRepository:
     def __init__(self, db: Session):
@@ -171,6 +176,20 @@ class PjudSincronizacionRepository:
         for fila in filas:
             ultimos.setdefault(fila.causa_id, fila)
         return {c: f for c, f in ultimos.items() if not self.vencida(f)}
+
+    @staticmethod
+    def enfriando(fila: PjudSincronizacion) -> bool:
+        """¿Terminó bien hace poco? El callback de un job `listo` levanta la compuerta
+        de `en_curso`, pero api-pjud puede seguir procesando otros jobs de la misma
+        causa y `consultar_*` aún decir "sincronizando": volver a encolar ahí es la
+        ráfaga (cada callback dispara otro sync, que trae otro callback). Dentro de
+        `ENFRIAMIENTO` no se encola solo; `forzar` ("Reintentar") sí puede."""
+        if fila.estado != LISTO:
+            return False
+        actualizado = fila.actualizado_en
+        if actualizado.tzinfo is None:
+            actualizado = actualizado.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - actualizado < ENFRIAMIENTO
 
     @staticmethod
     def vencida(fila: PjudSincronizacion) -> bool:
