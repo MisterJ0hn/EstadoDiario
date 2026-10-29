@@ -15,7 +15,7 @@ en vez de tratar ese caso como un error.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.causa import CausaResponse
 
@@ -32,6 +32,19 @@ class PjudCallbackRequest(BaseModel):
     exito: bool = Field(validation_alias=AliasChoices("exito", "éxito"))
     job_id: str
     mensaje_error: str | None = None
+
+    @field_validator("job_id", mode="before")
+    @classmethod
+    def _job_id_numerico(cls, valor):
+        """api-pjud responde el `job_id` del encolado como número (`727`) y el callback
+        puede repetirlo así. Pydantic no convierte un número en `str`: sin esto el aviso
+        daba 422 y el job quedaba `sincronizando` aunque la sincronización hubiera
+        terminado. Se guarda como texto, igual que al registrarlo."""
+        if isinstance(valor, bool):
+            return valor
+        if isinstance(valor, float) and valor.is_integer():
+            valor = int(valor)
+        return str(valor) if isinstance(valor, int) else valor
 
 
 class PjudCallbackResponse(BaseModel):

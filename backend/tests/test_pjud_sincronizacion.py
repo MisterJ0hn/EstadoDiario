@@ -149,6 +149,14 @@ class TestCallback:
         assert r.status_code == 200 and r.json() == {"exito": True}
         assert PjudSincronizacionRepository(db).por_job_id("xxssw2232").estado == LISTO
 
+    @pytest.mark.parametrize("job_id", [727, 727.0, "727"])
+    def test_acepta_el_job_id_numerico(self, db, cliente_http, job_id):
+        """api-pjud devuelve el job_id como número: antes el aviso daba 422."""
+        _registrar(PjudSincronizacionRepository(db), "727")
+        r = cliente_http.post("/causas/pjud/callback", json={"exito": True, "job_id": job_id})
+        assert r.status_code == 200 and r.json() == {"exito": True}
+        assert PjudSincronizacionRepository(db).por_job_id("727").estado == LISTO
+
     def test_acepta_exito_sin_tilde(self, db, cliente_http):
         _registrar(PjudSincronizacionRepository(db), "j")
         r = cliente_http.post("/causas/pjud/callback", json={"exito": True, "job_id": "j"})
