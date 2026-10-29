@@ -129,6 +129,33 @@ class TestConsultar:
         assert len(_llamadas("/consultar_civil")) == 2
         assert bases[0].query(PjudCopia).count() == 0
 
+    def test_si_el_callback_ya_dio_listo_la_cabecera_se_entrega_completo(self, http, bases):
+        """api-pjud aún dice Sincronizando pero nuestro callback cerró el job `listo`."""
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)
+        PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=True)
+        sincronizando = {"causa": {"identificador": "abc", "estado": "Sincronizando", "cuadernos": [{"id": 1}]}}
+        FalsoPjud.respuestas["/consultar_civil"] = sincronizando
+        r = http.post("/pjud/consultar_civil", json=CUERPO)
+        assert r.json()["causa"]["estado"] == "Completo"
+        assert r.json()["causa"]["identificador"] == "abc"
+
+    @pytest.mark.parametrize("cierre", [None, "error"])
+    def test_sin_job_listo_la_cabecera_no_se_toca(self, http, bases, cierre):
+        if cierre is not None:  # hay un job, pero terminó mal
+            FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+            http.post("/pjud/sincronizar_civil", json=CUERPO)
+            PjudSincronizacionRepository(bases[1]).cerrar("job-1", exito=False, mensaje_error="boom")
+        FalsoPjud.respuestas["/consultar_civil"] = {"causa": {"identificador": "abc", "estado": "Sincronizando"}}
+        r = http.post("/pjud/consultar_civil", json=CUERPO)
+        assert r.json()["causa"]["estado"] == "Sincronizando"
+
+    def test_con_un_sync_en_curso_sigue_sincronizando(self, http):
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        http.post("/pjud/sincronizar_civil", json=CUERPO)  # sin callback todavía
+        FalsoPjud.respuestas["/consultar_civil"] = {"causa": {"identificador": "abc", "estado": "Sincronizando"}}
+        assert http.post("/pjud/consultar_civil", json=CUERPO).json()["causa"]["estado"] == "Sincronizando"
+
     def test_familia_sin_cuadernos_si_se_guarda(self, http):
         familia = {"causa": {"identificador": "f1", "estado": "Completo"}}
         FalsoPjud.respuestas["/consultar_familia"] = familia

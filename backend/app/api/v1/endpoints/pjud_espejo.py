@@ -39,6 +39,7 @@ from app.repositories.pjud_copia_repository import (
     clave_de,
 )
 from app.repositories.pjud_sincronizacion_repository import (
+    LISTO,
     PREFIJO_RESERVA,
     PjudSincronizacionRepository,
 )
@@ -144,7 +145,34 @@ def _json(texto: str) -> Response:
     )
 
 
-def _consultar(ruta: str, competencia: str, cuerpo: dict, db: Session) -> Response:
+def _completar_si_ya_termino(
+    competencia: str, cuerpo: dict, datos: Any, causa, db_maestra, tenant
+) -> None:
+    """Si el callback ya cerró el último sync de la causa como `listo`, pero api-pjud
+    todavía la muestra "Sincronizando" (va rezagado respecto de su propio aviso, o
+    sigue con otros jobs de la misma causa), la cabecera se entrega "Completo". La
+    integración espera ese valor y, si recibe "Sincronizando", vuelve a sincronizar.
+    Un sync más nuevo, en curso o con error, no se toca. Nunca revienta."""
+    interno = _cabecera(datos)
+    if (interno.get("estado") or "").strip().lower() not in _ESTADOS_SINCRONIZANDO:
+        return
+    try:
+        rol, tribunal = _identidad(competencia, cuerpo)
+        ultimo = PjudSincronizacionRepository(db_maestra).ultimo_de(
+            cliente_id=tenant.cliente_id, materia=COMPETENCIAS[competencia][0],
+            causa_id=getattr(causa, "id", None), rol=rol, tribunal=tribunal,
+        )
+    except Exception:
+        db_maestra.rollback()
+        logger.exception("No se pudo leer pjud_sincronizacion")
+        return
+    if ultimo is not None and ultimo.estado == LISTO:
+        interno["estado"] = "Completo"
+
+
+def _consultar(
+    ruta: str, competencia: str, cuerpo: dict, db: Session, db_maestra=None, tenant=None
+) -> Response:
     copias = PjudCopiaRepository(db)
     clave = clave_de(cuerpo)
     ttl = settings.PJUD_COPIA_TTL_MIN
@@ -157,11 +185,14 @@ def _consultar(ruta: str, competencia: str, cuerpo: dict, db: Session) -> Respon
     servicio = _servicio()
     try:
         # Los movimientos solo traen `identificador`: no hay de dónde sacar al dueño.
-        envio = cuerpo if es_movimientos else _con_abogado_asignado(db, servicio, competencia, cuerpo)
+        causa = None if es_movimientos else causa_asignada(db, servicio, competencia, cuerpo)
+        envio = cuerpo if es_movimientos else _con_abogado_asignado(db, servicio, competencia, cuerpo, causa)
         datos = servicio.reenviar(ruta, envio)
     except PjudApiError as e:
         raise _error_http(e)
 
+    if not es_movimientos and db_maestra is not None and tenant is not None:
+        _completar_si_ya_termino(competencia, cuerpo, datos, causa, db_maestra, tenant)
     texto = json.dumps(datos, ensure_ascii=False)
     if es_movimientos:
         identificador = str(cuerpo.get("identificador") or "") or None
@@ -348,8 +379,10 @@ def _agregar_consultas(competencia: str) -> None:
     movimientos = f"{PREFIJO_MOVIMIENTOS}{competencia}"
 
     def consultar(cuerpo: dict[str, Any] = Body(...), db: Session = Depends(get_db_tenant),
+                  db_maestra: Session = Depends(get_db_maestra),
+                  tenant: TenantContexto = Depends(get_tenant_actual),
                   usuario: Usuario = Depends(get_usuario_actual)):
-        return _consultar(cabecera, competencia, cuerpo, db)
+        return _consultar(cabecera, competencia, cuerpo, db, db_maestra, tenant)
 
     def consultar_movimientos(cuerpo: dict[str, Any] = Body(...), db: Session = Depends(get_db_tenant),
                               usuario: Usuario = Depends(get_usuario_actual)):
