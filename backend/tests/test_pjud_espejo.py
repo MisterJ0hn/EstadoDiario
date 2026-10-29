@@ -5,6 +5,8 @@ SQLite en memoria; api-pjud se reemplaza por un doble que cuenta los llamados.
 
 from datetime import datetime, timedelta, timezone
 
+import types
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -345,3 +347,39 @@ class TestRepositorio:
         a = pjud_espejo.clave_de({"rol": 1, "anio": 2, "rut": "x", "clave": "y"})
         b = pjud_espejo.clave_de({"anio": 2, "rol": 1})
         assert a == b and "rut" not in a
+
+
+class TestCredencialDeLaIntegracion:
+    """El espejo deja en la causa la credencial con que el integrador la descargó,
+    pero solo si quien llama es un sistema externo (API key)."""
+
+    @pytest.fixture()
+    def espiado(self, http, monkeypatch):
+        guardados = []
+        causa = types.SimpleNamespace(id=7, rut_efectivo=None)
+        monkeypatch.setattr(pjud_espejo, "causa_asignada", lambda *a, **k: causa)
+        monkeypatch.setattr(
+            pjud_espejo, "recordar_credencial_integrador",
+            lambda db, c, cuerpo: guardados.append((c, cuerpo)),
+        )
+        FalsoPjud.respuestas["/consultar_civil"] = CABECERA_LISTA
+        FalsoPjud.respuestas["/sincronizar_civil"] = {"job_id": "job-1"}
+        return guardados
+
+    def test_consultar_la_guarda_para_una_integracion(self, bases, espiado):
+        pjud_espejo._consultar(
+            "/consultar_civil", "civil", dict(CON_CLAVE), bases[0], bases[1],
+            TenantContexto(guid="g", cliente_id=1, usuario_id=1), recordar_credencial=True,
+        )
+        assert len(espiado) == 1 and espiado[0][1]["clave"] == "secreta"
+
+    def test_consultar_no_la_guarda_si_no_es_integracion(self, bases, espiado):
+        pjud_espejo._consultar("/consultar_civil", "civil", dict(CON_CLAVE), bases[0])
+        assert espiado == []
+
+    def test_sincronizar_la_guarda_para_una_integracion(self, bases, espiado):
+        pjud_espejo._sincronizar(
+            "civil", dict(CON_CLAVE), bases[0], bases[1],
+            TenantContexto(guid="g", cliente_id=1, usuario_id=1), recordar_credencial=True,
+        )
+        assert len(espiado) == 1

@@ -34,9 +34,11 @@ from sqlalchemy.orm import Session
 
 from app.core import api_key
 from app.core.config import settings
+from app.core.crypto import descifrar
 from app.core.database import SesionMaestra
 from app.core.sello_rsa import sellar
 from app.core.deps import TenantContexto, get_tenant_actual
+from app.models.causa import ORIGEN_DATO_API, Causa
 from app.models.maestra.api_key import ApiKey
 from app.models.maestra.cliente import Cliente
 from app.models.usuario import Usuario
@@ -90,6 +92,63 @@ def usuario_dueno_de_rut(db: Session, rut: Optional[str]) -> Optional[Usuario]:
     return _duenos_por_rut(db, {limpio}).get(limpio)
 
 
+def _credencial_de_la_causa(causa) -> Optional[dict]:
+    """La credencial guardada en la propia causa, o None. `causa` puede ser una
+    `Causa` o el `SimpleNamespace` de `pjud_dueno_service`."""
+    rut = getattr(causa, "pjud_rut", None)
+    cifrada = getattr(causa, "pjud_clave_cifrada", None)
+    if not (rut and cifrada):
+        return None
+    try:
+        return {
+            "rut": rut,
+            "clave": descifrar(cifrada),
+            "metodo_login": getattr(causa, "pjud_metodo_login", None) or 1,
+        }
+    except ValueError:
+        logger.error("No se pudo leer la clave del OJV guardada en la causa")
+        return None
+
+
+def recordar_credencial_integrador(db: Session, causa, cuerpo: dict) -> None:
+    """Guarda en la causa la credencial que mandó el sistema externo, si corresponde.
+
+    Solo en una causa de API **sin abogado**: es la que api-pjud entregó con esa
+    clave y la única con la que se puede volver a pedir. Una causa con dueño nunca
+    guarda nada (manda el abogado), y una sin resolver (`causa` None o sin `id`)
+    tampoco: ante la duda no se asocia una clave a una causa que no se sabe cuál es.
+    Pisa la anterior, así que la última clave que funcionó es la que queda. Nunca
+    revienta: guardarla es una mejora, la consulta sigue con lo que mandó el cliente.
+    """
+    rut = str(cuerpo.get("rut") or "").strip()
+    clave = str(cuerpo.get("clave") or "").strip()
+    causa_id = getattr(causa, "id", None)
+    if not (rut and clave and causa_id) or getattr(causa, "rut_efectivo", None):
+        return
+    try:
+        fila = db.get(Causa, causa_id)
+        if fila is None or fila.origen_dato != ORIGEN_DATO_API or fila.rut_efectivo:
+            return
+        fila.pjud_rut = rut[:20]
+        fila.pjud_clave = clave
+        fila.pjud_metodo_login = _entero_o_none(cuerpo.get("metodo_login")) or 1
+        db.commit()
+        # La copia en memoria que ya resolvió el dueño debe ver lo recién guardado.
+        causa.pjud_rut = fila.pjud_rut
+        causa.pjud_clave_cifrada = fila.pjud_clave_cifrada
+        causa.pjud_metodo_login = fila.pjud_metodo_login
+    except Exception:
+        logger.exception("No se pudo guardar la credencial de la integración en la causa")
+        db.rollback()
+
+
+def _entero_o_none(valor) -> Optional[int]:
+    try:
+        return int(str(valor).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def credenciales_del_dueno(db: Session, causa) -> Optional[dict]:
     """`{"rut", "clave", "metodo_login"}` del abogado dueño de `causa`, o None.
 
@@ -106,7 +165,9 @@ def credenciales_del_dueno(db: Session, causa) -> Optional[dict]:
     """
     rut = limpiar_rut(causa.rut_efectivo or "")
     if not rut:
-        return None
+        # Sin abogado: la única credencial posible es la con que el sistema externo
+        # descargó la causa (ver `recordar_credencial_integrador`).
+        return _credencial_de_la_causa(causa)
     usuario = _duenos_por_rut(db, {rut}).get(rut)
     if usuario is None or not usuario.pjud_configurado:
         return None

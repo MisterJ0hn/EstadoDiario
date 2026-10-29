@@ -43,7 +43,7 @@ from app.repositories.pjud_sincronizacion_repository import (
     PREFIJO_RESERVA,
     PjudSincronizacionRepository,
 )
-from app.core.credenciales_pjud import credenciales_del_dueno
+from app.core.credenciales_pjud import credenciales_del_dueno, recordar_credencial_integrador
 from app.services.pjud_dueno_service import causa_asignada
 from app.services.pjud_service import (
     _ESTADOS_SINCRONIZANDO,
@@ -171,7 +171,8 @@ def _completar_si_ya_termino(
 
 
 def _consultar(
-    ruta: str, competencia: str, cuerpo: dict, db: Session, db_maestra=None, tenant=None
+    ruta: str, competencia: str, cuerpo: dict, db: Session, db_maestra=None, tenant=None,
+    recordar_credencial: bool = False,
 ) -> Response:
     copias = PjudCopiaRepository(db)
     clave = clave_de(cuerpo)
@@ -186,6 +187,8 @@ def _consultar(
     try:
         # Los movimientos solo traen `identificador`: no hay de dónde sacar al dueño.
         causa = None if es_movimientos else causa_asignada(db, servicio, competencia, cuerpo)
+        if recordar_credencial and causa is not None:
+            recordar_credencial_integrador(db, causa, cuerpo)
         envio = cuerpo if es_movimientos else _con_abogado_asignado(db, servicio, competencia, cuerpo, causa)
         datos = servicio.reenviar(ruta, envio)
     except PjudApiError as e:
@@ -227,13 +230,15 @@ def _soltar(jobs: PjudSincronizacionRepository, db_maestra: Session, reserva) ->
 
 def _encolar(
     competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto,
-    nota: dict,
+    nota: dict, recordar_credencial: bool = False,
 ) -> dict:
     """Hace el sync y deja en `nota` lo que pasó, para el log de `pjud_llamado`."""
     servicio = _servicio()
     materia = COMPETENCIAS[competencia][0]
     rol, tribunal = _identidad(competencia, cuerpo)
     causa = causa_asignada(db, servicio, competencia, cuerpo)
+    if recordar_credencial and causa is not None:
+        recordar_credencial_integrador(db, causa, cuerpo)
     causa_id = getattr(causa, "id", None)
     nota["causa_id"] = causa_id
     jobs = PjudSincronizacionRepository(db_maestra)
@@ -348,7 +353,8 @@ def _encolar(
 
 
 def _sincronizar(
-    competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto
+    competencia: str, cuerpo: dict, db: Session, db_maestra: Session, tenant: TenantContexto,
+    recordar_credencial: bool = False,
 ) -> dict:
     """Cada llamado queda en `pjud_llamado` (la consola lo muestra), también los que
     el dedupe frena y los que el proveedor rechaza."""
@@ -356,7 +362,7 @@ def _sincronizar(
     rol, tribunal = _identidad(competencia, cuerpo)
     nota: dict = {"resultado": "error", "http_status": 500, "mensaje": None, "diagnostico": None, "causa_id": None}
     try:
-        return _encolar(competencia, cuerpo, db, db_maestra, tenant, nota)
+        return _encolar(competencia, cuerpo, db, db_maestra, tenant, nota, recordar_credencial)
     finally:
         _registrar_llamado_pjud(
             db_maestra, tenant=tenant, causa_id=nota["causa_id"], rol=rol, tribunal=tribunal,
@@ -382,7 +388,10 @@ def _agregar_consultas(competencia: str) -> None:
                   db_maestra: Session = Depends(get_db_maestra),
                   tenant: TenantContexto = Depends(get_tenant_actual),
                   usuario: Usuario = Depends(get_usuario_actual)):
-        return _consultar(cabecera, competencia, cuerpo, db, db_maestra, tenant)
+        return _consultar(
+            cabecera, competencia, cuerpo, db, db_maestra, tenant,
+            recordar_credencial=bool(getattr(usuario, "es_integracion", False)),
+        )
 
     def consultar_movimientos(cuerpo: dict[str, Any] = Body(...), db: Session = Depends(get_db_tenant),
                               usuario: Usuario = Depends(get_usuario_actual)):
@@ -392,7 +401,10 @@ def _agregar_consultas(competencia: str) -> None:
                     db_maestra: Session = Depends(get_db_maestra),
                     tenant: TenantContexto = Depends(get_tenant_actual),
                     usuario: Usuario = Depends(get_usuario_actual)):
-        return _sincronizar(competencia, cuerpo, db, db_maestra, tenant)
+        return _sincronizar(
+            competencia, cuerpo, db, db_maestra, tenant,
+            recordar_credencial=bool(getattr(usuario, "es_integracion", False)),
+        )
 
     router.add_api_route(
         cabecera, consultar, methods=["POST"], response_class=Response,

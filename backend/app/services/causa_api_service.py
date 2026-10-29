@@ -36,6 +36,7 @@ MATERIAS = ("Civil", "Familia", "Laboral", "Cobranza", "Penal")
 CAMPOS_CAUSA_API = (
     "materia", "tipo_causa", "rol", "ruc", "tribunal", "fecha_ingreso",
     "caratulado", "estado_causa", "institucion", "jurisdiccion_id", "rut_asignado",
+    "pjud_rut", "pjud_clave_cifrada", "pjud_metodo_login",
 )
 
 

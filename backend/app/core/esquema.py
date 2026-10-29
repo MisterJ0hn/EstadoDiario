@@ -132,6 +132,11 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # Abogado de una causa dada de alta por API. Nulo en todo lo existente: esas
     # filas toman el RUT de su archivo y nunca leen esta columna.
     ("causa", "rut_asignado", "VARCHAR(20)"),
+    # Credencial del OJV con que un sistema externo descargó una causa de API sin
+    # abogado (clave cifrada). Nulas en todo lo existente.
+    ("causa", "pjud_rut", "VARCHAR(20)"),
+    ("causa", "pjud_clave", "VARCHAR(500)"),
+    ("causa", "pjud_metodo_login", "INTEGER"),
     # Cartera armada por el cruce porque el estudio no ha cargado el reporte de
     # Causas. FALSE en todo lo que ya existe: esos archivos los subió alguien.
     ("estado_diario_origen", "deducida", "BOOLEAN DEFAULT FALSE"),

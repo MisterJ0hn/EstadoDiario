@@ -107,8 +107,15 @@ def _por_causa(
     rut = _unico_rut([c.rut_efectivo for c in candidatas])
     # El id solo si la causa es una sola: con Familia (sin tribunal) pueden calzar
     # varias del mismo abogado y no se sabe cuál pidió el integrador.
+    unica = candidatas[0] if len(candidatas) == 1 else None
+    # La credencial guardada en la causa (una de API sin abogado) solo se lleva si la
+    # causa es una sola: con varias candidatas no se sabe de cuál es la clave.
     return SimpleNamespace(
-        id=candidatas[0].id if len(candidatas) == 1 else None, rut_efectivo=rut
+        id=unica.id if unica else None,
+        rut_efectivo=rut,
+        pjud_rut=unica.pjud_rut if unica else None,
+        pjud_clave_cifrada=unica.pjud_clave_cifrada if unica else None,
+        pjud_metodo_login=unica.pjud_metodo_login if unica else None,
     )
 
 

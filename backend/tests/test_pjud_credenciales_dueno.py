@@ -256,3 +256,72 @@ def test_la_clave_no_queda_en_el_diagnostico(monkeypatch):
     causa = types.SimpleNamespace(id=1, materia="Civil", rol="C-1-2026", tribunal="1° Juzgado Test")
     r = servicio.obtener_detalle(causa, credenciales_dueno=CREDS)
     assert "121212" not in r["diagnostico"]
+
+
+# ── Credencial de la integración en una causa de API sin abogado ──
+
+from app.core.credenciales_pjud import recordar_credencial_integrador  # noqa: E402
+
+CUERPO_INTEGRADOR = {"rut": "99999999-9", "clave": "claveCliente", "metodo_login": 2}
+
+
+def test_causa_de_api_sin_abogado_guarda_la_credencial_del_integrador(db):
+    causa = _causa(db, None, origen_dato=ORIGEN_DATO_API)
+    recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
+    assert causa.pjud_clave_cifrada != "claveCliente"  # va cifrada
+    assert credenciales_del_dueno(db, causa) == {
+        "rut": "99999999-9", "clave": "claveCliente", "metodo_login": 2,
+    }
+
+
+def test_la_ultima_credencial_pisa_a_la_anterior(db):
+    causa = _causa(db, None, origen_dato=ORIGEN_DATO_API)
+    recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
+    recordar_credencial_integrador(db, causa, {**CUERPO_INTEGRADOR, "clave": "nueva"})
+    assert credenciales_del_dueno(db, causa)["clave"] == "nueva"
+
+
+def test_causa_con_abogado_no_guarda_la_credencial_del_integrador(db):
+    _abogado(db, "Ana", "16952077-1")
+    causa = _causa(db, "16952077-1", origen_dato=ORIGEN_DATO_API, rut_asignado="16952077-1")
+    recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
+    assert causa.pjud_clave_cifrada is None
+    assert credenciales_del_dueno(db, causa)["clave"] == "121212"  # la de Ana
+
+
+def test_causa_del_excel_no_guarda_la_credencial_del_integrador(db):
+    causa = _causa(db, None)  # origen "causas", sin RUT en el archivo
+    recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
+    assert causa.pjud_clave_cifrada is None
+
+
+def test_sin_rut_o_sin_clave_en_el_cuerpo_no_guarda_nada(db):
+    causa = _causa(db, None, origen_dato=ORIGEN_DATO_API)
+    recordar_credencial_integrador(db, causa, {"rut": "99999999-9"})
+    recordar_credencial_integrador(db, causa, {"clave": "x"})
+    assert credenciales_del_dueno(db, causa) is None
+
+
+def test_causa_sin_id_resuelto_no_guarda_nada(db):
+    ns = types.SimpleNamespace(id=None, rut_efectivo=None)
+    recordar_credencial_integrador(db, ns, CUERPO_INTEGRADOR)
+    assert getattr(ns, "pjud_clave_cifrada", None) is None
+
+
+def test_el_namespace_del_espejo_ve_la_credencial_recien_guardada(db):
+    causa = _causa(db, None, origen_dato=ORIGEN_DATO_API)
+    ns = types.SimpleNamespace(
+        id=causa.id, rut_efectivo=None, pjud_rut=None, pjud_clave_cifrada=None,
+        pjud_metodo_login=None,
+    )
+    recordar_credencial_integrador(db, ns, CUERPO_INTEGRADOR)
+    assert credenciales_del_dueno(db, ns)["rut"] == "99999999-9"
+
+
+def test_copiar_causa_de_api_conserva_la_credencial(db):
+    from app.services.causa_api_service import copiar_causa_de_api
+
+    causa = _causa(db, None, origen_dato=ORIGEN_DATO_API)
+    recordar_credencial_integrador(db, causa, CUERPO_INTEGRADOR)
+    nueva = copiar_causa_de_api(db, causa, causa.estado_diario_origen_id)
+    assert credenciales_del_dueno(db, nueva)["clave"] == "claveCliente"

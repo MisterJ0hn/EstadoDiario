@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.crypto import cifrar, descifrar
 from app.core.database import BaseTenant
 
 # De qué reporte salió la fila. El Excel de Causas es la fuente natural de la
@@ -77,6 +78,16 @@ class Causa(BaseTenant):
     # de origen. Nulo = sin asignar.
     rut_asignado: Mapped[Optional[str]] = mapped_column(String(20))
 
+    # Credencial del OJV con la que un sistema externo descargó esta causa por el
+    # espejo de api-pjud. Solo la llena el espejo, y solo en una causa de API sin
+    # abogado: api-pjud entrega una causa privada únicamente a las credenciales con
+    # que se descargó, así que sin ellas nuestro detalle y sus documentos quedan
+    # vacíos. Cuando llega un abogado dueño manda él y esto se deja de usar. La
+    # clave va cifrada y no sale en ninguna respuesta.
+    pjud_rut: Mapped[Optional[str]] = mapped_column(String(20))
+    pjud_clave_cifrada: Mapped[Optional[str]] = mapped_column("pjud_clave", String(500))
+    pjud_metodo_login: Mapped[Optional[int]] = mapped_column(Integer)
+
     # Jurisdicción deducida de la materia, para que el filtro de las pantallas
     # sea el mismo catálogo que usan estado diario y movimientos.
     jurisdiccion_id: Mapped[Optional[int]] = mapped_column(
@@ -109,6 +120,15 @@ class Causa(BaseTenant):
 
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="causas")
     jurisdiccion = relationship("Jurisdiccion")
+
+    @property
+    def pjud_clave(self) -> Optional[str]:
+        return descifrar(self.pjud_clave_cifrada) if self.pjud_clave_cifrada else None
+
+    @pjud_clave.setter
+    def pjud_clave(self, valor: Optional[str]) -> None:
+        limpio = valor.strip() if valor else None
+        self.pjud_clave_cifrada = cifrar(limpio) if limpio else None
 
     @property
     def rut_efectivo(self) -> Optional[str]:
