@@ -125,6 +125,10 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
     corte = _normalizar(str(cuerpo.get("corte") or ""))
     origen_id = ultimo_origen_causas_id(db)
     if not origen_id or numero is None or anio is None or not corte:
+        logger.warning(
+            "Apelaciones sin dueño: cuerpo incompleto (rol=%r anio=%r corte=%r, origen=%r)",
+            cuerpo.get("rol"), cuerpo.get("anio"), cuerpo.get("corte"), origen_id,
+        )
         return None
 
     filas = (
@@ -149,8 +153,17 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
 
     candidatas = [f for f in filas if coincide(f)]
     if not candidatas:
+        logger.warning(
+            "Apelaciones sin dueño: ninguna causa de corte del origen %s calza con rol=%s anio=%s "
+            "corte=%r (%d con ese número; cortes: %s)",
+            origen_id, numero, anio, cuerpo.get("corte"), len(filas),
+            sorted({f.corte for f in filas}),
+        )
         return None
     ruts = [f.estado_diario_origen.rut if f.estado_diario_origen else None for f in candidatas]
+    if _unico_rut(ruts) is None:
+        logger.warning("Apelaciones sin dueño: la causa %s-%s de %r no tiene RUT de abogado en su origen",
+                       numero, anio, cuerpo.get("corte"))
     return SimpleNamespace(
         id=candidatas[0].id if len(candidatas) == 1 else None, rut_efectivo=_unico_rut(ruts)
     )
