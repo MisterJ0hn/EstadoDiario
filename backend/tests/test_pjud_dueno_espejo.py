@@ -202,3 +202,36 @@ class TestPrioridadEnElEspejo:
     def test_sin_dueno_ni_credenciales_del_integrador_va_sin_ellas(self, db):
         cuerpo = {"corte": 90, "tribunal": 276, "tipo": "C", "rol": 1234, "anio": 2026}
         assert pjud_espejo._con_abogado_asignado(db, ServicioFalso(), "civil", cuerpo) == cuerpo
+
+
+class TestPrioridadApelacionesEnElEspejo:
+    """sincronizar_apelaciones: manda el abogado de la causa de corte, con o sin
+    credenciales del integrador; estas solo valen si no hay dueño."""
+
+    CUERPO = {"corte": "C.A. de Santiago", "rol": 1620, "anio": 2026}
+
+    def _corte(self, db, rut):
+        db.add(CausaCorte(
+            estado_diario_origen_id=_origen(db, rut).id, tipo="apelaciones",
+            rol="Civil-1620-2026", era="2026", corte="C.A. de Santiago",
+        ))
+        db.flush()
+
+    def test_pisa_las_credenciales_del_integrador(self, db):
+        _abogado(db, "Ana", "16952077-1")
+        self._corte(db, "16952077-1")
+        envio = pjud_espejo._con_abogado_asignado(
+            db, ServicioFalso(), "apelaciones", {**self.CUERPO, **DEL_INTEGRADOR}
+        )
+        assert {k: envio[k] for k in ABOGADO} == ABOGADO
+        assert envio["rol"] == 1620
+
+    def test_sin_credenciales_del_integrador_usa_las_del_abogado(self, db):
+        _abogado(db, "Ana", "16952077-1")
+        self._corte(db, "16952077-1")
+        envio = pjud_espejo._con_abogado_asignado(db, ServicioFalso(), "apelaciones", dict(self.CUERPO))
+        assert {k: envio[k] for k in ABOGADO} == ABOGADO
+
+    def test_sin_dueno_se_dejan_las_del_integrador(self, db):
+        cuerpo = {**self.CUERPO, **DEL_INTEGRADOR}
+        assert pjud_espejo._con_abogado_asignado(db, ServicioFalso(), "apelaciones", cuerpo) == cuerpo
