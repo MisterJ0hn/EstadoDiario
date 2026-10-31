@@ -51,13 +51,13 @@ def test_roles_origen_y_roles_se_suman(db):
     assert _buscar(db, roles_origen="C - 711 - 2026") == ["1", "2"]
     assert _buscar(db, roles_origen="C-711-2026|3º juzgado civil de santiago") == ["1"]
     # Solo apelación.
-    assert _buscar(db, roles="Civil-4-2026") == ["4"]
+    assert _buscar(db, roles="4-2026") == ["4"]
     # Los dos: OR, no AND.
-    assert _buscar(db, roles="Civil-4-2026", roles_origen="C-9-2025") == ["3", "4"]
+    assert _buscar(db, roles="4-2026", roles_origen="C-9-2025") == ["3", "4"]
     # Ninguno: sin filtro.
     assert _buscar(db) == ["1", "2", "3", "4"]
     # Uno que no calza con nada.
-    assert _buscar(db, roles="Civil-99-2026", roles_origen="C-0-2000") == []
+    assert _buscar(db, roles="99-2026", roles_origen="C-0-2000") == []
 
 
 def test_guarda_el_origen_del_expediente(db):
@@ -117,10 +117,10 @@ def test_estado_diario_roles_y_origen_con_or(db_ed):
     db_ed.flush()
 
     assert _buscar_ed(db_ed) == ["Civil-1-2026", "Civil-10-2026", "Civil-2-2026", "Civil-3-2026"]
-    assert _buscar_ed(db_ed, roles="Civil-1-2026") == ["Civil-1-2026"]  # no trae el 10
+    assert _buscar_ed(db_ed, roles="1-2026") == ["Civil-1-2026"]  # no trae el 10
     assert _buscar_ed(db_ed, roles="3-2026|C.A. de Temuco") == []
     assert _buscar_ed(db_ed, roles_origen="C - 711 - 2026") == ["Civil-2-2026"]
     # OR entre los dos.
-    assert _buscar_ed(db_ed, roles="Civil-3-2026", roles_origen="C-711-2026") == ["Civil-2-2026", "Civil-3-2026"]
+    assert _buscar_ed(db_ed, roles="3-2026", roles_origen="C-711-2026") == ["Civil-2-2026", "Civil-3-2026"]
     # Origen sin ninguna apelación asociada: no calza nada (no "sin filtro").
     assert _buscar_ed(db_ed, roles_origen="C-999-2000") == []

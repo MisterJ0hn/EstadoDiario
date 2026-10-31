@@ -110,24 +110,23 @@ def filtrar_por_roles(query, col_rol, col_tribunal, roles: list[RolFiltro] | Non
 
 
 # ── Causas de corte ───────────────────────────────────────
-# Una causa de corte no tiene tribunal: se identifica por libro, rol, era y
-# corte. Cada entrada es `libro-rol-era` o `libro-rol-era|corte`
-# (ej. `Civil-1620-2026|C.A. de Santiago`), el mismo formato en que el PJUD
-# escribe el rol. El libro es opcional (`1620-2026`); la corte también: sin ella
-# la entrada calza en cualquier corte.
+# Una causa de corte no tiene tribunal: se identifica por rol, era y corte.
+# Cada entrada es `rol-era` o `rol-era|corte` (ej. `1620-2026|C.A. de Santiago`).
+# La corte es opcional: sin ella la entrada calza en cualquier corte. Un libro
+# antepuesto (`Civil-1620-2026`) se acepta pero se ignora.
 
-# (libro o None, rol, era, corte o None)
+# (libro, rol, era, corte o None); el libro ya no se filtra, siempre es None)
 RolCorteFiltro = tuple[str | None, str, str, str | None]
 
 DESC_ROLES_CORTE = (
-    "Opcional. Causas a devolver, separadas por coma; cada una `libro-rol-era` o "
-    "`libro-rol-era|corte` (ej. `Civil-1620-2026|C.A. de Santiago,Civil-55-2025`). "
-    "Filtra por tipo de libro, rol, era y corte (exactos, sin distinguir "
+    "Opcional. Causas a devolver, separadas por coma; cada una `rol-era` o "
+    "`rol-era|corte` (ej. `1620-2026|C.A. de Santiago,55-2025`). "
+    "Filtra por rol, era y corte (exactos, sin distinguir "
     "mayúsculas). Sin el parámetro, no se filtra. "
     f"Máximo {MAX_ROLES}."
 )
 
-_ENTRADA_CORTE = re.compile(r"^(?:(?P<libro>.+?)\s*-\s*)?(?P<rol>\d+)\s*-\s*(?P<era>\d{4})$")
+_ENTRADA_CORTE = re.compile(r"^(?:.+?\s*-\s*)?(?P<rol>\d+)\s*-\s*(?P<era>\d{4})$")
 
 
 DESC_ROLES_ORIGEN = (
@@ -139,7 +138,7 @@ DESC_ROLES_ORIGEN = (
 
 
 def parse_roles_corte(valor: str | None) -> list[RolCorteFiltro] | None:
-    """`"Civil-1-2020|C.A. de Temuco"` → `[("Civil", "1", "2020", "C.A. de Temuco")]`."""
+    """`"1-2020|C.A. de Temuco"` → `[(None, "1", "2020", "C.A. de Temuco")]`."""
     if not valor:
         return None
     filtros: list[RolCorteFiltro] = []
@@ -152,11 +151,10 @@ def parse_roles_corte(valor: str | None) -> list[RolCorteFiltro] | None:
         if not m:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Causa de corte inválida: «{bruto.strip()}». Use libro-rol-era, "
-                       "p. ej. Civil-1620-2026 (opcional |corte).",
+                detail=f"Causa de corte inválida: «{bruto.strip()}». Use rol-era, "
+                       "p. ej. 1620-2026 (opcional |corte).",
             )
-        libro = (m.group("libro") or "").strip() or None
-        filtro = (libro, str(int(m.group("rol"))), m.group("era"), corte.strip() or None)
+        filtro = (None, str(int(m.group("rol"))), m.group("era"), corte.strip() or None)
         clave = tuple(x.upper() if x else x for x in filtro)
         if clave in vistos:
             continue

@@ -79,13 +79,15 @@ from app.core.filtro_roles import parse_roles_corte
 
 
 def test_parse_roles_corte():
-    assert parse_roles_corte("Civil-1620-2026|C.A. de Santiago, 55 - 2025") == [
-        ("Civil", "1620", "2026", "C.A. de Santiago"),
+    assert parse_roles_corte("1620-2026|C.A. de Santiago, 55 - 2025") == [
+        (None, "1620", "2026", "C.A. de Santiago"),
         (None, "55", "2025", None),
     ]
     assert parse_roles_corte("") is None
     with pytest.raises(HTTPException):
-        parse_roles_corte("Civil-1620")
+        parse_roles_corte("1620")
+    # El libro se acepta y se ignora.
+    assert parse_roles_corte("Civil-1620-2026|C.A. de Temuco") == [(None, "1620", "2026", "C.A. de Temuco")]
 
 
 def test_filtro_roles_en_cortes(db):
@@ -107,8 +109,6 @@ def test_filtro_roles_en_cortes(db):
         )
         return sorted((c.tipo_libro, c.corte) for c in q.all())
 
-    # Libro + rol + era, en cualquier corte; el rol no calza por prefijo (16200).
-    assert buscar("Civil-1620-2026") == [("Civil", "C.A. de Santiago"), ("Civil", "C.A. de Temuco")]
-    assert buscar("civil-1620-2026|c.a. de temuco") == [("Civil", "C.A. de Temuco")]
-    assert buscar("Laboral-1620-2026") == [("Laboral", "C.A. de Santiago")]
-    assert len(buscar("1620-2026")) == 3  # sin libro: cualquiera
+    # Rol + era, en cualquier corte y libro; el rol no calza por prefijo (16200).
+    assert len(buscar("1620-2026")) == 3
+    assert buscar("1620-2026|c.a. de temuco") == [("Civil", "C.A. de Temuco")]
