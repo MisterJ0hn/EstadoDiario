@@ -490,6 +490,10 @@ Competencias: `civil`, `familia`, `laboral`, `cobranza`, `penal`, `apelaciones`.
   `consultar_apelaciones`. El espejo lo reenvía tal cual; si el integrador no lo manda y la
   causa de corte de la cartera es una sola, lo completa con el caratulado de la cartera (el
   que manda el integrador nunca se pisa). La sincronización desde la app también lo envía.
+  **Abogado asignado (Apelaciones):** se busca en el archivo de causas más reciente de
+  cada abogado (no solo el último del estudio). Si la misma causa de corte está en dos
+  carteras, el `caratulado` del cuerpo desempata (sin mayúsculas ni acentos); sin él, o si
+  no calza con ninguna, hay ambigüedad y no se elige abogado.
 - **Errores** como en api-pjud: 404 (no tiene la causa: sincronízala), 409 (sync en curso
   o muy pronto); cualquier otra falla del proveedor, 502.
 - **Permisos.** Las consultas por POST cuentan como lectura para cualquier key y no se

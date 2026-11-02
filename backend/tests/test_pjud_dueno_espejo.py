@@ -181,6 +181,45 @@ class TestApelaciones:
         assert _resolver(db, "apelaciones", corte="C.A. de Valparaíso", rol=1620, anio=2026) is None
 
 
+class TestApelacionesMismaCausaEnDosCarteras:
+    """Un archivo de causas por abogado: la misma causa de corte está en las dos
+    carteras y solo el caratulado dice de quién es."""
+
+    ANA, BETO = "16952077-1", "17314741-4"
+
+    def _dos(self, db):
+        _abogado(db, "Ana", self.ANA)
+        beto = _abogado(db, "Beto", self.BETO)
+        beto.pjud_rut = "22"
+        for rut, caratulado in ((self.ANA, "SEPÚLVEDA/TESORERIA"), (self.BETO, "SEPÚLVEDA KOCH LEOPOLDO/TESORERIA")):
+            db.add(CausaCorte(
+                estado_diario_origen_id=_origen(db, rut).id, tipo="apelaciones",
+                rol="261", era="2026", corte="C.A. de Santiago", caratulado=caratulado,
+            ))
+        db.flush()
+
+    def test_el_caratulado_elige_al_abogado_aunque_su_archivo_no_sea_el_ultimo(self, db):
+        self._dos(db)
+        ana = _resolver(db, "apelaciones", corte="C.A. de Santiago", rol=261, anio=2026,
+                        caratulado="sepúlveda/tesoreria")
+        assert ana == ABOGADO
+
+    def test_el_caratulado_del_ultimo_archivo(self, db):
+        self._dos(db)
+        beto = _resolver(db, "apelaciones", corte="C.A. de Santiago", rol=261, anio=2026,
+                         caratulado="SEPÚLVEDA KOCH LEOPOLDO/TESORERIA")
+        assert beto["rut"] == "22"
+
+    def test_sin_caratulado_es_ambiguo_y_no_elige_a_nadie(self, db):
+        self._dos(db)
+        assert _resolver(db, "apelaciones", corte="C.A. de Santiago", rol=261, anio=2026) is None
+
+    def test_caratulado_que_no_calza_con_ninguna_no_elige_a_nadie(self, db):
+        self._dos(db)
+        assert _resolver(db, "apelaciones", corte="C.A. de Santiago", rol=261, anio=2026,
+                         caratulado="OTRO/CARATULADO") is None
+
+
 class TestPrioridadEnElEspejo:
     """Gana el abogado asignado; las del integrador solo valen sin dueño."""
 

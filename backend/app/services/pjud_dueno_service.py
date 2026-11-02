@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.credenciales_pjud import credenciales_del_dueno
 from app.models.causa import Causa
 from app.models.causa_corte import CausaCorte
+from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.models.usuario_rut import limpiar_rut
 from app.repositories.causa_repository import ultimo_origen_causas_id
 from app.services.pjud_service import PjudApiError, PjudService, _normalizar
@@ -119,11 +120,37 @@ def _por_causa(
     )
 
 
+def _origenes_vigentes_de_cortes(db: Session) -> list[int]:
+    """Los archivos de causas vigentes para Apelaciones: el más reciente de CADA abogado.
+
+    Cuando el estudio sube un reporte por abogado, la misma causa de corte puede estar
+    en la cartera de dos abogados (con caratulados distintos). Mirar solo el último
+    archivo dejaba invisible al otro. Si hay carteras cargadas, las deducidas (parciales)
+    no cuentan, igual que en `ultimo_origen_causas_id`."""
+    filas = (
+        db.query(EstadoDiarioOrigen.id, EstadoDiarioOrigen.rut, EstadoDiarioOrigen.deducida)
+        .filter(EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS)
+        .order_by(EstadoDiarioOrigen.fecha.desc(), EstadoDiarioOrigen.id.desc())
+        .all()
+    )
+    if any(not f.deducida for f in filas):
+        filas = [f for f in filas if not f.deducida]
+    vistos: dict = {}
+    for f in filas:
+        vistos.setdefault(limpiar_rut(f.rut or "") or f"origen-{f.id}", f.id)
+    return list(vistos.values())
+
+
 def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
-    """Apelaciones vive en `causa_corte`; su dueño es el del archivo de origen."""
+    """Apelaciones vive en `causa_corte`; su dueño es el del archivo de origen.
+
+    La misma causa (rol, año y corte) puede estar en la cartera de dos abogados, y lo
+    que las distingue es el caratulado: si el cuerpo lo trae, se queda con las filas
+    que lo tienen igual (sin mayúsculas ni acentos)."""
     numero, anio = _entero(cuerpo.get("rol")), _entero(cuerpo.get("anio"))
     corte = _normalizar(str(cuerpo.get("corte") or ""))
-    origen_id = ultimo_origen_causas_id(db)
+    origenes = _origenes_vigentes_de_cortes(db)
+    origen_id = origenes[0] if origenes else None
     if not origen_id or numero is None or anio is None or not corte:
         logger.warning(
             "Apelaciones sin dueño: cuerpo incompleto (rol=%r anio=%r corte=%r, origen=%r)",
@@ -134,7 +161,7 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
     filas = (
         db.query(CausaCorte)
         .filter(
-            CausaCorte.estado_diario_origen_id == origen_id,
+            CausaCorte.estado_diario_origen_id.in_(origenes),
             func.lower(CausaCorte.tipo) == "apelaciones",
             CausaCorte.rol.like(f"%{numero}%"),
         )
@@ -152,6 +179,11 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
         )
 
     candidatas = [f for f in filas if coincide(f)]
+    caratulado = _normalizar(str(cuerpo.get("caratulado") or ""))
+    if caratulado and len(candidatas) > 1:
+        iguales = [f for f in candidatas if _normalizar(f.caratulado or "") == caratulado]
+        if iguales:
+            candidatas = iguales
     if not candidatas:
         logger.warning(
             "Apelaciones sin dueño: ninguna causa de corte del origen %s calza con rol=%s anio=%s "
