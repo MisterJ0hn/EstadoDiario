@@ -82,6 +82,27 @@ def norm_tribunal(valor: str) -> str:
     return valor.replace("º", "°").replace("ª", "°").strip().upper()
 
 
+# El nombre de una corte se compara sin tildes ni mayúsculas, y SIN depender del
+# idioma de la base: con `lc_ctype = C` (como en producción) `upper()`/`lower()` de
+# Postgres no tocan las letras con tilde, así que "C.A. de Valparaíso" nunca calzaba
+# con el "C.A. DE VALPARAÍSO" que arma Python. Se reemplazan las tildes con `replace`
+# (existe en Postgres y en SQLite) y recién ahí se pasa a minúsculas.
+_TILDES = dict(zip("ÁÉÍÓÚÜÑáéíóúüñ", "AEIOUUNaeiouun"))
+
+
+def norm_corte_sql(columna):
+    """Columna de corte sin tildes, en minúsculas y sin espacios de borde."""
+    expr = func.trim(columna)
+    for con, sin in _TILDES.items():
+        expr = func.replace(expr, con, sin)
+    return func.lower(expr)
+
+
+def norm_corte(valor: str) -> str:
+    """Lo mismo que `norm_corte_sql`, del lado del valor que se busca."""
+    return valor.strip().translate(str.maketrans(_TILDES)).lower()
+
+
 def condicion_roles(col_rol, col_tribunal, roles: list[RolFiltro] | None):
     """Condición SQL de `roles` (OR entre entradas), o None si no hay filtro.
     Va aparte de `filtrar_por_roles` para poder combinarla con otras condiciones
@@ -188,7 +209,7 @@ def condicion_roles_corte(modelo, roles: list[RolCorteFiltro] | None):
         if libro:
             partes.append(_norm(modelo.tipo_libro) == libro.upper())
         if corte:
-            partes.append(_norm(modelo.corte) == corte.upper())
+            partes.append(norm_corte_sql(modelo.corte) == norm_corte(corte))
         condiciones.append(and_(*partes))
     return or_(*condiciones)
 
@@ -223,6 +244,6 @@ def condicion_roles_numero_ingreso(modelo, roles: list[RolCorteFiltro] | None):
         else:
             partes = [ingreso.like(f"%-{rol}-{era}")]
         if corte:
-            partes.append(_norm(modelo.corte) == corte.upper())
+            partes.append(norm_corte_sql(modelo.corte) == norm_corte(corte))
         condiciones.append(and_(*partes))
     return or_(*condiciones)

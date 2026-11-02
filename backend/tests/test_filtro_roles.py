@@ -113,3 +113,52 @@ def test_mezcla_de_entradas_con_y_sin_tribunal(repo):
 def test_total_y_conteo_por_materia_respetan_el_filtro(repo):
     assert repo.count_filtered(roles=[("C-12-2020", None), ("C-123-2020", None)]) == 2
     assert sum(c for _, c in repo.contar_por_materia(roles=[("C-12-2020", None)])) == 1
+
+
+# ── Causas de corte: el nombre de la corte con tildes ─────
+# SQLite (como Postgres con lc_ctype=C) solo cambia mayúsculas de letras ASCII: es el
+# caso que fallaba en producción con "C.A. de Valparaíso".
+@pytest.fixture
+def cortes():
+    from app.models.causa_corte import CausaCorte
+    from app.models.estado_diario_origen import EstadoDiarioOrigen
+
+    engine = create_engine("sqlite://")
+    BaseTenant.metadata.create_all(
+        engine, tables=[EstadoDiarioOrigen.__table__, CausaCorte.__table__]
+    )
+    sesion = sessionmaker(bind=engine)()
+    origen = EstadoDiarioOrigen(tipo="causas")
+    sesion.add(origen)
+    sesion.flush()
+    for rol, corte in (("1101", "C.A. de Valparaíso"), ("3085", "C.A. de Concepción"),
+                       ("1101", "C.A. de Santiago")):
+        sesion.add(CausaCorte(estado_diario_origen_id=origen.id, tipo="apelaciones",
+                              rol=rol, era="2026", corte=corte))
+    sesion.flush()
+    yield sesion
+    sesion.close()
+
+
+@pytest.mark.parametrize("pedido", [
+    "1101-2026|C.A. de Valparaíso", "1101-2026|c.a. de valparaíso",
+    "1101-2026|C.A. DE VALPARAÍSO", "1101-2026|C.A. de Valparaiso",
+])
+def test_corte_con_tilde_calza_sin_importar_mayusculas_ni_tildes(cortes, pedido):
+    from app.core.filtro_roles import filtrar_por_roles_corte, parse_roles_corte
+    from app.models.causa_corte import CausaCorte
+
+    filas = filtrar_por_roles_corte(
+        cortes.query(CausaCorte), CausaCorte, parse_roles_corte(pedido)
+    ).all()
+    assert [(f.rol, f.corte) for f in filas] == [("1101", "C.A. de Valparaíso")]
+
+
+def test_corte_con_o_con_tilde_y_otra_corte_no_se_mezclan(cortes):
+    from app.core.filtro_roles import filtrar_por_roles_corte, parse_roles_corte
+    from app.models.causa_corte import CausaCorte
+
+    filas = filtrar_por_roles_corte(
+        cortes.query(CausaCorte), CausaCorte, parse_roles_corte("3085-2026|C.A. de Concepción")
+    ).all()
+    assert [f.rol for f in filas] == [("3085")]
