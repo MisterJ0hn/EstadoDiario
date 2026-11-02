@@ -145,6 +145,11 @@ def _con_abogado_asignado(
     return {**cuerpo, **credenciales}
 
 
+def _resumen(cuerpo: dict) -> dict:
+    """El cuerpo para el log: la clave nunca sale, solo si venía."""
+    return {k: ("***" if k == "clave" else v) for k, v in cuerpo.items()}
+
+
 def _json(texto: str) -> Response:
     return Response(
         content=PjudService.reescribir_documentos(texto), media_type="application/json"
@@ -187,17 +192,25 @@ def _consultar(
 
     copia = copias.vigente(ruta, clave, ttl)
     if copia is not None:
+        logger.info("Espejo PJUD %s: respondida desde la copia vigente (%s)", ruta, _resumen(cuerpo))
         return _json(copia.respuesta)
 
     servicio = _servicio()
+    envio = cuerpo
     try:
         # Los movimientos solo traen `identificador`: no hay de dónde sacar al dueño.
         causa = None if es_movimientos else causa_asignada(db, servicio, competencia, cuerpo)
         if recordar_credencial and causa is not None:
             recordar_credencial_integrador(db, causa, cuerpo)
         envio = cuerpo if es_movimientos else _con_abogado_asignado(db, servicio, competencia, cuerpo, causa)
+        logger.info(
+            "Espejo PJUD %s: llegó %s | dueño id=%s rut=%s | se envía %s",
+            ruta, _resumen(cuerpo), getattr(causa, "id", None),
+            getattr(causa, "rut_efectivo", None), _resumen(envio),
+        )
         datos = servicio.reenviar(ruta, envio)
     except PjudApiError as e:
+        logger.warning("Espejo PJUD %s: api-pjud respondió %s (se envió con rut=%s)", ruta, e, envio.get("rut") if isinstance(envio, dict) else None)
         raise _error_http(e)
 
     if not es_movimientos and db_maestra is not None and tenant is not None:
