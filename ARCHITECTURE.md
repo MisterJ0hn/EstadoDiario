@@ -485,6 +485,11 @@ Competencias: `civil`, `familia`, `laboral`, `cobranza`, `penal`, `apelaciones`.
   (`/catalogo/tribunales`, `competencia=civil|laboral|cobranza|penal`; en otro caso, 400);
   Familia se consulta con `corte: 0, tribunal: 0`; Apelaciones lleva `corte` con el
   nombre de la corte y no lleva `tribunal`.
+- **`caratulado` (solo Apelaciones).** api-pjud lo usa para ubicar la causa en el scraping:
+  `{"rol", "anio", "corte", "caratulado"}` en `sincronizar_apelaciones` y
+  `consultar_apelaciones`. El espejo lo reenvía tal cual; si el integrador no lo manda y la
+  causa de corte de la cartera es una sola, lo completa con el caratulado de la cartera (el
+  que manda el integrador nunca se pisa). La sincronización desde la app también lo envía.
 - **Errores** como en api-pjud: 404 (no tiene la causa: sincronízala), 409 (sync en curso
   o muy pronto); cualquier otra falla del proveedor, 502.
 - **Permisos.** Las consultas por POST cuentan como lectura para cualquier key y no se

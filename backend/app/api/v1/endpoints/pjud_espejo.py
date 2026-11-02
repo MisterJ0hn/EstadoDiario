@@ -132,6 +132,12 @@ def _con_abogado_asignado(
     `causa` es la ya resuelta con `causa_asignada` (se resuelve acá si no se pasa)."""
     if causa is None:
         causa = causa_asignada(db, servicio, competencia, cuerpo)
+    # Apelaciones: api-pjud ubica la causa por el caratulado. Si el integrador no lo
+    # manda y la causa de corte es una sola, se completa con el de la cartera.
+    if competencia == "apelaciones" and not str(cuerpo.get("caratulado") or "").strip():
+        caratulado = getattr(causa, "caratulado", None)
+        if caratulado:
+            cuerpo = {**cuerpo, "caratulado": caratulado}
     credenciales = _credenciales_del_dueno(db, causa)
     if credenciales is None:
         return cuerpo

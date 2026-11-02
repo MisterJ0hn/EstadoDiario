@@ -1515,6 +1515,10 @@ class PjudService:
                 "completos para consultar al PJUD."
             )
         cuerpo_causa = {"rol": int(numero.group()), "anio": int(anio.group()), "corte": corte}
+        # api-pjud usa el caratulado para ubicar la causa en el scraping.
+        caratulado = (getattr(causa_corte, "caratulado", None) or "").strip()
+        if caratulado:
+            cuerpo_causa["caratulado"] = caratulado
         # Tipo de libro del rol ("Civil" en "Civil-1620-2026"). Las filas cargadas
         # antes de que existiera la columna lo traen en el rol, si lo traen. Sin
         # dato no se manda la clave: un "libro" vacío haría fallar la búsqueda.

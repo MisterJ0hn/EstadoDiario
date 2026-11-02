@@ -214,8 +214,20 @@ class TestPrioridadApelacionesEnElEspejo:
         db.add(CausaCorte(
             estado_diario_origen_id=_origen(db, rut).id, tipo="apelaciones",
             rol="Civil-1620-2026", era="2026", corte="C.A. de Santiago",
+            caratulado="TESORERÍA/CONTRERAS",
         ))
         db.flush()
+
+    def test_completa_el_caratulado_si_el_integrador_no_lo_manda(self, db):
+        self._corte(db, "16952077-1")
+        envio = pjud_espejo._con_abogado_asignado(db, ServicioFalso(), "apelaciones", dict(self.CUERPO))
+        assert envio["caratulado"] == "TESORERÍA/CONTRERAS"
+
+    def test_el_caratulado_del_integrador_no_se_pisa(self, db):
+        self._corte(db, "16952077-1")
+        cuerpo = {**self.CUERPO, "caratulado": "OTRO/CARATULADO"}
+        envio = pjud_espejo._con_abogado_asignado(db, ServicioFalso(), "apelaciones", cuerpo)
+        assert envio["caratulado"] == "OTRO/CARATULADO"
 
     def test_pisa_las_credenciales_del_integrador(self, db):
         _abogado(db, "Ana", "16952077-1")

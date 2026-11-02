@@ -164,8 +164,11 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
     if _unico_rut(ruts) is None:
         logger.warning("Apelaciones sin dueño: la causa %s-%s de %r no tiene RUT de abogado en su origen",
                        numero, anio, cuerpo.get("corte"))
+    unica = candidatas[0] if len(candidatas) == 1 else None
     return SimpleNamespace(
-        id=candidatas[0].id if len(candidatas) == 1 else None, rut_efectivo=_unico_rut(ruts)
+        id=unica.id if unica else None,
+        rut_efectivo=_unico_rut(ruts),
+        caratulado=(unica.caratulado or "").strip() or None if unica else None,
     )
 
 

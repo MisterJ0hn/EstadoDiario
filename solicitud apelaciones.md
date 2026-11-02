@@ -8,7 +8,8 @@ Request:
 {
     "rol":23414,
     "anio":2026,
-    "corte":"C.A. de Santiago"
+    "corte":"C.A. de Santiago",
+    "caratulado":"TESORERÍA GENERAL DE LA REPUBLICA DE CHILE/CONTRERAS"
 }
 
 Causas privadas (con login en la Oficina Judicial Virtual): agregar al request de

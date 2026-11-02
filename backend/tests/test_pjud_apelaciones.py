@@ -44,6 +44,26 @@ class TestObtenerDetalleApelaciones:
             "rol": 23414, "anio": 2026, "corte": "C.A. de Santiago", "libro": "Civil", **_CREDS,
         }
 
+    def test_manda_el_caratulado_de_la_causa(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_apelaciones": PjudNoEncontrado("no está"),
+            "/sincronizar_apelaciones": {"exito": True},
+        })
+        causa = _corte()
+        causa.caratulado = " TESORERÍA GENERAL DE LA REPUBLICA DE CHILE/CONTRERAS "
+        servicio.obtener_detalle_apelaciones(causa)
+        esperado = "TESORERÍA GENERAL DE LA REPUBLICA DE CHILE/CONTRERAS"
+        assert self.cuerpos["/sincronizar_apelaciones"]["caratulado"] == esperado
+        assert self.cuerpos["/consultar_apelaciones"]["caratulado"] == esperado
+
+    def test_sin_caratulado_no_manda_la_clave(self, monkeypatch):
+        servicio = self._servicio(monkeypatch, {
+            "/consultar_apelaciones": PjudNoEncontrado("no está"),
+            "/sincronizar_apelaciones": {"exito": True},
+        })
+        servicio.obtener_detalle_apelaciones(_corte())
+        assert "caratulado" not in self.cuerpos["/consultar_apelaciones"]
+
     def test_sin_credenciales_del_dueno_va_sin_rut_ni_clave(self, monkeypatch):
         servicio = self._servicio(monkeypatch, {
             "/consultar_apelaciones": PjudNoEncontrado("no está"),
