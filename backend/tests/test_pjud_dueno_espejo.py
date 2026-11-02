@@ -16,6 +16,8 @@ from app.core.database import BaseTenant
 from app.models.causa import Causa
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
+from app.repositories.pjud_copia_repository import PjudCopiaRepository, clave_de
+from app.models.pjud_copia import PjudCopia
 from app.models.usuario import Usuario
 from app.models.usuario_rut import UsuarioRut
 from app.services.pjud_dueno_service import causa_asignada, credenciales_del_abogado_asignado
@@ -40,7 +42,7 @@ def db():
         engine,
         tables=[
             EstadoDiarioOrigen.__table__, Causa.__table__, CausaCorte.__table__,
-            Usuario.__table__, UsuarioRut.__table__,
+            Usuario.__table__, UsuarioRut.__table__, PjudCopia.__table__,
         ],
     )
     sesion = sessionmaker(bind=engine)()
@@ -286,3 +288,48 @@ class TestPrioridadApelacionesEnElEspejo:
     def test_sin_dueno_se_dejan_las_del_integrador(self, db):
         cuerpo = {**self.CUERPO, **DEL_INTEGRADOR}
         assert pjud_espejo._con_abogado_asignado(db, ServicioFalso(), "apelaciones", cuerpo) == cuerpo
+
+
+class TestMovimientosApelacionesConDueno:
+    """consultar_movimientos_* solo trae el `identificador`: el dueño sale de la
+    cabecera guardada con ese identificador."""
+
+    CUERPO = {"rol": 261, "anio": 2026, "corte": "C.A. de Santiago",
+              "caratulado": "SEPÚLVEDA KOCH/TESORERIA"}
+
+    def _cabecera(self, db, rut="16952077-1"):
+        db.add(CausaCorte(
+            estado_diario_origen_id=_origen(db, rut).id, tipo="apelaciones", rol="261",
+            era="2026", corte="C.A. de Santiago", caratulado="SEPÚLVEDA KOCH/TESORERIA",
+        ))
+        db.flush()
+        PjudCopiaRepository(db).guardar(
+            "/consultar_apelaciones", clave_de(self.CUERPO), "ident-1", "{}"
+        )
+
+    def _movimientos(self, db, identificador="ident-1"):
+        return pjud_espejo._movimientos_con_dueno(
+            db, ServicioFalso(), "apelaciones", {"identificador": identificador},
+            PjudCopiaRepository(db),
+        )
+
+    def test_usa_las_credenciales_del_dueno_de_la_cabecera(self, db):
+        _abogado(db, "Ana", "16952077-1")
+        self._cabecera(db)
+        envio = self._movimientos(db)
+        assert envio == {"identificador": "ident-1", **ABOGADO}
+
+    def test_las_credenciales_no_entran_a_la_clave_de_la_copia(self, db):
+        _abogado(db, "Ana", "16952077-1")
+        self._cabecera(db)
+        # Una cabecera pedida CON credenciales del integrador se guarda igual.
+        assert clave_de({**self.CUERPO, **DEL_INTEGRADOR}) == clave_de(self.CUERPO)
+
+    def test_identificador_desconocido_va_tal_cual(self, db):
+        _abogado(db, "Ana", "16952077-1")
+        self._cabecera(db)
+        assert self._movimientos(db, "otro") == {"identificador": "otro"}
+
+    def test_sin_dueno_va_tal_cual(self, db):
+        self._cabecera(db)
+        assert self._movimientos(db) == {"identificador": "ident-1"}

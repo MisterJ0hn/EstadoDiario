@@ -150,6 +150,26 @@ def _resumen(cuerpo: dict) -> dict:
     return {k: ("***" if k == "clave" else v) for k, v in cuerpo.items()}
 
 
+def _movimientos_con_dueno(
+    db: Session, servicio, competencia: str, cuerpo: dict, copias: PjudCopiaRepository
+) -> dict:
+    """`consultar_movimientos_*` solo trae `identificador`. Se vuelve a la causa por la
+    cabecera guardada con ese identificador y se le ponen las credenciales de su dueño.
+    Sin cabecera (nunca se consultó por este espejo) o sin dueño, va tal cual."""
+    identificador = str(cuerpo.get("identificador") or "")
+    if not identificador:
+        return cuerpo
+    origen = copias.cuerpo_de_cabecera(identificador, f"/consultar_{competencia}")
+    if origen is None:
+        return cuerpo
+    causa = causa_asignada(db, servicio, competencia, origen)
+    credenciales = _credenciales_del_dueno(db, causa)
+    if credenciales is None:
+        return cuerpo
+    logger.info("Espejo PJUD movimientos %s: se usan las credenciales del abogado asignado", competencia)
+    return {**cuerpo, **credenciales}
+
+
 def _json(texto: str) -> Response:
     return Response(
         content=PjudService.reescribir_documentos(texto), media_type="application/json"
@@ -197,12 +217,19 @@ def _consultar(
 
     servicio = _servicio()
     envio = cuerpo
+    causa = None
     try:
         # Los movimientos solo traen `identificador`: no hay de dónde sacar al dueño.
-        causa = None if es_movimientos else causa_asignada(db, servicio, competencia, cuerpo)
-        if recordar_credencial and causa is not None:
-            recordar_credencial_integrador(db, causa, cuerpo)
-        envio = cuerpo if es_movimientos else _con_abogado_asignado(db, servicio, competencia, cuerpo, causa)
+        # Los movimientos sí: el identificador lleva de vuelta a la cabecera con que se
+        # guardó la causa (rol, año, corte, caratulado), y de ahí a su dueño. Sin sus
+        # credenciales api-pjud responde 403 "Causa privada".
+        if es_movimientos:
+            envio = _movimientos_con_dueno(db, servicio, competencia, cuerpo, copias)
+        else:
+            causa = causa_asignada(db, servicio, competencia, cuerpo)
+            if recordar_credencial and causa is not None:
+                recordar_credencial_integrador(db, causa, cuerpo)
+            envio = _con_abogado_asignado(db, servicio, competencia, cuerpo, causa)
         logger.info(
             "Espejo PJUD %s: llegó %s | dueño id=%s rut=%s | se envía %s",
             ruta, _resumen(cuerpo), getattr(causa, "id", None),

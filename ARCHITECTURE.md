@@ -494,6 +494,11 @@ Competencias: `civil`, `familia`, `laboral`, `cobranza`, `penal`, `apelaciones`.
   cada abogado (no solo el último del estudio). Si la misma causa de corte está en dos
   carteras, el `caratulado` del cuerpo desempata (sin mayúsculas ni acentos); sin él, o si
   no calza con ninguna, hay ambigüedad y no se elige abogado.
+- **`consultar_movimientos_<competencia>`** solo trae `identificador`. El espejo vuelve a la
+  causa por la cabecera guardada en `pjud_copia` con ese identificador (su `clave` es el
+  cuerpo original, sin credenciales; no se mira el TTL), resuelve al abogado asignado y
+  envía con sus credenciales. Sin cabecera guardada o sin dueño, va tal cual: api-pjud
+  responde 403 "Causa privada" si la causa lo es.
 - **Errores** como en api-pjud: 404 (no tiene la causa: sincronízala), 409 (sync en curso
   o muy pronto); cualquier otra falla del proveedor, 502.
 - **Permisos.** Las consultas por POST cuentan como lectura para cualquier key y no se

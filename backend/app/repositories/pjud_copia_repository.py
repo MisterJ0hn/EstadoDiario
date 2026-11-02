@@ -59,6 +59,25 @@ class PjudCopiaRepository:
         )
         return any(self._vigente(f, ttl_minutos) for f in filas)
 
+    def cuerpo_de_cabecera(self, identificador: str, ruta: str) -> Optional[dict]:
+        """La consulta (`clave`, sin credenciales) con que se guardó la cabecera de esa
+        causa, o `None`. Sirve para volver de un `identificador` a la causa pedida: los
+        movimientos solo traen el identificador. No mira el TTL: una copia vencida sigue
+        diciendo de qué causa es."""
+        fila = (
+            self.db.query(PjudCopia)
+            .filter(PjudCopia.identificador == identificador, PjudCopia.ruta == ruta)
+            .order_by(PjudCopia.capturado_en.desc())
+            .first()
+        )
+        if fila is None:
+            return None
+        try:
+            cuerpo = json.loads(fila.clave)
+        except ValueError:
+            return None
+        return cuerpo if isinstance(cuerpo, dict) else None
+
     def guardar(
         self, ruta: str, clave: str, identificador: Optional[str], respuesta: str
     ) -> None:
