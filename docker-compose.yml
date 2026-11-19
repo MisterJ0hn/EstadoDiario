@@ -70,6 +70,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - ed_network
+      - database_net
 
   # ─── App de los estudios ── puerto 8090 ────────────────
   # Se sirve ionic_app y NO frontend/. Son la misma aplicación: ionic_app es el
@@ -146,6 +147,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - ed_network
+      - database_net
 
   # ─── admin_app (Angular) ── puerto 8093 ────────────────
   admin_app:
@@ -167,3 +169,9 @@ volumes:
 networks:
   ed_network:
     driver: bridge
+  # Red ya existente donde vive el contenedor de PostgreSQL (producción).
+  # `external`: compose no la crea ni la borra; tiene que existir antes del
+  # `up` (docker network ls). POSTGRES_HOST debe ser el nombre del contenedor
+  # (o su alias de red) de la base, no host.docker.internal.
+  database_net:
+    external: true
