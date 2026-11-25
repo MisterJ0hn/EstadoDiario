@@ -1,5 +1,3 @@
-version: "3.9"
-
 # NOTA: PostgreSQL NO se levanta en Docker. Se usa el PostgreSQL
 # instalado en la máquina Linux anfitriona (host).
 # El backend lo alcanza vía "host.docker.internal", que se resuelve
@@ -82,12 +80,18 @@ services:
   #
   # Para volver a servir frontend/, cambiar el context a ./frontend. Los dos
   # traen su propio Dockerfile y su nginx.conf, y los dos escuchan en el 80.
+  # Los dos leen FRONTEND_API_URL de la misma forma (config.js al arrancar).
   frontend:
     build:
       context: ./ionic_app
       dockerfile: Dockerfile
     container_name: ed_frontend
     restart: unless-stopped
+    environment:
+      # Vacía = la app usa /api/v1 (mismo origen, lo normal). Con valor, es la
+      # URL absoluta de la API y exige CORS. Se lee al ARRANCAR el contenedor:
+      # cambiarla no requiere --build, solo recrearlo.
+      - API_URL=${FRONTEND_API_URL:-}
     ports:
       - "${FRONTEND_PORT:-8090}:80"
     depends_on:

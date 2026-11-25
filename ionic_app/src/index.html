@@ -15,6 +15,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body class="bg-neutral-50 font-sans text-neutral-800 antialiased">
+  <!-- Configuración en tiempo de ejecución (URL de la API). Va antes del bundle
+       y sin `defer`: environment.web.ts la lee al cargarse. -->
+  <script src="config.js"></script>
   <app-root></app-root>
 </body>
 </html>

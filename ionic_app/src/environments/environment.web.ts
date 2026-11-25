@@ -1,28 +1,33 @@
 /**
  * Build **web** para publicar en el servidor (`ng build --configuration web`).
  *
- * **URL absoluta hacia `edapi`, no relativa.** La relativa asumía que la app y
- * la API salen por el mismo Nginx; en el despliegue actual no es así: el host
- * que sirve la app (`ed.temposoft.cl`) tiene su `/api/` apuntando a otra cosa,
- * y el login moría con un 404 de FastAPI —`{"detail":"Not Found"}`— porque
- * llegaba a la API de la consola, que no tiene `/auth/login`. Con la URL
- * absoluta la app habla directo con su backend y deja de depender de cómo esté
- * ruteado ese host.
+ * **La URL de la API no está escrita acá**: sale de `FRONTEND_API_URL` del
+ * `.env`. El contenedor la vuelca al arrancar en `config.js`
+ * (`docker-entrypoint.d/40-config-js.sh`), que `index.html` carga antes del
+ * bundle. Así cambiar de dominio es editar el `.env` y recrear el contenedor,
+ * sin recompilar.
  *
- * **Esto activa CORS**, que con la URL relativa no existía. Requiere que el
- * origen de la app esté en `BACKEND_CORS_ORIGINS` del backend; hoy lo está
- * (`https://ed.temposoft.cl` responde el preflight con su
- * `access-control-allow-origin`). Si mañana se publica la web en otro dominio,
- * hay que agregarlo ahí también: si se olvida, la app queda en blanco sin
- * ningún error de servidor que lo explique.
+ * - **Vacía (lo normal)**: se usa `/api/v1`, relativa. El Nginx que sirve la app
+ *   hace de proxy hacia el backend (ver `nginx.conf`), así que app y API quedan
+ *   en el mismo origen, no hay CORS y funciona con cualquier hostname.
+ *   Requiere que el dominio público de la app mande TODO su tráfico, `/api/`
+ *   incluido, a este contenedor.
+ * - **Con valor**: URL absoluta, p. ej. `https://api.midominio.cl/api/v1`. Sirve
+ *   cuando el host de la app tiene su `/api/` apuntando a otra cosa. Activa
+ *   CORS: el origen de la app tiene que estar en `BACKEND_CORS_ORIGINS`, o la
+ *   app queda en blanco sin ningún error de servidor que lo explique. Tiene que
+ *   ser https: el navegador no sigue redirecciones en un preflight.
  *
- * **https y no http**: el servidor responde 301 hacia https, y el navegador no
- * sigue redirecciones en un preflight (ver `environment.prod.ts`).
- *
- * `production` —la del APK— apunta al mismo backend por su cuenta: son el
- * mismo código y el mismo destino, pero configuraciones distintas.
+ * `production` —la del APK— lleva su URL absoluta propia (ver
+ * `environment.prod.ts`): no hay contenedor que escriba `config.js`.
  */
+declare global {
+  interface Window {
+    __ED_CONFIG__?: { apiUrl?: string };
+  }
+}
+
 export const environment = {
   production: true,
-  apiUrl: 'https://edapi.temposoft.cl/api/v1',
+  apiUrl: window.__ED_CONFIG__?.apiUrl || '/api/v1',
 };
