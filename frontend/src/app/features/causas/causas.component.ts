@@ -160,12 +160,10 @@ const SIN_MATERIA = '__sin_materia__';
         <div>
           <label class="form-label" for="c-vigencia">Vigencia</label>
           <select id="c-vigencia" class="form-select" [(ngModel)]="filtroVigencia">
+            <option value="todas">Todas</option>
             <option value="vigentes">Vigentes</option>
             <option value="finalizadas">No vigentes</option>
           </select>
-          <!-- Sin opción "todas" a propósito: mezclar causas vivas con
-               concluidas es lo que hace inútil el listado, y el título dice
-               cuál de las dos mitades se está mirando. -->
         </div>
         <div>
           <label class="form-label" for="c-busqueda">Búsqueda</label>
@@ -363,19 +361,19 @@ export class CausasComponent implements OnInit {
   readonly sinMateria = SIN_MATERIA;
 
   /**
-   * Qué mitad de la cartera se está viendo. Por defecto las vigentes: son las
-   * que el estudio tramita, y una cartera con años de causas concluidas
-   * encima haría inútil el listado el primer día.
+   * Qué parte de la cartera se está viendo. Por defecto todas, vigentes y no
+   * vigentes; el filtro permite acotar a una de las dos mitades.
    */
-  vigencia = signal<VigenciaCausa>('vigentes');
+  vigencia = signal<VigenciaCausa>('todas');
   /**
    * Lo elegido en el panel, que no es lo mismo que lo aplicado: el panel tiene
    * botón "Aplicar", y hasta pulsarlo la tabla y el título siguen mostrando la
    * vigencia anterior.
    */
-  filtroVigencia: VigenciaCausa = 'vigentes';
+  filtroVigencia: VigenciaCausa = 'todas';
 
   readonly VIGENCIAS: { clave: VigenciaCausa; etiqueta: string; titulo: string }[] = [
+    { clave: 'todas', etiqueta: 'Todas', titulo: 'Cartera cliente' },
     { clave: 'vigentes', etiqueta: 'Vigentes', titulo: 'Cartera cliente Vigentes' },
     { clave: 'finalizadas', etiqueta: 'No vigentes', titulo: 'Cartera cliente Finalizada' },
   ];
@@ -420,7 +418,7 @@ export class CausasComponent implements OnInit {
     // filtros—, pero al leerla hay que dejar el panel diciendo lo mismo que la
     // tabla, o el select mostraría "Vigentes" sobre un listado de finalizadas.
     const vigencia = this.route.snapshot.queryParamMap.get('vigencia');
-    if (vigencia === 'finalizadas' || vigencia === 'vigentes') {
+    if (vigencia === 'finalizadas' || vigencia === 'vigentes' || vigencia === 'todas') {
       this.vigencia.set(vigencia);
       this.filtroVigencia = vigencia;
     }
@@ -563,8 +561,8 @@ export class CausasComponent implements OnInit {
   }
 
   onLimpiarFiltros(): void {
-    // Vuelve a Vigentes, que es el valor por defecto de la pantalla.
-    this.filtroVigencia = 'vigentes';
+    // Vuelve a Todas, que es el valor por defecto de la pantalla.
+    this.filtroVigencia = 'todas';
     this.filtroBusqueda = '';
     this.filtroEstadoCausa = '';
     this.filtroTribunal = '';
@@ -583,7 +581,7 @@ export class CausasComponent implements OnInit {
   quitarFiltro(clave: string): void {
     switch (clave) {
       case 'vigencia':
-        this.filtroVigencia = 'vigentes';
+        this.filtroVigencia = 'todas';
         break;
       case 'sin_actividad':
         this.filtroSinActividad = '';
@@ -613,8 +611,12 @@ export class CausasComponent implements OnInit {
    *  edita en pantalla y ya tiene su propio aviso arriba del listado. */
   private sincronizarChips(): void {
     const chips: ChipFiltro[] = [];
-    if (this.vigencia() === 'finalizadas') {
-      chips.push({ clave: 'vigencia', etiqueta: 'Vigencia', valor: 'No vigentes' });
+    if (this.vigencia() !== 'todas') {
+      chips.push({
+        clave: 'vigencia',
+        etiqueta: 'Vigencia',
+        valor: this.vigencia() === 'finalizadas' ? 'No vigentes' : 'Vigentes',
+      });
     }
     if (this.filtroSinActividad) {
       chips.push({

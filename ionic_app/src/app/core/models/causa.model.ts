@@ -70,7 +70,7 @@ export interface CausaResumenResponse {
  * informan estado, como las de Cobranza, cuya hoja no trae la columna—, y es
  * lo que se ve por defecto: la cartera con la que el estudio trabaja hoy.
  */
-export type VigenciaCausa = 'vigentes' | 'finalizadas';
+export type VigenciaCausa = 'todas' | 'vigentes' | 'finalizadas';
 
 export interface CausaFiltros {
   /** Solo las que no aparecen en ningún reporte hace más de N meses. */

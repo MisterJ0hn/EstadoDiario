@@ -80,12 +80,10 @@ import { PjudApelacionesModalComponent } from './components/pjud-apelaciones-mod
         <div>
           <label class="form-label" for="cc-vigencia">Vigencia</label>
           <select id="cc-vigencia" class="form-select" [(ngModel)]="filtroVigencia">
+            <option value="todas">Todas</option>
             <option value="vigentes">Vigentes</option>
             <option value="finalizadas">No vigentes</option>
           </select>
-          <!-- Sin opción "todas" a propósito: mezclar causas vivas con
-               concluidas es lo que hace inútil el listado, y el título dice
-               cuál de las dos mitades se está mirando. -->
         </div>
         <div>
           <label class="form-label" for="cc-busqueda">Búsqueda</label>
@@ -231,19 +229,19 @@ export class CausasCortesComponent implements OnInit {
   conteos = signal<Record<string, number>>({});
 
   /**
-   * Qué mitad se está viendo. Por defecto las vigentes: son las que el estudio
-   * tramita, y una cartera con años de causas concluidas encima haría inútil el
-   * listado el primer día.
+   * Qué parte se está viendo. Por defecto todas, vigentes y no vigentes; el
+   * filtro permite acotar a una de las dos mitades.
    */
-  vigencia = signal<VigenciaCausa>('vigentes');
+  vigencia = signal<VigenciaCausa>('todas');
   /**
    * Lo que está elegido en el panel, que no es lo mismo que lo aplicado: el
    * panel tiene botón "Aplicar", y mientras esté abierto la tabla y el título
    * siguen mostrando la vigencia anterior.
    */
-  filtroVigencia: VigenciaCausa = 'vigentes';
+  filtroVigencia: VigenciaCausa = 'todas';
 
   readonly VIGENCIAS: { clave: VigenciaCausa; etiqueta: string; titulo: string }[] = [
+    { clave: 'todas', etiqueta: 'Todas', titulo: 'Cartera cliente' },
     { clave: 'vigentes', etiqueta: 'Vigentes', titulo: 'Cartera cliente Vigentes' },
     { clave: 'finalizadas', etiqueta: 'No vigentes', titulo: 'Cartera cliente Finalizada' },
   ];
@@ -317,8 +315,8 @@ export class CausasCortesComponent implements OnInit {
   }
 
   onLimpiarFiltros(): void {
-    // Vuelve a Vigentes, que es el valor por defecto de la pantalla.
-    this.filtroVigencia = 'vigentes';
+    // Vuelve a Todas, que es el valor por defecto de la pantalla.
+    this.filtroVigencia = 'todas';
     this.filtroBusqueda = '';
     this.filtroCorte = '';
     this.onFiltrar();
@@ -332,7 +330,7 @@ export class CausasCortesComponent implements OnInit {
   quitarFiltro(clave: string): void {
     switch (clave) {
       case 'vigencia':
-        this.filtroVigencia = 'vigentes';
+        this.filtroVigencia = 'todas';
         break;
       case 'busqueda':
         this.filtroBusqueda = '';
@@ -377,8 +375,12 @@ export class CausasCortesComponent implements OnInit {
 
   private sincronizarChips(): void {
     const chips: ChipFiltro[] = [];
-    if (this.vigencia() === 'finalizadas') {
-      chips.push({ clave: 'vigencia', etiqueta: 'Vigencia', valor: 'No vigentes' });
+    if (this.vigencia() !== 'todas') {
+      chips.push({
+        clave: 'vigencia',
+        etiqueta: 'Vigencia',
+        valor: this.vigencia() === 'finalizadas' ? 'No vigentes' : 'Vigentes',
+      });
     }
     if (this.filtroBusqueda) {
       chips.push({ clave: 'busqueda', etiqueta: 'Búsqueda', valor: this.filtroBusqueda });
