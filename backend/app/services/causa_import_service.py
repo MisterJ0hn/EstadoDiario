@@ -33,12 +33,12 @@ import xlrd
 from sqlalchemy.orm import Session
 
 from app.core.estados_causa import esta_finalizada
-from app.models.causa import ORIGEN_DATO_API, Causa
+from app.models.causa import ORIGEN_DATO_API, ORIGEN_DATO_CAUSAS, Causa
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.repositories.causa_repository import CausaRepository
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
-from app.repositories.causa_repository import ultimo_origen_causas_id
+from app.models.usuario_rut import limpiar_rut
 from app.services import auditoria_service as auditoria
 from app.services.causa_api_service import copiar_causa_de_api
 from app.services.cartera_sync_service import sincronizar_cartera
@@ -248,19 +248,22 @@ class CausaImportService:
         self.repo = CausaRepository(db)
         self.jurisdiccion_repo = JurisdiccionRepository(db)
 
-    def _causas_api_de_la_cartera(self) -> list[Causa]:
-        """Las causas de API de la cartera vigente.
+    def _causas_api_de_deducidas(self) -> list[Causa]:
+        """Las causas de API que viven en una cartera deducida.
 
-        Se leen antes de que se borre la cartera deducida (que puede contenerlas)
-        y se reinsertan como filas nuevas: no se reusan los objetos borrados.
+        La deducida se borra entera al llegar el reporte real, y con ella sus
+        causas: las de API no vienen en ningún Excel, así que se leen ANTES del
+        borrado y se reinsertan como filas nuevas (no se reusan los objetos
+        borrados). Las de API que viven en el archivo de un abogado NO pasan por
+        acá: ese archivo no se borra y sus filas se conservan tal cual (ver
+        `_retirar_sobrantes`).
         """
-        origen_id = ultimo_origen_causas_id(self.db)
-        if origen_id is None:
-            return []
         filas = (
             self.db.query(Causa)
+            .join(EstadoDiarioOrigen, Causa.estado_diario_origen_id == EstadoDiarioOrigen.id)
             .filter(
-                Causa.estado_diario_origen_id == origen_id,
+                EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS,
+                EstadoDiarioOrigen.deducida.is_(True),
                 Causa.origen_dato == ORIGEN_DATO_API,
             )
             .all()
@@ -384,6 +387,91 @@ class CausaImportService:
                 return jur.id
         return None
 
+    # ── Actualización de la cartera de un RUT ─────────────
+    #
+    # **Cada Excel de Causas trae la cartera completa de UN abogado.** Antes cada
+    # carga insertaba todo de nuevo y dejaba las filas de la carga anterior ahí:
+    # las tablas `causa` y `causa_corte` acumulaban una copia por carga y había
+    # que filtrar por "el último archivo" para no contarlas varias veces.
+    #
+    # Ahora las filas del abogado se ACTUALIZAN: la que ya estaba (por su llave)
+    # se reusa —conserva su id, y con él lo que cuelga de ella: consultas al PJUD,
+    # abogado asignado, causa de origen de una apelación—; la nueva se inserta; la
+    # que ya no viene queda marcada como retirada (`retirada_en`), no se borra.
+    # Todas pasan a colgar del archivo recién cargado. Los archivos anteriores
+    # quedan registrados (RUT, fecha, nombre y `url` del original en disco) como
+    # historia para auditar, pero ya sin filas: la tabla es solo lo vigente.
+
+    def _origenes_previos_del_rut(self, rut: str, origen_nuevo_id: int) -> list[int]:
+        """Los archivos de Causas anteriores de ese mismo RUT."""
+        buscado = limpiar_rut(rut or "")
+        filas = (
+            self.db.query(EstadoDiarioOrigen.id, EstadoDiarioOrigen.rut)
+            .filter(
+                EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS,
+                EstadoDiarioOrigen.deducida.is_(False),
+                EstadoDiarioOrigen.id != origen_nuevo_id,
+            )
+            .all()
+        )
+        return [f.id for f in filas if buscado and limpiar_rut(f.rut or "") == buscado]
+
+    @staticmethod
+    def _preferida(filas: list) -> list:
+        """Ordena las filas con la misma llave: primero la que se conserva (no
+        retirada y del archivo más reciente). Las demás se retiran."""
+        return sorted(
+            filas,
+            key=lambda f: (f.retirada_en is not None, -f.estado_diario_origen_id, f.id),
+        )
+
+    def _existentes_materia(self, origenes: list[int]) -> dict:
+        indice: dict = {}
+        if not origenes:
+            return indice
+        for c in self.db.query(Causa).filter(Causa.estado_diario_origen_id.in_(origenes)).all():
+            clave = self._clave_materia({"rol": c.rol, "tribunal": c.tribunal})
+            indice.setdefault(clave, []).append(c)
+        return indice
+
+    def _existentes_corte(self, origenes: list[int]) -> dict:
+        indice: dict = {}
+        if not origenes:
+            return indice
+        for c in self.db.query(CausaCorte).filter(CausaCorte.estado_diario_origen_id.in_(origenes)).all():
+            clave = self._clave_corte({"tipo": c.tipo, "rol": c.rol, "era": c.era, "corte": c.corte})
+            indice.setdefault(clave, []).append(c)
+        return indice
+
+    @staticmethod
+    def _volcar(destino, valores: dict) -> None:
+        """Pone en una fila existente lo que trae el Excel. Un nulo no pisa: que
+        una hoja no traiga la columna (Cobranza no trae estado) no significa que
+        la causa haya perdido el dato."""
+        for campo, valor in valores.items():
+            if valor is not None:
+                setattr(destino, campo, valor)
+
+    @staticmethod
+    def _retirar_sobrantes(filas_previas: list, tocadas: set, origen_id: int, ahora) -> int:
+        """Lo que estaba en la cartera y el Excel nuevo ya no trae.
+
+        Las dadas de alta por API no vienen en ningún Excel: no se retiran, solo
+        pasan al archivo nuevo. El resto se marca retirado (si ya lo estaba, se
+        deja la fecha original). Devuelve cuántas se retiraron ahora.
+        """
+        retiradas = 0
+        for fila in filas_previas:
+            if id(fila) in tocadas:
+                continue
+            fila.estado_diario_origen_id = origen_id
+            if getattr(fila, "origen_dato", None) == ORIGEN_DATO_API:
+                continue
+            if fila.retirada_en is None:
+                fila.retirada_en = ahora
+                retiradas += 1
+        return retiradas
+
     def import_file(
         self,
         file_path: str,
@@ -400,7 +488,7 @@ class CausaImportService:
         # usuario no puede entender ni resolver (ese archivo no lo subió nadie).
         # Las dadas de alta por API no vienen en ningún Excel: se leen ANTES de
         # descartar nada y se vuelven a poner en la cartera nueva.
-        causas_api = self._causas_api_de_la_cartera()
+        causas_api = self._causas_api_de_deducidas()
         self._descartar_cartera_deducida()
 
         existente = self.repo.find_origen(rut, fecha)
@@ -422,6 +510,7 @@ class CausaImportService:
                 "Caratulado, Fecha Ingreso, Institución)."
             )
 
+        ahora = datetime.now(timezone.utc)
         # El origen se crea DESPUÉS de parsear: si el archivo no sirve, no
         # queda una fila fantasma en Bitácora.
         origen = EstadoDiarioOrigen(
@@ -430,10 +519,20 @@ class CausaImportService:
             rut=rut,
             fecha=fecha,
             nombre_archivo=nombre_archivo or os.path.basename(file_path),
-            fecha_carga=datetime.now(timezone.utc),
+            # El original queda guardado en disco (UPLOAD_DIR) y esto dice cuál
+            # es: es la historia del reporte, para auditar qué trajo cada carga.
+            url=os.path.basename(file_path)[:255],
+            fecha_carga=ahora,
         )
         self.db.add(origen)
         self.db.flush()  # asigna origen.id sin cerrar la transacción
+
+        previos = self._origenes_previos_del_rut(rut, origen.id)
+        existentes_materia = self._existentes_materia(previos)
+        existentes_corte = self._existentes_corte(previos)
+        # Las filas previas que se reusaron en esta carga (por identidad).
+        tocadas_materia: set = set()
+        tocadas_corte: set = set()
 
         cache_jurisdiccion: dict[str, Optional[int]] = {}
         por_materia: dict[str, int] = {}
@@ -445,6 +544,7 @@ class CausaImportService:
         vistas_materia: dict[tuple, Causa] = {}
         vistas_corte: dict[tuple, CausaCorte] = {}
         duplicadas = 0
+        reusadas = 0
 
         for fila in filas:
             if fila.get("tipo"):
@@ -455,8 +555,7 @@ class CausaImportService:
                     duplicadas += 1
                     continue
 
-                registro = CausaCorte(
-                    estado_diario_origen_id=origen.id,
+                valores = dict(
                     tipo=fila["tipo"],
                     rol=fila.get("rol"),
                     era=fila.get("era"),
@@ -470,7 +569,18 @@ class CausaImportService:
                     institucion=fila.get("institucion"),
                     jurisdiccion_id=self._jurisdiccion_de_corte(fila["tipo"]),
                 )
-                self.db.add(registro)
+                registro = None
+                if clave and existentes_corte.get(clave):
+                    registro = self._preferida(existentes_corte[clave])[0]
+                    tocadas_corte.add(id(registro))
+                    self._volcar(registro, valores)
+                    registro.estado_diario_origen_id = origen.id
+                    registro.retirada_en = None
+                    registro.origen_dato = ORIGEN_DATO_CAUSAS
+                    reusadas += 1
+                if registro is None:
+                    registro = CausaCorte(estado_diario_origen_id=origen.id, **valores)
+                    self.db.add(registro)
                 if clave:
                     vistas_corte[clave] = registro
                 cortes += 1
@@ -488,8 +598,7 @@ class CausaImportService:
                 duplicadas += 1
                 continue
 
-            causa = Causa(
-                estado_diario_origen_id=origen.id,
+            valores = dict(
                 materia=materia,
                 tipo_causa=fila.get("tipo_causa"),
                 rol=fila.get("rol"),
@@ -501,13 +610,35 @@ class CausaImportService:
                 institucion=fila.get("institucion"),
                 jurisdiccion_id=cache_jurisdiccion[materia],
             )
-            self.db.add(causa)
+            causa = None
+            if clave and existentes_materia.get(clave):
+                causa = self._preferida(existentes_materia[clave])[0]
+                tocadas_materia.add(id(causa))
+                self._volcar(causa, valores)
+                causa.estado_diario_origen_id = origen.id
+                causa.retirada_en = None
+                if causa.origen_dato == ORIGEN_DATO_API:
+                    # Una causa de API que el Excel ya trae pasa a ser del Excel
+                    # (y de su abogado).
+                    causa.rut_asignado = None
+                causa.origen_dato = ORIGEN_DATO_CAUSAS
+                reusadas += 1
+            if causa is None:
+                causa = Causa(estado_diario_origen_id=origen.id, **valores)
+                self.db.add(causa)
             if clave:
                 vistas_materia[clave] = causa
             por_materia[materia] = por_materia.get(materia, 0) + 1
 
-        # Una causa de API que el Excel ya trae pasa a ser del Excel (y de su
-        # abogado); las demás siguen, con el abogado que tuvieran.
+        # Lo que estaba y este Excel ya no trae. Se mira TODO lo previo del RUT,
+        # reusado o no: las repetidas de una llave ya reusada también se retiran.
+        todas_materia = [c for grupo in existentes_materia.values() for c in grupo]
+        todas_corte = [c for grupo in existentes_corte.values() for c in grupo]
+        retiradas = self._retirar_sobrantes(todas_materia, tocadas_materia, origen.id, ahora)
+        retiradas += self._retirar_sobrantes(todas_corte, tocadas_corte, origen.id, ahora)
+
+        # Las de API que vivían en una cartera deducida (ya borrada) vuelven a
+        # entrar, salvo las que el Excel ya trae.
         for causa_api in causas_api:
             clave = self._clave_materia(
                 {"rol": causa_api.rol, "tribunal": causa_api.tribunal}
@@ -515,9 +646,8 @@ class CausaImportService:
             if clave is None or clave not in vistas_materia:
                 copiar_causa_de_api(self.db, causa_api, origen.id)
 
-        # La carga de Causas reemplaza la foto de la cartera, así que el cruce
-        # se rehace sobre el origen recién creado: lo enriquecido antes colgaba
-        # del archivo anterior y ya nadie lo lee.
+        # La carga de Causas reemplaza la foto de la cartera de este abogado, así
+        # que el cruce se rehace: completa lo que traigan los otros reportes.
         self.db.flush()
         sincronizar_cartera(self.db)
 
@@ -525,13 +655,16 @@ class CausaImportService:
         auditoria.registrar(
             self.db, auditoria.MODULO_CAUSAS, auditoria.ACCION_IMPORTAR,
             usuario_id=usuario_id,
-            detalle=f"{origen.nombre_archivo or file_path}: {causas} causas, {cortes} de corte, {duplicadas} repetidas fusionadas",
+            detalle=(
+                f"{origen.nombre_archivo or file_path}: {causas} causas, {cortes} de corte, "
+                f"{duplicadas} repetidas fusionadas, {reusadas} ya existían, {retiradas} retiradas"
+            ),
         )
         self.db.commit()
         logger.info(
             "Importadas %d causas y %d de corte para origen %d (%s); "
-            "%d filas repetidas del Excel se fusionaron",
-            causas, cortes, origen.id, por_materia, duplicadas,
+            "%d filas repetidas del Excel se fusionaron; %d reusadas, %d retiradas",
+            causas, cortes, origen.id, por_materia, duplicadas, reusadas, retiradas,
         )
         return {
             "origen_id": origen.id,
@@ -539,4 +672,5 @@ class CausaImportService:
             "cortes_importados": cortes,
             "duplicadas_fusionadas": duplicadas,
             "por_materia": por_materia,
+            "causas_retiradas": retiradas,
         }

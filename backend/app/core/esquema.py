@@ -115,6 +115,9 @@ COLUMNAS_NUEVAS_TENANT: list[tuple[str, str, str]] = [
     # deducidas sería mentir sobre su procedencia.
     ("causa", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
     ("causa", "enriquecida_en", "TIMESTAMPTZ"),
+    # Causa que dejó de venir en el reporte de su abogado. Nula = sigue en él.
+    ("causa", "retirada_en", "TIMESTAMPTZ"),
+    ("causa_corte", "retirada_en", "TIMESTAMPTZ"),
     ("causa_corte", "origen_dato", "VARCHAR(20) DEFAULT 'causas'"),
     ("causa_corte", "enriquecida_en", "TIMESTAMPTZ"),
     # Tipo de libro del rol de las causas de corte ("Civil" en "Civil-1620-2026").

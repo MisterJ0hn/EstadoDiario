@@ -118,6 +118,12 @@ class Causa(BaseTenant):
     # De qué reporte salió esa fecha, para poder explicarla en la pantalla.
     origen_actividad: Mapped[Optional[str]] = mapped_column(String(20))
 
+    # Cuándo dejó de venir en el reporte de Causas de su abogado. Nulo = sigue en
+    # el reporte. Una causa retirada NO se borra (auditoría: hubo un momento en
+    # que estuvo en la cartera) pero no se muestra, no se cuenta ni se factura.
+    # Si vuelve a aparecer en un reporte posterior, se limpia.
+    retirada_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="causas")
     jurisdiccion = relationship("Jurisdiccion")
 

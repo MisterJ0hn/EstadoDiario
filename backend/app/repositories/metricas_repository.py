@@ -462,10 +462,10 @@ class MetricasRepository:
         # nivel de módulo las dos importaciones se cruzarían.
         from app.core.estados_causa import VIGENTES, condicion_vigencia
         from app.models.causa import Causa
-        from app.repositories.causa_repository import ultimo_origen_causas_id
+        from app.repositories.causa_repository import origenes_cartera_ids
 
-        origen_id = ultimo_origen_causas_id(self.db)
-        if origen_id is None:
+        origenes = origenes_cartera_ids(self.db)
+        if not origenes:
             # Ningún archivo de causas cargado: la cartera está vacía, no es
             # que la consulta falle.
             return 0
@@ -475,7 +475,7 @@ class MetricasRepository:
         )
         agrupadas = (
             self.db.query(Causa.rol, Causa.tribunal)
-            .filter(Causa.estado_diario_origen_id == origen_id)
+            .filter(Causa.estado_diario_origen_id.in_(origenes), Causa.retirada_en.is_(None))
             .group_by(Causa.rol, Causa.tribunal)
             .having(
                 alguna_vigente.is_(True)

@@ -321,7 +321,18 @@ class PjudService:
                 data = self._request(
                     "GET", "/catalogo/tribunales", params={"competencia": competencia},
                 )
-                PjudService._catalogo[competencia] = data.get("cortes", [])
+                cortes = data.get("cortes") or []
+                if not cortes:
+                    # Un catálogo vacío es un api-pjud sin cargar, no un dato:
+                    # no se cachea, para que apenas lo carguen se vea sin
+                    # esperar el TTL ni reiniciar el backend.
+                    PjudService._catalogo.pop(competencia, None)
+                    PjudService._catalogo_ts.pop(competencia, None)
+                    raise PjudApiError(
+                        f"api-pjud devolvió el catálogo de tribunales {competencia} vacío "
+                        "(el servicio de detalle PJUD no tiene cargados los tribunales)."
+                    )
+                PjudService._catalogo[competencia] = cortes
                 PjudService._catalogo_ts[competencia] = time.monotonic()
             return PjudService._catalogo.get(competencia) or []
 

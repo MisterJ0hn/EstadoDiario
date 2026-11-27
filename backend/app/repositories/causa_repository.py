@@ -11,19 +11,24 @@ import math
 from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, func, or_, select, tuple_
+from sqlalchemy.orm import Session, aliased, joinedload
 
 from app.core.estados_causa import FINALIZADAS, VIGENTES, condicion_vigencia
-from app.core.filtro_roles import RolFiltro, filtrar_por_roles
+from app.core.filtro_roles import RolFiltro, filtrar_por_roles, norm_tribunal_sql
 from app.models.audiencia import Audiencia
 from app.models.causa import Causa
 from app.models.estado_diario_origen import EstadoDiarioOrigen
+from app.models.usuario_rut import limpiar_rut
 
 # `VIGENTES` y `FINALIZADAS` se re-exportan desde `app.core.estados_causa`: los
 # endpoints y los otros repositorios los importan desde acá desde antes, y la
 # regla vive allá.
-__all__ = ["VIGENTES", "FINALIZADAS", "SIN_MATERIA", "ultimo_origen_causas_id", "CausaRepository"]
+__all__ = [
+    "VIGENTES", "FINALIZADAS", "SIN_MATERIA",
+    "ultimo_origen_causas_id", "origenes_cartera_ids", "solo_ultima_version",
+    "CausaRepository",
+]
 
 # Valor que manda el frontend para la pestaña "Sin materia" (causas de la
 # cartera deducida cuyo tribunal no calzó con ninguna materia conocida, ver
@@ -71,12 +76,83 @@ def ultimo_origen_causas_id(db: Session) -> Optional[int]:
     return fila[0] if fila else None
 
 
+def origenes_cartera_ids(db: Session) -> list[int]:
+    """Los archivos de causas que forman la cartera: el más reciente de CADA RUT.
+
+    Cuando el estudio carga un reporte por abogado, cada archivo trae solo la
+    cartera de ese abogado. Quedarse con un único archivo (`ultimo_origen_causas_id`)
+    mostraba únicamente al último abogado cargado y escondía al resto.
+
+    Dentro de un mismo RUT sigue valiendo lo de siempre: el reporte trae la cartera
+    completa, así que solo cuenta el más reciente (sumar los anteriores
+    multiplicaría las causas).
+
+    Una cartera cargada le gana a una deducida; si solo hay deducidas, es una
+    sola (la más reciente), porque es parcial y una por RUT no tiene sentido.
+
+    El primero de la lista es el mismo que devuelve `ultimo_origen_causas_id`.
+    Lista vacía si no hay ningún archivo de causas.
+    """
+    filas = (
+        db.query(EstadoDiarioOrigen.id, EstadoDiarioOrigen.rut, EstadoDiarioOrigen.deducida)
+        .filter(EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS)
+        .order_by(
+            EstadoDiarioOrigen.deducida.asc(),
+            EstadoDiarioOrigen.fecha.desc(),
+            EstadoDiarioOrigen.id.desc(),
+        )
+        .all()
+    )
+    if not filas:
+        return []
+    if filas[0].deducida:
+        return [filas[0].id]
+    vistos: dict = {}
+    for f in filas:
+        if f.deducida:
+            continue
+        vistos.setdefault(limpiar_rut(f.rut or "") or f"origen-{f.id}", f.id)
+    return list(vistos.values())
+
+
+def solo_ultima_version(query, entidad, origenes: list[int], claves):
+    """Acota `query` a UNA fila por causa cuando la cartera viene de varios archivos.
+
+    Una misma causa puede estar en el archivo de dos abogados. Sin esto se
+    listaría y se contaría dos veces. Se queda la del archivo más reciente; las
+    repetidas DENTRO de un mismo archivo no se tocan (eso ya lo resuelve la
+    importación). Con un solo archivo no hay nada que deduplicar.
+
+    `claves(modelo)` devuelve las expresiones que identifican la causa. La
+    subconsulta va sobre un alias para que no se confunda con la consulta externa.
+    """
+    if len(origenes) < 2:
+        return query
+    otra = aliased(entidad)
+    sub = (
+        select(*claves(otra), func.max(otra.estado_diario_origen_id))
+        .where(otra.estado_diario_origen_id.in_(origenes))
+        .group_by(*claves(otra))
+    )
+    return query.filter(tuple_(*claves(entidad), entidad.estado_diario_origen_id).in_(sub))
+
+
+def _claves_causa(modelo):
+    return (
+        func.coalesce(func.lower(func.trim(modelo.rol)), ""),
+        func.coalesce(norm_tribunal_sql(modelo.tribunal), ""),
+    )
+
+
 class CausaRepository:
     def __init__(self, db: Session):
         self.db = db
 
     def ultimo_origen_id(self) -> Optional[int]:
         return ultimo_origen_causas_id(self.db)
+
+    def origenes_cartera(self) -> list[int]:
+        return origenes_cartera_ids(self.db)
 
     def find_by_id(self, causa_id: int) -> Optional[Causa]:
         return self.db.get(Causa, causa_id)
@@ -90,17 +166,19 @@ class CausaRepository:
         id de la Causa —Estado Diario, Movimientos— y solo conocen su rol y
         tribunal. `None` si no hay cartera cargada, si no calza ninguna, o si
         la que calza no es de una materia que expone la API del PJUD."""
-        origen_id = self.ultimo_origen_id()
-        if not origen_id or not rol or not tribunal:
+        origenes = self.origenes_cartera()
+        if not origenes or not rol or not tribunal:
             return None
         return (
             self.db.query(Causa)
             .filter(
-                Causa.estado_diario_origen_id == origen_id,
+                Causa.estado_diario_origen_id.in_(origenes),
+                Causa.retirada_en.is_(None),
                 Causa.materia.in_(("Civil", "Familia", "Laboral", "Cobranza", "Penal")),
                 func.lower(func.btrim(Causa.rol)) == rol.strip().lower(),
                 func.lower(func.btrim(Causa.tribunal)) == tribunal.strip().lower(),
             )
+            .order_by(Causa.estado_diario_origen_id.desc(), Causa.id)
             .first()
         )
 
@@ -138,7 +216,7 @@ class CausaRepository:
         estado_causa: Optional[str],
         tribunal: Optional[str],
         busqueda: Optional[str],
-        origen_id: Optional[int],
+        origen_id: Optional[int | list[int]],
         vigencia: Optional[str] = None,
         roles: Optional[list[RolFiltro]] = None,
     ):
@@ -160,18 +238,25 @@ class CausaRepository:
                     Causa.ruc.ilike(patron),
                 )
             )
+        # Una retirada (dejó de venir en el reporte de su abogado) no es parte de
+        # la cartera: ni se ve, ni se cuenta, ni se factura.
+        query = query.filter(Causa.retirada_en.is_(None))
         if origen_id:
-            query = query.filter(Causa.estado_diario_origen_id == origen_id)
+            origenes = origen_id if isinstance(origen_id, list) else [origen_id]
+            query = query.filter(Causa.estado_diario_origen_id.in_(origenes))
+            # La causa compartida por dos abogados cuenta una vez, ANTES de los
+            # demás filtros: si no, el estado de un archivo podría esconder al otro.
+            query = solo_ultima_version(query, Causa, origenes, _claves_causa)
         condicion = cls._condicion_vigencia(vigencia)
         if condicion is not None:
             query = query.filter(condicion)
         return filtrar_por_roles(query, Causa.rol, Causa.tribunal, roles)
 
-    def _acotar_a_la_cartera(self, origen_id: Optional[int]) -> Optional[int]:
-        """El origen por el que hay que filtrar: el pedido, o el último.
+    def _acotar_a_la_cartera(self, origen_id: Optional[int]) -> int | list[int]:
+        """El/los origen(es) por los que hay que filtrar: el pedido, o la cartera.
 
-        Sin origen explícito se muestra SOLO el archivo más reciente, que es la
-        cartera vigente. Con origen explícito manda ese: es el caso de llegar
+        Sin origen explícito se muestra el archivo más reciente de cada RUT, que
+        es la cartera vigente (ver `origenes_cartera_ids`). Con origen explícito manda ese: es el caso de llegar
         desde Bitácora a ver qué trajo un archivo concreto, incluido uno viejo.
 
         Devuelve `-1` cuando no hay ningún archivo de causas cargado, para que
@@ -179,7 +264,7 @@ class CausaRepository:
         """
         if origen_id:
             return origen_id
-        return self.ultimo_origen_id() or -1
+        return self.origenes_cartera() or -1
 
 
     @staticmethod
@@ -321,6 +406,10 @@ class CausaRepository:
             for fila in query.group_by(Causa.materia).order_by(Causa.materia).all()
         ]
 
+    def _origenes_de(self, origen_id: Optional[int]) -> list[int]:
+        acotado = self._acotar_a_la_cartera(origen_id)
+        return acotado if isinstance(acotado, list) else [acotado]
+
     def listar_estados_causa(self, origen_id: Optional[int] = None) -> list[str]:
         """Estados presentes en la cartera, para el combo del filtro.
 
@@ -329,8 +418,8 @@ class CausaRepository:
         """
         query = (
             self.db.query(Causa.estado_causa)
-            .filter(Causa.estado_causa.isnot(None))
-            .filter(Causa.estado_diario_origen_id == self._acotar_a_la_cartera(origen_id))
+            .filter(Causa.estado_causa.isnot(None), Causa.retirada_en.is_(None))
+            .filter(Causa.estado_diario_origen_id.in_(self._origenes_de(origen_id)))
         )
         return sorted({fila[0].strip() for fila in query.distinct().all() if fila[0]})
 

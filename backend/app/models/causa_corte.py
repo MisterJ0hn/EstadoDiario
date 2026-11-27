@@ -84,5 +84,8 @@ class CausaCorte(BaseTenant):
     )
     enriquecida_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
+    # Cuándo dejó de venir en el reporte de Causas de su abogado (ver `Causa`).
+    retirada_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
     estado_diario_origen = relationship("EstadoDiarioOrigen", back_populates="causas_corte")
     jurisdiccion = relationship("Jurisdiccion")

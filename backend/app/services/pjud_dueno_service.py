@@ -24,7 +24,7 @@ from app.models.causa import Causa
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.models.usuario_rut import limpiar_rut
-from app.repositories.causa_repository import ultimo_origen_causas_id
+from app.repositories.causa_repository import origenes_cartera_ids
 from app.services.pjud_service import PjudApiError, PjudService, _normalizar
 
 logger = logging.getLogger(__name__)
@@ -76,8 +76,8 @@ def _por_causa(
 ) -> Optional[SimpleNamespace]:
     numero, anio = _entero(cuerpo.get("rol")), _entero(cuerpo.get("anio"))
     tipo = str(cuerpo.get("tipo") or "").strip().upper()
-    origen_id = ultimo_origen_causas_id(db)
-    if not origen_id or numero is None or anio is None:
+    origenes = origenes_cartera_ids(db)
+    if not origenes or numero is None or anio is None:
         return None
 
     # Civil/Familia/Laboral/Cobranza guardan `C-1234-2026`; Penal, `1653-2023`
@@ -88,7 +88,7 @@ def _por_causa(
     candidatas = (
         db.query(Causa)
         .filter(
-            Causa.estado_diario_origen_id == origen_id,
+            Causa.estado_diario_origen_id.in_(origenes),
             Causa.materia == MATERIAS[competencia],
             func.lower(func.trim(Causa.rol)).in_({r.lower() for r in roles}),
         )
@@ -120,27 +120,6 @@ def _por_causa(
     )
 
 
-def _origenes_vigentes_de_cortes(db: Session) -> list[int]:
-    """Los archivos de causas vigentes para Apelaciones: el más reciente de CADA abogado.
-
-    Cuando el estudio sube un reporte por abogado, la misma causa de corte puede estar
-    en la cartera de dos abogados (con caratulados distintos). Mirar solo el último
-    archivo dejaba invisible al otro. Si hay carteras cargadas, las deducidas (parciales)
-    no cuentan, igual que en `ultimo_origen_causas_id`."""
-    filas = (
-        db.query(EstadoDiarioOrigen.id, EstadoDiarioOrigen.rut, EstadoDiarioOrigen.deducida)
-        .filter(EstadoDiarioOrigen.tipo == EstadoDiarioOrigen.TIPO_CAUSAS)
-        .order_by(EstadoDiarioOrigen.fecha.desc(), EstadoDiarioOrigen.id.desc())
-        .all()
-    )
-    if any(not f.deducida for f in filas):
-        filas = [f for f in filas if not f.deducida]
-    vistos: dict = {}
-    for f in filas:
-        vistos.setdefault(limpiar_rut(f.rut or "") or f"origen-{f.id}", f.id)
-    return list(vistos.values())
-
-
 def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
     """Apelaciones vive en `causa_corte`; su dueño es el del archivo de origen.
 
@@ -149,7 +128,7 @@ def _por_corte(db: Session, cuerpo: dict) -> Optional[SimpleNamespace]:
     que lo tienen igual (sin mayúsculas ni acentos)."""
     numero, anio = _entero(cuerpo.get("rol")), _entero(cuerpo.get("anio"))
     corte = _normalizar(str(cuerpo.get("corte") or ""))
-    origenes = _origenes_vigentes_de_cortes(db)
+    origenes = origenes_cartera_ids(db)
     origen_id = origenes[0] if origenes else None
     if not origen_id or numero is None or anio is None or not corte:
         logger.warning(

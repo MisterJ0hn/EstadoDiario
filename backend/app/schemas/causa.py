@@ -184,4 +184,6 @@ class CargarCausasResponse(BaseModel):
     origen_id: int
     causas_importadas: int
     cortes_importados: int
+    # Causas que estaban en la cartera del abogado y este archivo ya no trae.
+    causas_retiradas: int = 0
     por_materia: dict[str, int] = {}

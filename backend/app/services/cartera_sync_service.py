@@ -48,10 +48,12 @@ buscar un estado que nunca va a llegar:
 En la práctica el estado lo mueve Movimientos. El Estado Diario aporta sobre
 todo altas y campos vacíos (tribunal, caratulado, ubicación).
 
-**Dónde escribe.** Sobre la foto de cartera vigente, la del último archivo de
-Causas. Eso significa que una carga nueva de Causas deja atrás lo enriquecido,
-y por eso el cruce se vuelve a correr al cerrar cada importación: se reconstruye
-en vez de acumularse.
+**Dónde escribe.** Sobre la cartera vigente: el último archivo de Causas de
+CADA abogado (ver `origenes_cartera_ids`). Una causa que llega de un reporte se
+busca en toda la cartera, para no darla de alta otra vez si ya está en el archivo
+de otro abogado; si es nueva, entra al archivo del abogado que emitió el reporte
+(o al último, si ese abogado no tiene archivo de Causas). El cruce se vuelve a
+correr al cerrar cada importación.
 """
 
 import logging
@@ -77,6 +79,8 @@ from app.models.estado_diario_corte import EstadoDiarioCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
 from app.models.movimiento import Movimiento
 from app.models.movimiento_corte import MovimientoCorte
+from app.models.usuario_rut import limpiar_rut
+from app.repositories.causa_repository import origenes_cartera_ids
 
 logger = logging.getLogger(__name__)
 
@@ -238,16 +242,43 @@ class CarteraSyncService:
             origen_cartera = self._crear_cartera_deducida()
             resultado.cartera_deducida = True
 
-        self._sincronizar_materia(origen_cartera, resultado)
-        self._sincronizar_corte(origen_cartera, resultado)
-        self._calcular_ultima_actividad(origen_cartera, resultado)
+        origenes = self._origenes_de_la_cartera(origen_cartera)
+        self._sincronizar_materia(origen_cartera, origenes, resultado)
+        self._sincronizar_corte(origen_cartera, origenes, resultado)
+        self._calcular_ultima_actividad(origenes, resultado)
         logger.info("Cruce de cartera: %s", resultado)
         return resultado
+
+    def _origenes_de_la_cartera(
+        self, origen_cartera: EstadoDiarioOrigen
+    ) -> Dict[int, EstadoDiarioOrigen]:
+        """Los archivos que forman la cartera, por id. Siempre incluye al que se
+        escribe (`origen_cartera`), aunque sea una deducida recién creada."""
+        ids = set(origenes_cartera_ids(self.db)) | {origen_cartera.id}
+        filas = (
+            self.db.query(EstadoDiarioOrigen).filter(EstadoDiarioOrigen.id.in_(ids)).all()
+        )
+        return {o.id: o for o in filas}
+
+    @staticmethod
+    def _destino_de(
+        origen_fuente: EstadoDiarioOrigen,
+        origen_cartera: EstadoDiarioOrigen,
+        origenes: Dict[int, EstadoDiarioOrigen],
+    ) -> EstadoDiarioOrigen:
+        """En qué archivo de la cartera entra una causa nueva que trajo ese reporte:
+        el del abogado que lo emitió, o el último si ese abogado no tiene uno."""
+        rut = limpiar_rut(origen_fuente.rut or "")
+        if rut:
+            for o in origenes.values():
+                if not o.deducida and limpiar_rut(o.rut or "") == rut:
+                    return o
+        return origen_cartera
 
     # ── Última señal de vida ──────────────────────────────
 
     def _calcular_ultima_actividad(
-        self, origen_cartera: EstadoDiarioOrigen, resultado: ResultadoSync
+        self, origenes: Dict[int, EstadoDiarioOrigen], resultado: ResultadoSync
     ) -> None:
         """Cuándo apareció por última vez cada causa en algún reporte.
 
@@ -265,7 +296,7 @@ class CarteraSyncService:
         """
         cartera = (
             self.db.query(Causa)
-            .filter(Causa.estado_diario_origen_id == origen_cartera.id)
+            .filter(Causa.estado_diario_origen_id.in_(list(origenes)))
             .all()
         )
         if not cartera:
@@ -384,11 +415,14 @@ class CarteraSyncService:
     # ── Primera instancia ─────────────────────────────────
 
     def _sincronizar_materia(
-        self, origen_cartera: EstadoDiarioOrigen, resultado: ResultadoSync
+        self,
+        origen_cartera: EstadoDiarioOrigen,
+        origenes: Dict[int, EstadoDiarioOrigen],
+        resultado: ResultadoSync,
     ) -> None:
         cartera = (
             self.db.query(Causa)
-            .filter(Causa.estado_diario_origen_id == origen_cartera.id)
+            .filter(Causa.estado_diario_origen_id.in_(list(origenes)))
             .all()
         )
         # Un grupo por llave, no una fila: el Excel repite la misma causa y hay
@@ -398,7 +432,6 @@ class CarteraSyncService:
             indice.setdefault((_norm(c.rol), _norm(c.tribunal)), []).append(c)
 
         materia_de = self._materia_por_tribunal()
-        fecha_cartera = origen_cartera.fecha
 
         for fila, origen, procedencia in self._fuentes_materia():
             clave = (_norm(fila.rol), _norm(fila.tribunal))
@@ -419,25 +452,30 @@ class CarteraSyncService:
             grupo = indice.get(clave)
             if grupo:
                 for causa in grupo:
+                    # La fecha de la cartera es la de SU archivo: cada abogado
+                    # tiene el suyo.
+                    fecha_cartera = origenes[causa.estado_diario_origen_id].fecha
                     if self._aplicar(causa, datos, origen, fecha_cartera,
                                      _CAMPOS_VOLATILES_CAUSA, resultado):
                         resultado.causas_actualizadas += 1
                     if procedencia == ORIGEN_DATO_ESTADO_DIARIO:
                         self._asignar_rut_desde_estado_diario(
-                            causa, origen, origen_cartera, resultado
+                            causa, origen, origenes[causa.estado_diario_origen_id],
+                            resultado,
                         )
             else:
+                destino = self._destino_de(origen, origen_cartera, origenes)
                 causa = Causa(
-                    estado_diario_origen_id=origen_cartera.id,
+                    estado_diario_origen_id=destino.id,
                     origen_dato=procedencia,
                     enriquecida_en=self.ahora,
                     **datos,
                 )
                 if procedencia == ORIGEN_DATO_ESTADO_DIARIO:
-                    # Nace en la cartera deducida (sin RUT): el abogado es el del
-                    # estado diario que la trajo.
+                    # Si nace en una cartera deducida (sin RUT), el abogado es el
+                    # del estado diario que la trajo.
                     self._asignar_rut_desde_estado_diario(
-                        causa, origen, origen_cartera, resultado
+                        causa, origen, destino, resultado
                     )
                 self.db.add(causa)
                 indice[clave] = [causa]
@@ -571,18 +609,19 @@ class CarteraSyncService:
     # ── Corte ─────────────────────────────────────────────
 
     def _sincronizar_corte(
-        self, origen_cartera: EstadoDiarioOrigen, resultado: ResultadoSync
+        self,
+        origen_cartera: EstadoDiarioOrigen,
+        origenes: Dict[int, EstadoDiarioOrigen],
+        resultado: ResultadoSync,
     ) -> None:
         cartera = (
             self.db.query(CausaCorte)
-            .filter(CausaCorte.estado_diario_origen_id == origen_cartera.id)
+            .filter(CausaCorte.estado_diario_origen_id.in_(list(origenes)))
             .all()
         )
         indice: Dict[Tuple[str, str, str, str], List[CausaCorte]] = {}
         for c in cartera:
             indice.setdefault(self._clave_corte(c.tipo, c.rol, c.era, c.corte), []).append(c)
-
-        fecha_cartera = origen_cartera.fecha
 
         for fila, origen, procedencia in self._fuentes_corte():
             datos = self._datos_de_corte(fila, procedencia)
@@ -597,12 +636,15 @@ class CarteraSyncService:
             grupo = indice.get(clave)
             if grupo:
                 for causa in grupo:
+                    fecha_cartera = origenes[causa.estado_diario_origen_id].fecha
                     if self._aplicar(causa, datos, origen, fecha_cartera,
                                      _CAMPOS_VOLATILES_CORTE, resultado):
                         resultado.cortes_actualizadas += 1
             else:
                 nueva = CausaCorte(
-                    estado_diario_origen_id=origen_cartera.id,
+                    estado_diario_origen_id=self._destino_de(
+                        origen, origen_cartera, origenes
+                    ).id,
                     origen_dato=procedencia,
                     enriquecida_en=self.ahora,
                     **datos,

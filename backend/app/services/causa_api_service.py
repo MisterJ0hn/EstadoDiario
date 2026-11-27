@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.filtro_roles import norm_tribunal, norm_tribunal_sql
 from app.models.causa import ORIGEN_DATO_API, Causa
-from app.repositories.causa_repository import ultimo_origen_causas_id
+from app.repositories.causa_repository import origenes_cartera_ids, ultimo_origen_causas_id
 from app.repositories.jurisdiccion_repository import JurisdiccionRepository
 from app.services import auditoria_service as auditoria
 from app.services.cartera_sync_service import CarteraSyncService
@@ -68,17 +68,18 @@ class CausaApiService:
 
     def buscar_en_cartera(self, rol: str, tribunal: str) -> Optional[Causa]:
         """La causa de la cartera vigente con ese `rol + tribunal`, si existe."""
-        origen_id = ultimo_origen_causas_id(self.db)
-        if origen_id is None:
+        origenes = origenes_cartera_ids(self.db)
+        if not origenes:
             return None
         return (
             self.db.query(Causa)
             .filter(
-                Causa.estado_diario_origen_id == origen_id,
+                Causa.estado_diario_origen_id.in_(origenes),
+                Causa.retirada_en.is_(None),
                 func.lower(func.trim(Causa.rol)) == _norm(rol),
                 norm_tribunal_sql(Causa.tribunal) == norm_tribunal(tribunal),
             )
-            .order_by(Causa.id)
+            .order_by(Causa.estado_diario_origen_id.desc(), Causa.id)
             .first()
         )
 

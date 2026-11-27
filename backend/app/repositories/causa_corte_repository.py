@@ -16,11 +16,21 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.estados_causa import condicion_vigencia
 from app.core.filtro_roles import (
-    RolCorteFiltro, RolFiltro, condicion_roles, condicion_roles_corte,
+    RolCorteFiltro, RolFiltro, condicion_roles, condicion_roles_corte, norm_corte_sql,
 )
 from app.models.causa_corte import CausaCorte
 from app.models.estado_diario_origen import EstadoDiarioOrigen
-from app.repositories.causa_repository import ultimo_origen_causas_id
+from app.repositories.causa_repository import origenes_cartera_ids, solo_ultima_version
+
+
+def _claves_corte(modelo):
+    return (
+        modelo.tipo,
+        func.coalesce(func.lower(func.trim(modelo.tipo_libro)), ""),
+        func.coalesce(func.lower(func.trim(modelo.rol)), ""),
+        func.coalesce(func.trim(modelo.era), ""),
+        func.coalesce(norm_corte_sql(modelo.corte), ""),
+    )
 
 
 class CausaCorteRepository:
@@ -29,8 +39,10 @@ class CausaCorteRepository:
 
     def _origen_de_la_cartera(
         self, fecha_desde: Optional[str], fecha_hasta: Optional[str]
-    ) -> Optional[int]:
-        """A qué archivo acotar cuando no se pidió un rango de fechas.
+    ) -> Optional[list[int]]:
+        """A qué archivos acotar cuando no se pidió un rango de fechas.
+
+        La cartera es el último archivo de cada RUT (ver `origenes_cartera_ids`).
 
         Igual que en el listado por materia: el reporte de Causas trae la
         cartera completa cada vez, así que sin acotar, un estudio que cargó el
@@ -40,12 +52,12 @@ class CausaCorteRepository:
         justamente comparando reportes de distintos días, y quedarse con el
         último dejaría el filtro sin efecto.
 
-        `-1` cuando no hay ningún archivo cargado: mejor cero filas que la
+        `[-1]` cuando no hay ningún archivo cargado: mejor cero filas que la
         tabla entera.
         """
         if fecha_desde or fecha_hasta:
             return None
-        return ultimo_origen_causas_id(self.db) or -1
+        return origenes_cartera_ids(self.db) or [-1]
 
     @classmethod
     def _aplicar_filtros(
@@ -56,13 +68,17 @@ class CausaCorteRepository:
         corte: Optional[str],
         fecha_desde: Optional[str],
         fecha_hasta: Optional[str],
-        origen_id: Optional[int] = None,
+        origen_id: Optional[int | list[int]] = None,
         vigencia: Optional[str] = None,
         roles: Optional[list[RolCorteFiltro]] = None,
         roles_origen: Optional[list[RolFiltro]] = None,
     ):
+        query = query.filter(CausaCorte.retirada_en.is_(None))
         if origen_id is not None:
-            query = query.filter(CausaCorte.estado_diario_origen_id == origen_id)
+            origenes = origen_id if isinstance(origen_id, list) else [origen_id]
+            query = query.filter(CausaCorte.estado_diario_origen_id.in_(origenes))
+            # La misma causa de corte en el archivo de dos abogados cuenta una vez.
+            query = solo_ultima_version(query, CausaCorte, origenes, _claves_corte)
         if tipo:
             query = query.filter(CausaCorte.tipo == tipo)
         if corte:
@@ -182,10 +198,13 @@ class CausaCorteRepository:
         un olvido — 'Fallada' en una corte significa que se falló el recurso,
         no que la causa dejó de estar en la cartera del estudio.
         """
-        origen_id = self._origen_de_la_cartera(None, None)
+        origenes = self._origen_de_la_cartera(None, None)
+        consulta = self.db.query(CausaCorte.tipo, func.count(CausaCorte.id)).filter(
+            CausaCorte.estado_diario_origen_id.in_(origenes),
+            CausaCorte.retirada_en.is_(None),
+        )
         filas = (
-            self.db.query(CausaCorte.tipo, func.count(CausaCorte.id))
-            .filter(CausaCorte.estado_diario_origen_id == origen_id)
+            solo_ultima_version(consulta, CausaCorte, origenes, _claves_corte)
             .group_by(CausaCorte.tipo)
             .all()
         )

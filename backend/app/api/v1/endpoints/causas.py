@@ -194,6 +194,12 @@ def upload_causas(
             mensaje=(
                 f"{resultado['causas_importadas']} causas y "
                 f"{resultado['cortes_importados']} de corte importadas"
+                + (
+                    f"; {resultado['causas_retiradas']} ya no vienen en el reporte "
+                    "y quedaron como retiradas"
+                    if resultado.get("causas_retiradas")
+                    else ""
+                )
             ),
             **resultado,
         )
